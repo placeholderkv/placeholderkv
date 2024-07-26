@@ -2496,6 +2496,19 @@ static int updateReplBacklogSize(const char **err) {
     return 1;
 }
 
+static int updateMaxmemoryReserved(const char **err) {
+    UNUSED(err);
+    if (server.maxmemory_reserved_scale) {
+        if (server.maxmemory_reserved_scale < 10) {
+            server.maxmemory_reserved_scale = 10;
+        } else if (server.maxmemory_reserved_scale > 60) {
+            server.maxmemory_reserved_scale = 60;
+        }
+    }
+    server.maxmemory_available = (unsigned long long)server.maxmemory / 100.0 * (100 - server.maxmemory_reserved_scale);
+    return 1;
+}
+
 static int updateMaxmemory(const char **err) {
     UNUSED(err);
     if (server.maxmemory) {
@@ -2507,6 +2520,8 @@ static int updateMaxmemory(const char **err) {
                       "depending on the maxmemory-policy.",
                       server.maxmemory, used);
         }
+        server.maxmemory_available =
+            (unsigned long long)server.maxmemory / 100.0 * (100 - server.maxmemory_reserved_scale);
         startEvictionTimeProc();
     }
     return 1;
@@ -3272,6 +3287,7 @@ standardConfig static_configs[] = {
     createIntConfig("lfu-decay-time", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.lfu_decay_time, 1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("replica-priority", "slave-priority", MODIFIABLE_CONFIG, 0, INT_MAX, server.replica_priority, 100, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("repl-diskless-sync-delay", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.repl_diskless_sync_delay, 5, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("maxmemory-reserved-scale", NULL, MODIFIABLE_CONFIG, 0, 100, server.maxmemory_reserved_scale, 0, INTEGER_CONFIG, NULL, updateMaxmemoryReserved),
     createIntConfig("maxmemory-samples", NULL, MODIFIABLE_CONFIG, 1, 64, server.maxmemory_samples, 5, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("maxmemory-eviction-tenacity", NULL, MODIFIABLE_CONFIG, 0, 100, server.maxmemory_eviction_tenacity, 10, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("timeout", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.maxidletime, 0, INTEGER_CONFIG, NULL, NULL), /* Default client timeout: infinite */
