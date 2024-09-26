@@ -2786,8 +2786,7 @@ void initServer(void) {
     resetReplicationBuffer();
 
     if (server.maxmemory) {
-        server.maxmemory_available =
-            (unsigned long long)server.maxmemory / 100.0 * (100 - server.maxmemory_reserved_scale);
+        calculateMaxAvailableMemory();
     }
 
     /* Make sure the locale is set on startup based on the config file. */
