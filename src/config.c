@@ -2520,7 +2520,7 @@ static int updateMaxmemory(const char **err) {
                       "depending on the maxmemory-policy.",
                       server.maxmemory, used);
         }
-	calculateMaxAvailableMemory();
+        calculateMaxAvailableMemory();
         startEvictionTimeProc();
     }
     return 1;

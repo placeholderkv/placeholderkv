@@ -405,7 +405,7 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
 
     /* Compute the ratio of memory usage. */
     if (level) {
-       *level = (float)mem_used / (float)server.maxmemory_available;
+        *level = (float)mem_used / (float)server.maxmemory_available;
     }
 
     if (mem_reported <= server.maxmemory_available) return C_OK;
