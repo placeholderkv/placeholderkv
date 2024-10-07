@@ -2505,7 +2505,7 @@ static int updateMaxmemoryReserved(const char **err) {
             server.maxmemory_reserved_scale = 60;
         }
     }
-    calculateMaxAvailableMemory();
+    updateMaxAvailableMemory();
     return 1;
 }
 
@@ -2520,7 +2520,7 @@ static int updateMaxmemory(const char **err) {
                       "depending on the maxmemory-policy.",
                       server.maxmemory, used);
         }
-        calculateMaxAvailableMemory();
+        updateMaxAvailableMemory();
         startEvictionTimeProc();
     }
     return 1;

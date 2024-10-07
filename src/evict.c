@@ -386,16 +386,12 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     if (total) *total = mem_reported;
 
     /* We may return ASAP if there is no need to compute the level. */
-    if (!server.maxmemory) {
+    if (!server.maxmemory_available) {
         if (level) *level = 0;
         return C_OK;
     }
 
-    if (server.maxmemory_reserved_scale) {
-        if (mem_reported <= server.maxmemory_available && !level) return C_OK;
-    } else if (mem_reported <= server.maxmemory && !level) {
-        return C_OK;
-    }
+    if (mem_reported <= server.maxmemory_available && !level) return C_OK;
 
     /* Remove the size of replicas output buffers and AOF buffer from the
      * count of used memory. */
