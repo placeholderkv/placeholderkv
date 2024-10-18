@@ -2496,6 +2496,8 @@ static int updateReplBacklogSize(const char **err) {
     return 1;
 }
 
+/* Adjusts `maxmemory_reserved_scale` to ensure it remains within the valid range of 10 to 60, if set.
+ * Once adjusted, the available memory is recalculated to reflect the new reserved memory. */
 static int updateMaxmemoryReserved(const char **err) {
     UNUSED(err);
     if (server.maxmemory_reserved_scale) {
