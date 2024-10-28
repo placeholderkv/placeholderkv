@@ -401,7 +401,7 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
 
     /* Compute the ratio of memory usage. */
     if (level) {
-        *level = (float)mem_used / (float)server.maxmemory_available;
+        *level = (float)mem_used / (float)server.maxmemory;
     }
 
     if (mem_reported <= server.maxmemory_available) return C_OK;
@@ -719,7 +719,17 @@ int performEvictions(void) {
         }
     }
     /* at this point, the memory is OK, or we have reached the time limit */
+    if (server.maxmemory_available) {
+        size_t mem_used = zmalloc_used_memory();
+        size_t overhead = freeMemoryGetNotCountedMemory();
+        mem_used = (mem_used > overhead) ? mem_used - overhead : 0;
+        if (mem_used > server.maxmemory) {
+            result = EVICT_FAIL;
+            goto cant_free;
+        }
+    }
     result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
+
 
 cant_free:
     if (result == EVICT_FAIL) {
