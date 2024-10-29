@@ -719,7 +719,7 @@ int performEvictions(void) {
         }
     }
     /* at this point, the memory is OK, or we have reached the time limit */
-    if (server.maxmemory_available) {
+    if (server.maxmemory_reserved_scale && server.maxmemory_available) {
         size_t mem_used = zmalloc_used_memory();
         size_t overhead = freeMemoryGetNotCountedMemory();
         mem_used = (mem_used > overhead) ? mem_used - overhead : 0;
