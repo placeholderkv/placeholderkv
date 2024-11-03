@@ -386,12 +386,12 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     if (total) *total = mem_reported;
 
     /* We may return ASAP if there is no need to compute the level. */
-    if (!server.maxmemory_available) {
+    if (!server.maxmemory_soft) {
         if (level) *level = 0;
         return C_OK;
     }
 
-    if (mem_reported <= server.maxmemory_available && !level) return C_OK;
+    if (mem_reported <= server.maxmemory_soft && !level) return C_OK;
 
     /* Remove the size of replicas output buffers and AOF buffer from the
      * count of used memory. */
@@ -404,13 +404,13 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
         *level = (float)mem_used / (float)server.maxmemory;
     }
 
-    if (mem_reported <= server.maxmemory_available) return C_OK;
+    if (mem_reported <= server.maxmemory_soft) return C_OK;
 
     /* Check if we are still over the memory limit. */
-    if (mem_used <= server.maxmemory_available) return C_OK;
+    if (mem_used <= server.maxmemory_soft) return C_OK;
 
     /* Compute how much memory we need to free. */
-    mem_tofree = mem_used - server.maxmemory_available;
+    mem_tofree = mem_used - server.maxmemory_soft;
 
     if (logical) *logical = mem_used;
     if (tofree) *tofree = mem_tofree;
@@ -719,7 +719,7 @@ int performEvictions(void) {
         }
     }
     /* at this point, the memory is OK, or we have reached the time limit */
-    if (server.maxmemory_reserved_scale && server.maxmemory_available) {
+    if (server.maxmemory_soft_scale) {
         size_t mem_used = zmalloc_used_memory();
         size_t overhead = freeMemoryGetNotCountedMemory();
         mem_used = (mem_used > overhead) ? mem_used - overhead : 0;
@@ -729,7 +729,6 @@ int performEvictions(void) {
         }
     }
     result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
-
 
 cant_free:
     if (result == EVICT_FAIL) {

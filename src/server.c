@@ -2786,7 +2786,7 @@ void initServer(void) {
     resetReplicationBuffer();
 
     if (server.maxmemory) {
-        updateMaxAvailableMemory();
+        updateSoftMaxmemoryValue();
     }
 
     /* Make sure the locale is set on startup based on the config file. */
@@ -5721,7 +5721,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         char used_memory_scripts_hmem[64];
         char used_memory_rss_hmem[64];
         char maxmemory_hmem[64];
-        char maxmemory_available_hmem[64];
+        char maxmemory_soft_hmem[64];
         size_t zmalloc_used = zmalloc_used_memory();
         size_t total_system_mem = server.system_memory_size;
         const char *evict_policy = evictPolicyToString();
@@ -5743,7 +5743,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         bytesToHuman(used_memory_scripts_hmem, sizeof(used_memory_scripts_hmem), mh->lua_caches + mh->functions_caches);
         bytesToHuman(used_memory_rss_hmem, sizeof(used_memory_rss_hmem), server.cron_malloc_stats.process_rss);
         bytesToHuman(maxmemory_hmem, sizeof(maxmemory_hmem), server.maxmemory);
-        bytesToHuman(maxmemory_available_hmem, sizeof(maxmemory_available_hmem), server.maxmemory_available);
+        bytesToHuman(maxmemory_soft_hmem, sizeof(maxmemory_soft_hmem), server.maxmemory_soft);
 
         if (sections++) info = sdscat(info, "\r\n");
         info = sdscatprintf(
@@ -5782,9 +5782,9 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "maxmemory:%lld\r\n", server.maxmemory,
                 "maxmemory_human:%s\r\n", maxmemory_hmem,
                 "maxmemory_policy:%s\r\n", evict_policy,
-                "maxmemory_reserved_scale:%d\r\n", server.maxmemory_reserved_scale,
-                "maxmemory_available:%lld\r\n", server.maxmemory_available,
-                "maxmemory_available_human:%s\r\n", maxmemory_available_hmem,
+                "maxmemory_soft_scale:%d\r\n", server.maxmemory_soft_scale,
+                "maxmemory_soft:%lld\r\n", server.maxmemory_soft,
+                "maxmemory_soft_human:%s\r\n", maxmemory_soft_hmem,
                 "allocator_frag_ratio:%.2f\r\n", mh->allocator_frag,
                 "allocator_frag_bytes:%zu\r\n", mh->allocator_frag_bytes,
                 "allocator_rss_ratio:%.2f\r\n", mh->allocator_rss,

@@ -1994,8 +1994,8 @@ struct valkeyServer {
     ssize_t maxmemory_clients;                  /* Memory limit for total client buffers */
     int maxmemory_policy;                       /* Policy for key eviction */
     int maxmemory_samples;                      /* Precision of random sampling */
-    int maxmemory_reserved_scale;               /* Percent of the maxmemory value */
-    unsigned long long maxmemory_available;     /* Max memory to store data */
+    int maxmemory_soft_scale;                   /* Percent of the soft maxmemory value */
+    unsigned long long maxmemory_soft;          /* Soft maxmemory value to store data */
     int maxmemory_eviction_tenacity;            /* Aggressiveness of eviction processing */
     int lfu_log_factor;                         /* LFU logarithmic counter factor. */
     int lfu_decay_time;                         /* LFU counter decay factor. */
