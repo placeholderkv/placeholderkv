@@ -534,7 +534,7 @@ int performEvictions(void) {
     int replicas = listLength(server.replicas);
     int result = EVICT_FAIL;
 
-    if (getMaxmemoryState(&mem_reported, NULL, &mem_tofree, NULL, server.maxmemory) == C_OK) {
+    if (getMaxmemoryState(&mem_reported, NULL, &mem_tofree, NULL, server.maxmemory_soft) == C_OK) {
         result = EVICT_OK;
         goto update_metrics;
     }
@@ -702,7 +702,7 @@ int performEvictions(void) {
                  * across the dbAsyncDelete() call, while the thread can
                  * release the memory all the time. */
                 if (server.lazyfree_lazy_eviction) {
-                    if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.maxmemory) == C_OK) {
+                    if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.maxmemory_soft) == C_OK) {
                         break;
                     }
                 }
@@ -744,7 +744,7 @@ cant_free:
         mstime_t lazyfree_latency;
         latencyStartMonitor(lazyfree_latency);
         while (bioPendingJobsOfType(BIO_LAZY_FREE) && elapsedUs(evictionTimer) < eviction_time_limit_us) {
-            if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.maxmemory) == C_OK) {
+            if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.maxmemory_soft) == C_OK) {
                 result = EVICT_OK;
                 break;
             }
