@@ -728,7 +728,7 @@ int performEvictions(void) {
         size_t mem_used = zmalloc_used_memory();
         size_t overhead = freeMemoryGetNotCountedMemory();
         mem_used = (mem_used > overhead) ? mem_used - overhead : 0;
-        if (mem_used < server.maxmemory) {
+        if (mem_used < server.maxmemory_soft) {
             result = EVICT_OK;
             goto update_metrics;
         }
