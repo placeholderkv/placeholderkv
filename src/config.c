@@ -2496,18 +2496,39 @@ static int updateReplBacklogSize(const char **err) {
     return 1;
 }
 
-/* Adjusts `maxmemory_soft_scale` to ensure it remains within the valid range of 10 to 60, if set.
- * Once adjusted, the available memory is recalculated to reflect the new soft maxmemory. */
-static int updateMaxmemorySoftScale(const char **err) {
+static int updateKeyEvictionMemory(const char **err) {
     UNUSED(err);
-    if (server.maxmemory_soft_scale) {
-        if (server.maxmemory_soft_scale < 10) {
-            server.maxmemory_soft_scale = 10;
-        } else if (server.maxmemory_soft_scale > 60) {
-            server.maxmemory_soft_scale = 60;
+    if (server.maxmemory) {
+        if (!server.key_eviction_memory) {
+            serverLog(LL_WARNING,
+                      "WARNING: current maxmemory value is not 0, the new key-eviction-memory value set via CONFIG SET (%llu) is  "
+                      "0. The new key-eviction-memory value is set to equal to current maxmemory (%llu) ",
+                      server.key_eviction_memory, server.maxmemory);
+            server.key_eviction_memory = server.maxmemory;
+        } else if (server.key_eviction_memory > server.maxmemory) {
+            serverLog(LL_WARNING,
+                      "WARNING: the new key-eviction-memory value set via CONFIG SET (%llu) is greater than current maxmemory, "
+                      "The new key-eviction-memory value is set to equal to current maxmemory (%llu) ",
+                      server.key_eviction_memory, server.maxmemory);
+            server.key_eviction_memory = server.maxmemory;
         }
+        size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
+        if (server.key_eviction_memory < used) {
+            serverLog(LL_WARNING,
+                      "WARNING: the new key-eviction-memorym value set via CONFIG SET (%llu) is smaller than the current memory "
+                      "usage (%zu). This will result in key eviction and/or the inability to accept new write commands "
+                      "depending on the maxmemory-policy.",
+                      server.key_eviction_memory, used);
+        }
+    } else {
+        if (server.key_eviction_memory) {
+            serverLog(LL_WARNING,
+                      "WARNING: current maxmemory value is 0, the new key-eviction-memory value set via CONFIG SET (%llu) is  "
+                      "greater than 0. The new key-eviction-memory value is invalid, and its value is set to 0 ",
+                      server.key_eviction_memory);
+        }
+        server.key_eviction_memory = 0;
     }
-    updateSoftMaxmemoryValue();
     return 1;
 }
 
@@ -2522,8 +2543,12 @@ static int updateMaxmemory(const char **err) {
                       "depending on the maxmemory-policy.",
                       server.maxmemory, used);
         }
-        updateSoftMaxmemoryValue();
+        if (!server.key_eviction_memory || server.key_eviction_memory > server.maxmemory) {
+            server.key_eviction_memory = server.maxmemory;
+        }
         startEvictionTimeProc();
+    } else {
+        server.key_eviction_memory = 0;
     }
     return 1;
 }
@@ -3288,7 +3313,6 @@ standardConfig static_configs[] = {
     createIntConfig("lfu-decay-time", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.lfu_decay_time, 1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("replica-priority", "slave-priority", MODIFIABLE_CONFIG, 0, INT_MAX, server.replica_priority, 100, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("repl-diskless-sync-delay", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.repl_diskless_sync_delay, 5, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("maxmemory-soft-scale", NULL, MODIFIABLE_CONFIG, 0, 100, server.maxmemory_soft_scale, 0, INTEGER_CONFIG, NULL, updateMaxmemorySoftScale),
     createIntConfig("maxmemory-samples", NULL, MODIFIABLE_CONFIG, 1, 64, server.maxmemory_samples, 5, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("maxmemory-eviction-tenacity", NULL, MODIFIABLE_CONFIG, 0, 100, server.maxmemory_eviction_tenacity, 10, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("timeout", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.maxidletime, 0, INTEGER_CONFIG, NULL, NULL), /* Default client timeout: infinite */
@@ -3346,6 +3370,7 @@ standardConfig static_configs[] = {
 
     /* Unsigned Long Long configs */
     createULongLongConfig("maxmemory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory, 0, MEMORY_CONFIG, NULL, updateMaxmemory),
+    createULongLongConfig("key-eviction-memory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.key_eviction_memory, 0, MEMORY_CONFIG, NULL, updateKeyEvictionMemory),
     createULongLongConfig("cluster-link-sendbuf-limit", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.cluster_link_msg_queue_limit_bytes, 0, MEMORY_CONFIG, NULL, NULL),
 
     /* Size_t configs */
