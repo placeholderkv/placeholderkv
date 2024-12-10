@@ -1011,16 +1011,22 @@ int startAppendOnly(void) {
  * the first call is short, there is a end-of-space condition, so the next
  * is likely to fail. However apparently in modern systems this is no longer
  * true, and in general it looks just more resilient to retry the write. If
- * there is an actual error condition we'll get it at the next try. */
-ssize_t aofWrite(int fd, const char *buf, size_t len) {
-    ssize_t nwritten = 0, totwritten = 0;
+ * there is an actual error condition we'll get it at the next try.
+ * We also check for aof-max-size limit here returning "no space" on exceed. */
+ssize_t aofWrite(int fd, const char *buf, size_t len, off_t aof_current_size, unsigned long long aof_max_size) {
+    ssize_t nwritten = 0, totwritten = 0, nonewritten = -1;
+
+    if (aof_max_size && (unsigned long long)aof_current_size >= aof_max_size) {
+        errno = ENOSPC;
+        return nonewritten;
+    }
 
     while (len) {
         nwritten = write(fd, buf, len);
 
         if (nwritten < 0) {
             if (errno == EINTR) continue;
-            return totwritten ? totwritten : -1;
+            return totwritten ? totwritten : nonewritten;
         }
 
         len -= nwritten;
@@ -1120,7 +1126,7 @@ void flushAppendOnlyFile(int force) {
     }
 
     latencyStartMonitor(latency);
-    nwritten = aofWrite(server.aof_fd, server.aof_buf, sdslen(server.aof_buf));
+    nwritten = aofWrite(server.aof_fd, server.aof_buf, sdslen(server.aof_buf), server.aof_current_size, server.aof_max_size);
     latencyEndMonitor(latency);
     /* We want to capture different events for delayed writes:
      * when the delay happens with a pending fsync, or with a saving child
