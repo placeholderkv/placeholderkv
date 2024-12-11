@@ -305,8 +305,88 @@ start_server {tags {"maxmemory external:skip"}} {
             r config set maxmemory 0
         }
     }
-}
 
+    test "key-eviction-memory could change with maxmemory update" {
+         # make sure to start with a blank instance
+         r flushall
+         # we set maxmemory as 0, and we expect key-eviction-memory as 0 too.
+         r config set maxmemory 0
+         assert_equal 0 [lindex [r config get maxmemory] 1]
+         assert_equal 0 [lindex [r config get key-eviction-memory] 1]
+         # we increase maxmemory, and we expect key-eviction-memory value is increased too.
+         r config set maxmemory 10mb
+         set key_eviction_memory [lindex [r config get key-eviction-memory] 1]
+         assert_equal [lindex [r config get maxmemory] 1] $key_eviction_memory
+         # we increase maxmemory a little bit, but we expect key-eviction-memory value no change.
+         r config set maxmemory 11mb
+         assert_equal $key_eviction_memory [lindex [r config get key-eviction-memory] 1]
+         assert_morethan [lindex [r config get maxmemory] 1] [lindex [r config get key-eviction-memory] 1]
+         # we decrease maxmemory lower than key-eviction-memory, thus we expect key-eviction-memory value decrease to maxmemory value.
+         r config set maxmemory 6mb
+         assert_equal [lindex [r config get maxmemory] 1] [lindex [r config get key-eviction-memory] 1]
+         # we decrease maxmemory to 0, and we expect key-eviction-memory value decrease to 0 too.
+         r config set maxmemory 0
+         assert_equal 0 [lindex [r config get maxmemory] 1]
+         assert_equal 0 [lindex [r config get key-eviction-memory] 1]
+    }
+
+    test "key-eviction-memory update test" {
+         # make sure to start with a blank instance
+         r flushall
+         # If maxmemory is not 0, and key-eviction-memory is set to 0, we expect the key-eviction-memory equal to maxmemory
+         r config set maxmemory 10mb
+         r config set key-eviction-memory 0
+         assert_equal [lindex [r config get maxmemory] 1] [lindex [r config get key-eviction-memory] 1]
+         # we increase key-eviction-memory, but its value is still less than maxmemory.
+         r config set key-eviction-memory 5mb
+         assert_morethan [lindex [r config get maxmemory] 1] [lindex [r config get key-eviction-memory] 1]
+         # we increase key-eviction-memory more than maxmemory, but we expect its value is equal to maxmemory.
+         r config set key-eviction-memory 10mb
+         assert_equal [lindex [r config get maxmemory] 1] [lindex [r config get key-eviction-memory] 1]
+         r config set maxmemory 0
+    }
+
+    
+    foreach policy {
+        allkeys-random allkeys-lru allkeys-lfu volatile-lru volatile-lfu volatile-random volatile-ttl
+    } {
+        test "key-eviction-memory - test eviction key number with policy ($policy) and different key-eviction-memory value" {
+            r flushall
+            # make sure to start with a blank instance
+            set num_eviction_key_init [s evicted_keys]
+            set used [s used_memory]
+            set limit_maxmemory [expr {$used+100*1024}]
+            set limit_key_eviction_memory_threshold1 [expr {$used+70*1024}]
+            set limit_key_eviction_memory_threshold2 [expr {$used+40*1024}]
+            r config set maxmemory $limit_maxmemory
+            r config set maxmemory-policy $policy
+            set numkeys 5000
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_maxmemory [s evicted_keys]
+            set diff_num_key_eviction_one [expr {$num_eviction_key_maxmemory - $num_eviction_key_init}]
+            r flushall
+            r config set key-eviction-memory $limit_key_eviction_memory_threshold1
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_threshold1 [s evicted_keys]
+            set diff_num_key_eviction_two [expr {$num_eviction_key_threshold1 - $num_eviction_key_maxmemory}]
+            r flushall
+            r config set key-eviction-memory $limit_key_eviction_memory_threshold2
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_threshold2 [s evicted_keys]
+            set diff_num_key_eviction_three [expr {$num_eviction_key_threshold2 - $num_eviction_key_threshold1}]
+            assert_morethan $diff_num_key_eviction_three $diff_num_key_eviction_two
+            assert_morethan $diff_num_key_eviction_two $diff_num_key_eviction_one
+            r flushall
+            r config set maxmemory 0
+       }
+   }
+}
 # Calculate query buffer memory of slave
 proc slave_query_buffer {srv} {
     set clients [split [$srv client list] "\r\n"]
