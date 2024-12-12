@@ -35,7 +35,7 @@ jobs:
   build-valkey:
     # Capture source tarball and generate checksum for it
     name: Build package ${{ matrix.distro.target }} ${{ matrix.distro.arch }}
-    runs-on: "ubuntu-latest"
+    runs-on: ${{matrix.distro.target}}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.build_matrix) }}

@@ -1,28 +1,35 @@
 {
     "linux_targets": [
+
         {
           "arch": "x86_64",
-          "target": "ubuntu18.04",
+          "target": "ubuntu-20.04",
           "type": "deb",
-          "platform": "bionic"
+          "platform": "focal"
         },
         {
           "arch": "x86_64",
+          "target": "ubuntu-22.04",
+          "type": "deb",
+          "platform": "jammy"
+        },
+        {
+          "arch": "x86_64",
+          "target": "ubuntu-24.04",
+          "type": "deb",
+          "platform": "noble"
+        },
+        {
+          "arch": "arm64",
           "target": "ubuntu20.04",
           "type": "deb",
           "platform": "focal"
         },
         {
           "arch": "arm64",
-          "target": "ubuntu18.04",
+          "target": "ubuntu22.04",
           "type": "deb",
-          "platform": "bionic"
-        },
-        {
-          "arch": "arm64",
-          "target": "ubuntu20.04",
-          "type": "deb",
-          "platform": "focal"
+          "platform": "jammy"
         }
       ]
 }
