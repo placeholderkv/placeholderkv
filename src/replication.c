@@ -3543,7 +3543,6 @@ void syncWithPrimary(connection *conn) {
         if (err[0] != '+' && strncmp(err, "-NOAUTH", 7) != 0 && strncmp(err, "-NOPERM", 7) != 0 &&
             strncmp(err, "-ERR operation not permitted", 28) != 0) {
             serverLog(LL_WARNING, "Error reply to PING from primary: '%s'", err);
-            sdsfree(err);
             goto error;
         } else {
             serverLog(LL_NOTICE, "Primary replied to PING, replication can continue...");
@@ -3639,7 +3638,6 @@ void syncWithPrimary(connection *conn) {
         if (err == NULL) goto no_response_error;
         if (err[0] == '-') {
             serverLog(LL_WARNING, "Unable to AUTH to PRIMARY: %s", err);
-            sdsfree(err);
             goto error;
         }
         sdsfree(err);
@@ -3861,11 +3859,11 @@ error:
     server.repl_transfer_tmpfile = NULL;
     server.repl_transfer_fd = -1;
     server.repl_state = REPL_STATE_CONNECT;
+    if (err) sdsfree(err);
     return;
 
 write_error: /* Handle sendCommand() errors. */
     serverLog(LL_WARNING, "Sending command to primary in replication handshake: %s", err);
-    sdsfree(err);
     goto error;
 }
 
