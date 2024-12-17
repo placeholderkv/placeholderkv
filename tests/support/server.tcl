@@ -256,6 +256,11 @@ proc tags_acceptable {tags err_return} {
         return 0
     }
 
+    if {$::reply_offload && [lsearch $tags "reply-offload:skip"] >= 0} {
+        set err "Not supported in reply-offload mode"
+        return 0
+    }
+
     if {$::tcl_version < 8.6 && [lsearch $tags "ipv6"] >= 0} {
         set err "TCL version is too low and does not support this"
         return 0
@@ -534,6 +539,10 @@ proc start_server {options {code undefined}} {
     if {$::io_threads} {
         dict set config "io-threads" 2
         dict set config "events-per-io-thread" 0
+    }
+
+    if {$::reply_offload} {
+        dict set config "reply-offload" "yes"
     }
 
     foreach line $data {

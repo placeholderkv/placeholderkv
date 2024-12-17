@@ -1,4 +1,4 @@
-tags {"external:skip logreqres:skip"} {
+tags {"external:skip logreqres:skip reply-offload:skip"} {
 
 # Get info about a server client connection:
 # name - name of client we want to query

@@ -524,9 +524,12 @@ start_cluster 1 0 {tags {external:skip cluster}} {
         R 0 SET $key value
         # +OK\r\n --> 5 bytes
 
+        R 0 GET $key
+        # $3\r\nvalue\r\n -> 11 bytes
+
         set expected_slot_stats [
             dict create $key_slot [
-                dict create network-bytes-out 5
+                dict create network-bytes-out 16
             ]
         ]
         set slot_stats [R 0 CLUSTER SLOT-STATS SLOTSRANGE 0 16383]

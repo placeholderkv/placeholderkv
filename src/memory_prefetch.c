@@ -119,6 +119,9 @@ static void prefetchEntry(KeyPrefetchInfo *info) {
     if (hashtableIncrementalFindStep(&info->hashtab_state) == 1) {
         /* Not done yet */
         moveToNextKey();
+        /* If reply offload enabled no need to prefetch value because main thread will not access it */
+    } else if (server.reply_offload_enabled) {
+         markKeyAsdone(info);
     } else {
         info->state = PREFETCH_VALUE;
     }

@@ -1,4 +1,4 @@
-start_server {tags {"obuf-limits external:skip logreqres:skip"}} {
+start_server {tags {"obuf-limits external:skip logreqres:skip reply-offload:skip"}} {
     test {CONFIG SET client-output-buffer-limit} {
         set oldval [lindex [r config get client-output-buffer-limit] 1]
 

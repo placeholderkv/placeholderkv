@@ -785,10 +785,13 @@ char *getObjectTypeName(robj *);
 
 struct evictionPoolEntry; /* Defined in evict.c */
 
+typedef struct payloadHeader payloadHeader; /* Defined in networking.c */
+
 /* This structure is used in order to represent the output buffer of a client,
  * which is actually a linked list of blocks like that, that is: client->reply. */
 typedef struct clientReplyBlock {
     size_t size, used;
+    payloadHeader* last_header;
     char buf[];
 } clientReplyBlock;
 
@@ -1057,6 +1060,7 @@ typedef struct ClientFlags {
     uint64_t prevent_prop : 1;             /* Don't propagate to AOF or replicas. */
     uint64_t pending_write : 1;            /* Client has output to send but a write handler is yet not installed. */
     uint64_t pending_read : 1;             /* Client has output to send but a write handler is yet not installed. */
+    uint64_t reply_offload : 1;            /* Client is in reply offload mode */
     uint64_t reply_off : 1;                /* Don't send replies to client. */
     uint64_t reply_skip_next : 1;          /* Set CLIENT_REPLY_SKIP for next cmd */
     uint64_t reply_skip : 1;               /* Don't send just this reply. */
@@ -1109,7 +1113,7 @@ typedef struct ClientFlags {
                                             * flag, we won't cache the primary in freeClient. */
     uint64_t fake : 1;                     /* This is a fake client without a real connection. */
     uint64_t import_source : 1;            /* This client is importing data to server and can visit expired key. */
-    uint64_t reserved : 4;                 /* Reserved for future use */
+    uint64_t reserved : 3;                 /* Reserved for future use */
 } ClientFlags;
 
 typedef struct ClientPubSubData {
@@ -1210,10 +1214,14 @@ typedef struct client {
     list *reply;                         /* List of reply objects to send to the client. */
     listNode *io_last_reply_block;       /* Last client reply block when sent to IO thread */
     size_t io_last_bufpos;               /* The client's bufpos at the time it was sent to the IO thread */
+    char* io_last_written_buf;           /* Last buffer that has been written to the client connection */
+    size_t io_last_written_bufpos;       /* The buffer has been written until this position */
+    size_t io_last_written_data_len;     /* The actual length of the data written from this buffer
+                                            This length differs from written bufpos in case of reply offload */
     unsigned long long reply_bytes;      /* Tot bytes of objects in reply list. */
-    size_t sentlen;                      /* Amount of bytes already sent in the current buffer or object being sent. */
     listNode clients_pending_write_node; /* list node in clients_pending_write or in clients_pending_io_write list */
-    int bufpos;
+    size_t bufpos;
+    payloadHeader* last_header;        /* Pointer to the last header in a buffer in reply offload mode */
     int original_argc;    /* Num of arguments of original command if arguments were rewritten. */
     robj **original_argv; /* Arguments of original command if arguments were rewritten. */
     /* Client flags and state indicators */
@@ -1660,6 +1668,7 @@ struct valkeyServer {
     int events_per_io_thread;                 /* Number of events on the event loop to trigger IO threads activation. */
     int prefetch_batch_max_size;              /* Maximum number of keys to prefetch in a single batch */
     long long events_processed_while_blocked; /* processEventsWhileBlocked() */
+    int reply_offload_enabled;                /* Reply offload enabled or not */
     int enable_protected_configs;             /* Enable the modification of protected configs, see PROTECTED_ACTION_ALLOWED_* */
     int enable_debug_cmd;                     /* Enable DEBUG commands, see PROTECTED_ACTION_ALLOWED_* */
     int enable_module_cmd;                    /* Enable MODULE commands, see PROTECTED_ACTION_ALLOWED_* */
@@ -2764,6 +2773,9 @@ void ioThreadWriteToClient(void *data);
 int canParseCommand(client *c);
 int processIOThreadsReadDone(void);
 int processIOThreadsWriteDone(void);
+void releaseReplyOffloads(client *c);
+void resetLastWrittenBuf(client *c);
+
 
 /* logreqres.c - logging of requests and responses */
 void reqresReset(client *c, int free_buf);
