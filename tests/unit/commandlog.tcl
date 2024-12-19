@@ -27,12 +27,18 @@ start_server {tags {"commandlog"} overrides {commandlog-execution-slower-than 10
         assert_equal [r commandlog len large-request] 1
 
         # for large-reply
+        set copy_avoid [lindex [r config get min-io-threads-avoid-copy-reply] 1]
+        r config set min-io-threads-avoid-copy-reply 0
+
         r config set commandlog-reply-larger-than 1024
         r ping
         assert_equal [r commandlog len large-reply] 0
         r get testkey
         assert_equal [r commandlog len large-reply] 1
-    } {} {needs:debug}
+
+        # Restore min-io-threads-avoid-copy-reply value
+        r config set min-io-threads-avoid-copy-reply $copy_avoid
+    } {OK} {needs:debug}
 
     test {COMMANDLOG - zero max length is correctly handled} {
         r commandlog reset slow
@@ -120,6 +126,9 @@ start_server {tags {"commandlog"} overrides {commandlog-execution-slower-than 10
         assert_equal {foobar} [lindex $e 5]
 
         # for large-reply
+        set copy_avoid [lindex [r config get min-io-threads-avoid-copy-reply] 1]
+        r config set min-io-threads-avoid-copy-reply 0
+
         r get testkey
         set e [lindex [r commandlog get -1 large-reply] 0]
         assert_equal [llength $e] 6
@@ -129,7 +138,10 @@ start_server {tags {"commandlog"} overrides {commandlog-execution-slower-than 10
         assert_equal [expr {[lindex $e 2] > 1024}] 1
         assert_equal [lindex $e 3] {get testkey}
         assert_equal {foobar} [lindex $e 5]
-    } {} {needs:debug}
+
+        # Restore min-io-threads-avoid-copy-reply value
+        r config set min-io-threads-avoid-copy-reply $copy_avoid
+    } {OK} {needs:debug}
 
     test {COMMANDLOG slow - Certain commands are omitted that contain sensitive information} {
         r config set commandlog-slow-execution-max-len 100

@@ -6,7 +6,7 @@
 /* General use-cases. */
 void clusterSlotStatReset(int slot);
 void clusterSlotStatResetAll(void);
-int clusterSlotStatsEnabled(void);
+int clusterSlotStatsEnabled(int slot);
 
 /* cpu-usec metric. */
 void clusterSlotStatsAddCpuDuration(client *c, ustime_t duration);

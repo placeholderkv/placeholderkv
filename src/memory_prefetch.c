@@ -9,6 +9,7 @@
 
 #include "memory_prefetch.h"
 #include "server.h"
+#include "io_threads.h"
 
 typedef enum {
     PREFETCH_ENTRY, /* Initial state, prefetch entries associated with the given key's hash */
@@ -119,9 +120,10 @@ static void prefetchEntry(KeyPrefetchInfo *info) {
     if (hashtableIncrementalFindStep(&info->hashtab_state) == 1) {
         /* Not done yet */
         moveToNextKey();
-        /* If reply offload enabled no need to prefetch value because main thread will not access it */
-    } else if (server.reply_offload_enabled) {
-         markKeyAsdone(info);
+    } else if (server.io_threads_num >= server.min_io_threads_value_prefetch_off) {
+        /* Copy avoidance should be more efficient without value prefetch
+         * starting certain number of I/O threads */
+        markKeyAsdone(info);
     } else {
         info->state = PREFETCH_VALUE;
     }
