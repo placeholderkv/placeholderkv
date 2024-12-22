@@ -3130,54 +3130,55 @@ void dualChannelSyncHandleRdbLoadCompletion(void) {
 #define PSYNC_NOT_SUPPORTED 4
 #define PSYNC_TRY_LATER 5
 #define PSYNC_FULLRESYNC_DUAL_CHANNEL 6
-int replicaTryPartialResynchronization(connection *conn, int read_reply) {
+int replicaSendPsyncCommand(connection *conn) {
     char *psync_replid;
     char psync_offset[32];
     sds reply;
 
-    /* Writing half */
-    if (!read_reply) {
-        /* Initially set primary_initial_offset to -1 to mark the current
-         * primary replid and offset as not valid. Later if we'll be able to do
-         * a FULL resync using the PSYNC command we'll set the offset at the
-         * right value, so that this information will be propagated to the
-         * client structure representing the primary into server.primary. */
-        server.primary_initial_offset = -1;
+    /* Initially set primary_initial_offset to -1 to mark the current
+    * primary replid and offset as not valid. Later if we'll be able to do
+    * a FULL resync using the PSYNC command we'll set the offset at the
+    * right value, so that this information will be propagated to the
+    * client structure representing the primary into server.primary. */
+    server.primary_initial_offset = -1;
 
-        if (server.repl_rdb_channel_state != REPL_DUAL_CHANNEL_STATE_NONE) {
-            /* While in dual channel replication, we should use our prepared repl id and offset. */
-            psync_replid = server.repl_provisional_primary.replid;
-            snprintf(psync_offset, sizeof(psync_offset), "%lld", server.repl_provisional_primary.reploff + 1);
-            dualChannelServerLog(LL_NOTICE,
-                                 "Trying a partial resynchronization using main channel (request %s:%s).",
-                                 psync_replid, psync_offset);
-        } else if (server.cached_primary) {
-            psync_replid = server.cached_primary->repl_data->replid;
-            snprintf(psync_offset, sizeof(psync_offset), "%lld", server.cached_primary->repl_data->reploff + 1);
-            serverLog(LL_NOTICE, "Trying a partial resynchronization (request %s:%s).", psync_replid, psync_offset);
-        } else {
-            serverLog(LL_NOTICE, "Partial resynchronization not possible (no cached primary)");
-            psync_replid = "?";
-            memcpy(psync_offset, "-1", 3);
-        }
-
-        /* Issue the PSYNC command, if this is a primary with a failover in
-         * progress then send the failover argument to the replica to cause it
-         * to become a primary */
-        if (server.failover_state == FAILOVER_IN_PROGRESS) {
-            reply = sendCommand(conn, "PSYNC", psync_replid, psync_offset, "FAILOVER", NULL);
-        } else {
-            reply = sendCommand(conn, "PSYNC", psync_replid, psync_offset, NULL);
-        }
-
-        if (reply != NULL) {
-            serverLog(LL_WARNING, "Unable to send PSYNC to primary: %s", reply);
-            sdsfree(reply);
-            connSetReadHandler(conn, NULL);
-            return PSYNC_WRITE_ERROR;
-        }
-        return PSYNC_WAIT_REPLY;
+    if (server.repl_rdb_channel_state != REPL_DUAL_CHANNEL_STATE_NONE) {
+        /* While in dual channel replication, we should use our prepared repl id and offset. */
+        psync_replid = server.repl_provisional_primary.replid;
+        snprintf(psync_offset, sizeof(psync_offset), "%lld", server.repl_provisional_primary.reploff + 1);
+        dualChannelServerLog(LL_NOTICE,
+                             "Trying a partial resynchronization using main channel (request %s:%s).",
+                             psync_replid, psync_offset);
+    } else if (server.cached_primary) {
+        psync_replid = server.cached_primary->repl_data->replid;
+        snprintf(psync_offset, sizeof(psync_offset), "%lld", server.cached_primary->repl_data->reploff + 1);
+        serverLog(LL_NOTICE, "Trying a partial resynchronization (request %s:%s).", psync_replid, psync_offset);
+    } else {
+        serverLog(LL_NOTICE, "Partial resynchronization not possible (no cached primary)");
+        psync_replid = "?";
+        memcpy(psync_offset, "-1", 3);
     }
+
+    /* Issue the PSYNC command, if this is a primary with a failover in
+        * progress then send the failover argument to the replica to cause it
+        * to become a primary */
+    if (server.failover_state == FAILOVER_IN_PROGRESS) {
+        reply = sendCommand(conn, "PSYNC", psync_replid, psync_offset, "FAILOVER", NULL);
+    } else {
+        reply = sendCommand(conn, "PSYNC", psync_replid, psync_offset, NULL);
+    }
+
+    if (reply != NULL) {
+        serverLog(LL_WARNING, "Unable to send PSYNC to primary: %s", reply);
+        sdsfree(reply);
+        connSetReadHandler(conn, NULL);
+        return PSYNC_WRITE_ERROR;
+    }
+    return PSYNC_WAIT_REPLY;
+}
+
+int replicaProcessPsyncReply(connection *conn) {
+    sds reply;
 
     /* Reading half */
     reply = receiveSynchronousResponse(conn);
@@ -3349,7 +3350,7 @@ int dualChannelReplMainConnRecvCapaReply(connection *conn, sds *err) {
 
 int dualChannelReplMainConnSendPsync(connection *conn, sds *err) {
     if (server.debug_pause_after_fork) debugPauseProcess();
-    if (replicaTryPartialResynchronization(conn, 0) == PSYNC_WRITE_ERROR) {
+    if (replicaSendPsyncCommand(conn) == PSYNC_WRITE_ERROR) {
         dualChannelServerLog(LL_WARNING, "Aborting dual channel sync. Write error.");
         *err = sdsnew(connGetLastError(conn));
         return C_ERR;
@@ -3358,7 +3359,7 @@ int dualChannelReplMainConnSendPsync(connection *conn, sds *err) {
 }
 
 int dualChannelReplMainConnRecvPsyncReply(connection *conn, sds *err) {
-    int psync_result = replicaTryPartialResynchronization(conn, 1);
+    int psync_result = replicaProcessPsyncReply(conn);
     if (psync_result == PSYNC_WAIT_REPLY) return C_OK; /* Try again later... */
 
     if (psync_result == PSYNC_CONTINUE) {
@@ -3698,12 +3699,12 @@ void syncWithPrimary(connection *conn) {
             server.repl_state = REPL_STATE_SEND_PSYNC;
             /* fall through */
         /* Try a partial resynchronization. If we don't have a cached primary
-        * replicaTryPartialResynchronization() will at least try to use PSYNC
+        * replicaSendPsyncCommand() will at least try to use PSYNC
         * to start a full resynchronization so that we get the primary replid
         * and the global offset, to try a partial resync at the next
         * reconnection attempt. */
-        case REPL_STATE_SEND_PSYNC: 
-            if (replicaTryPartialResynchronization(conn, 0) == PSYNC_WRITE_ERROR) {
+        case REPL_STATE_SEND_PSYNC:
+            if (replicaSendPsyncCommand(conn) == PSYNC_WRITE_ERROR) {
                 err = sdsnew("Write error sending the PSYNC command.");
                 abortFailover("Write error to failover target");
                 goto write_error;
@@ -3722,7 +3723,7 @@ void syncWithPrimary(connection *conn) {
             }
     }
         
-    psync_result = replicaTryPartialResynchronization(conn, 1);
+    psync_result = replicaProcessPsyncReply(conn);
     if (psync_result == PSYNC_WAIT_REPLY) return; /* Try again later... */
 
     /* Check the status of the planned failover. We expect PSYNC_CONTINUE,
