@@ -3525,7 +3525,7 @@ void syncWithPrimary(connection *conn) {
          * that will take care about this. */
         err = sendCommand(conn, "PING", NULL);
         if (err) goto write_error;
-        return;
+        goto ok;
     }
 
     /* Receive the PONG command. */
@@ -3626,7 +3626,7 @@ void syncWithPrimary(connection *conn) {
         if (err) goto write_error;
 
         server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;
-        return;
+        goto ok;
     }
 
     if (server.repl_state == REPL_STATE_RECEIVE_AUTH_REPLY && !server.primary_auth)
@@ -3640,10 +3640,8 @@ void syncWithPrimary(connection *conn) {
             serverLog(LL_WARNING, "Unable to AUTH to PRIMARY: %s", err);
             goto error;
         }
-        sdsfree(err);
-        err = NULL;
         server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
-        return;
+        goto ok;
     }
 
     /* Receive REPLCONF listening-port reply. */
@@ -3658,9 +3656,8 @@ void syncWithPrimary(connection *conn) {
                       "REPLCONF listening-port: %s",
                       err);
         }
-        sdsfree(err);
         server.repl_state = REPL_STATE_RECEIVE_IP_REPLY;
-        return;
+        goto ok;
     }
 
     if (server.repl_state == REPL_STATE_RECEIVE_IP_REPLY && !server.replica_announce_ip)
@@ -3678,9 +3675,8 @@ void syncWithPrimary(connection *conn) {
                       "REPLCONF ip-address: %s",
                       err);
         }
-        sdsfree(err);
         server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
-        return;
+        goto ok;
     }
 
     /* Receive CAPA reply. */
@@ -3695,10 +3691,8 @@ void syncWithPrimary(connection *conn) {
                       "REPLCONF capa: %s",
                       err);
         }
-        sdsfree(err);
-        err = NULL;
         server.repl_state = REPL_STATE_RECEIVE_VERSION_REPLY;
-        return;
+        goto ok;
     }
 
     /* Receive VERSION reply. */
@@ -3712,8 +3706,6 @@ void syncWithPrimary(connection *conn) {
                       "REPLCONF VERSION: %s",
                       err);
         }
-        sdsfree(err);
-        err = NULL;
         server.repl_state = REPL_STATE_SEND_PSYNC;
     }
 
@@ -3729,7 +3721,7 @@ void syncWithPrimary(connection *conn) {
             goto write_error;
         }
         server.repl_state = REPL_STATE_RECEIVE_PSYNC_REPLY;
-        return;
+        goto ok;
     }
 
     /* If reached this point, we should be in REPL_STATE_RECEIVE_PSYNC_REPLY. */
@@ -3771,7 +3763,7 @@ void syncWithPrimary(connection *conn) {
             serverCommunicateSystemd("STATUS=PRIMARY <-> REPLICA sync: Partial Resynchronization accepted. Ready to "
                                      "accept connections in read-write mode.\n");
         }
-        return;
+        goto ok;
     }
 
     /* Fall back to SYNC if needed. Otherwise psync_result == PSYNC_FULLRESYNC
@@ -3826,7 +3818,7 @@ void syncWithPrimary(connection *conn) {
             goto error;
         }
         server.repl_rdb_channel_state = REPL_DUAL_CHANNEL_SEND_HANDSHAKE;
-        return;
+        goto ok;
     }
     /* Setup the non blocking download of the bulk file. */
     if (connSetReadHandler(conn, readSyncBulkPayload) == C_ERR) {
@@ -3841,7 +3833,7 @@ void syncWithPrimary(connection *conn) {
     server.repl_transfer_read = 0;
     server.repl_transfer_last_fsync_off = 0;
     server.repl_transfer_lastio = server.unixtime;
-    return;
+    goto ok;
 
 no_response_error: /* Handle receiveSynchronousResponse() error when primary has no reply */
     serverLog(LL_WARNING, "Primary did not respond to command during SYNC handshake");
@@ -3865,6 +3857,10 @@ error:
 write_error: /* Handle sendCommand() errors. */
     serverLog(LL_WARNING, "Sending command to primary in replication handshake: %s", err);
     goto error;
+
+ok:
+    if (err) sdsfree(err);
+    return;
 }
 
 int connectWithPrimary(void) {
