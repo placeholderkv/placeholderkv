@@ -3512,233 +3512,218 @@ void syncWithPrimary(connection *conn) {
         serverLog(LL_WARNING, "Error condition on socket for SYNC: %s", connGetLastError(conn));
         goto error;
     }
-
-    /* Send a PING to check the primary is able to reply without errors. */
-    if (server.repl_state == REPL_STATE_CONNECTING) {
-        serverLog(LL_NOTICE, "Non blocking connect for SYNC fired the event.");
-        /* Delete the writable event so that the readable event remains
-         * registered and we can wait for the PONG reply. */
-        connSetReadHandler(conn, syncWithPrimary);
-        connSetWriteHandler(conn, NULL);
-        server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;
-        /* Send the PING, don't check for errors at all, we have the timeout
-         * that will take care about this. */
-        err = sendCommand(conn, "PING", NULL);
-        if (err) goto write_error;
-        goto ok;
-    }
-
-    /* Receive the PONG command. */
-    if (server.repl_state == REPL_STATE_RECEIVE_PING_REPLY) {
-        err = receiveSynchronousResponse(conn);
-
-        /* The primary did not reply */
-        if (err == NULL) goto no_response_error;
+    switch (server.repl_state) {
+        /* Send a PING to check the primary is able to reply without errors. */
+        case REPL_STATE_CONNECTING: 
+            serverLog(LL_NOTICE, "Non blocking connect for SYNC fired the event.");
+            /* Delete the writable event so that the readable event remains
+            * registered and we can wait for the PONG reply. */
+            connSetReadHandler(conn, syncWithPrimary);
+            connSetWriteHandler(conn, NULL);
+            server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;
+            /* Send the PING, don't check for errors at all, we have the timeout
+            * that will take care about this. */
+            err = sendCommand(conn, "PING", NULL);
+            if (err) goto write_error;
+            goto ok;
+        /* Receive the PONG command. */
+        case REPL_STATE_RECEIVE_PING_REPLY: 
+            err = receiveSynchronousResponse(conn);
+            
+            /* The primary did not reply */
+            if (err == NULL) goto no_response_error;
 
         /* We accept only two replies as valid, a positive +PONG reply
          * (we just check for "+") or an authentication error.
          * Note that older versions of Redis OSS replied with "operation not
          * permitted" instead of using a proper error code, so we test
          * both. */
-        if (err[0] != '+' && strncmp(err, "-NOAUTH", 7) != 0 && strncmp(err, "-NOPERM", 7) != 0 &&
-            strncmp(err, "-ERR operation not permitted", 28) != 0) {
-            serverLog(LL_WARNING, "Error reply to PING from primary: '%s'", err);
-            goto error;
-        } else {
-            serverLog(LL_NOTICE, "Primary replied to PING, replication can continue...");
-        }
-        sdsfree(err);
-        err = NULL;
-        server.repl_state = REPL_STATE_SEND_HANDSHAKE;
-    }
+            if (err[0] != '+' && strncmp(err, "-NOAUTH", 7) != 0 && strncmp(err, "-NOPERM", 7) != 0 &&
+                strncmp(err, "-ERR operation not permitted", 28) != 0) {
+                serverLog(LL_WARNING, "Error reply to PING from primary: '%s'", err);
+                goto error;
+            } else {
+                serverLog(LL_NOTICE, "Primary replied to PING, replication can continue...");
+            }
+            sdsfree(err);
+            err = NULL;
+            server.repl_state = REPL_STATE_SEND_HANDSHAKE;
+        case REPL_STATE_SEND_HANDSHAKE: 
+            /* AUTH with the primary if required. */
+            if (server.primary_auth) {
+                char *args[3] = {"AUTH", NULL, NULL};
+                size_t lens[3] = {4, 0, 0};
+                int argc = 1;
+                if (server.primary_user) {
+                    args[argc] = server.primary_user;
+                    lens[argc] = strlen(server.primary_user);
+                    argc++;
+                }
+                args[argc] = server.primary_auth;
+                lens[argc] = sdslen(server.primary_auth);
+                argc++;
+                err = sendCommandArgv(conn, argc, args, lens);
+                if (err) goto write_error;
+            }
 
-    if (server.repl_state == REPL_STATE_SEND_HANDSHAKE) {
-        /* AUTH with the primary if required. */
-        if (server.primary_auth) {
-            char *args[3] = {"AUTH", NULL, NULL};
-            size_t lens[3] = {4, 0, 0};
-            int argc = 1;
-            if (server.primary_user) {
-                args[argc] = server.primary_user;
-                lens[argc] = strlen(server.primary_user);
+            /* Set the replica port, so that primary's INFO command can list the
+            * replica listening port correctly. */
+            {
+                sds portstr = getReplicaPortString();
+                err = sendCommand(conn, "REPLCONF", "listening-port", portstr, NULL);
+                sdsfree(portstr);
+                if (err) goto write_error;
+            }
+
+            /* Set the replica ip, so that primary's INFO command can list the
+            * replica IP address port correctly in case of port forwarding or NAT.
+            * Skip REPLCONF ip-address if there is no replica-announce-ip option set. */
+            if (server.replica_announce_ip) {
+                err = sendCommand(conn, "REPLCONF", "ip-address", server.replica_announce_ip, NULL);
+                if (err) goto write_error;
+            }
+
+            /* Inform the primary of our (replica) capabilities.
+            *
+            * EOF: supports EOF-style RDB transfer for diskless replication.
+            * PSYNC2: supports PSYNC v2, so understands +CONTINUE <new repl ID>.
+            * skip-rdb-checksum: supports skipping RDB checksum during full sync.
+            *                    Inform the primary of this capa only during diskless sync
+            *                    using a connection that has integrity checks (such as TLS).
+            *                    In non-diskless sync, or non-integrity-checked connection, there is more
+            *                    concern for data corruprion so we keep this extra layer of detection.
+            * 
+            * The primary will ignore capabilities it does not understand. */
+            int send_skip_rdb_checksum_capa = replicationSupportSkipRDBChecksum(conn, useDisklessLoad(), 1); // we can ignore primary's conditions when sending capa (is_primary_stream_verified=1)
+            char *argv[9] = {"REPLCONF", "capa", "eof", "capa", "psync2", NULL, NULL, NULL, NULL};
+            size_t lens[9] = {8, 4, 3, 4, 6, 0, 0, 0, 0};
+            int argc = 5;
+            if (send_skip_rdb_checksum_capa) {
+                argv[argc] = "capa";
+                lens[argc] = strlen("capa");
+                argc++;
+                argv[argc] = REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR;
+                lens[argc] = strlen(REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR);
                 argc++;
             }
-            args[argc] = server.primary_auth;
-            lens[argc] = sdslen(server.primary_auth);
-            argc++;
-            err = sendCommandArgv(conn, argc, args, lens);
+            if (server.dual_channel_replication) {
+                argv[argc] = "capa";
+                lens[argc] = strlen("capa");
+                argc++;
+                argv[argc] = "dual-channel";
+                lens[argc] = strlen("dual-channel");
+                argc++;
+            }
+            err = sendCommandArgv(conn, argc, argv, lens);
             if (err) goto write_error;
-        }
 
-        /* Set the replica port, so that primary's INFO command can list the
-         * replica listening port correctly. */
-        {
-            sds portstr = getReplicaPortString();
-            err = sendCommand(conn, "REPLCONF", "listening-port", portstr, NULL);
-            sdsfree(portstr);
+            /* Inform the primary of our (replica) version. */
+            err = sendCommand(conn, "REPLCONF", "version", VALKEY_VERSION, NULL);
             if (err) goto write_error;
-        }
 
-        /* Set the replica ip, so that primary's INFO command can list the
-         * replica IP address port correctly in case of port forwarding or NAT.
-         * Skip REPLCONF ip-address if there is no replica-announce-ip option set. */
-        if (server.replica_announce_ip) {
-            err = sendCommand(conn, "REPLCONF", "ip-address", server.replica_announce_ip, NULL);
-            if (err) goto write_error;
-        }
-
-        /* Inform the primary of our (replica) capabilities.
-         *
-         * EOF: supports EOF-style RDB transfer for diskless replication.
-         * PSYNC2: supports PSYNC v2, so understands +CONTINUE <new repl ID>.
-         * skip-rdb-checksum: supports skipping RDB checksum during full sync.
-         *                    Inform the primary of this capa only during diskless sync
-         *                    using a connection that has integrity checks (such as TLS).
-         *                    In non-diskless sync, or non-integrity-checked connection, there is more
-         *                    concern for data corruprion so we keep this extra layer of detection.
-         *
-         * The primary will ignore capabilities it does not understand. */
-        int send_skip_rdb_checksum_capa = replicationSupportSkipRDBChecksum(conn, useDisklessLoad(), 1); // we can ignore primary's conditions when sending capa (is_primary_stream_verified=1)
-        char *argv[9] = {"REPLCONF", "capa", "eof", "capa", "psync2", NULL, NULL, NULL, NULL};
-        size_t lens[9] = {8, 4, 3, 4, 6, 0, 0, 0, 0};
-        int argc = 5;
-        if (send_skip_rdb_checksum_capa) {
-            argv[argc] = "capa";
-            lens[argc] = strlen("capa");
-            argc++;
-            argv[argc] = REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR;
-            lens[argc] = strlen(REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR);
-            argc++;
-        }
-        if (server.dual_channel_replication) {
-            argv[argc] = "capa";
-            lens[argc] = strlen("capa");
-            argc++;
-            argv[argc] = "dual-channel";
-            lens[argc] = strlen("dual-channel");
-            argc++;
-        }
-        err = sendCommandArgv(conn, argc, argv, lens);
-        if (err) goto write_error;
-
-        /* Inform the primary of our (replica) version. */
-        err = sendCommand(conn, "REPLCONF", "version", VALKEY_VERSION, NULL);
-        if (err) goto write_error;
-
-        server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;
-        goto ok;
+            server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;
+            goto ok;
+        /* Receive AUTH reply. */
+        case REPL_STATE_RECEIVE_AUTH_REPLY: 
+            if (server.primary_auth) {
+                err = receiveSynchronousResponse(conn);
+                if (err == NULL) goto no_response_error;
+                if (err[0] == '-') {
+                    serverLog(LL_WARNING, "Unable to AUTH to PRIMARY: %s", err);
+                    goto error;
+                }
+                server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
+                goto ok;
+            }
+            server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
+        /* Receive REPLCONF listening-port reply. */
+        case REPL_STATE_RECEIVE_PORT_REPLY: 
+            err = receiveSynchronousResponse(conn);
+            if (err == NULL) goto no_response_error;
+            /* Ignore the error if any, not all the Redis OSS versions support
+            * REPLCONF listening-port. */
+            if (err[0] == '-') {
+                serverLog(LL_NOTICE,
+                          "(Non critical) Primary does not understand "
+                          "REPLCONF listening-port: %s",
+                          err);
+            }
+            server.repl_state = REPL_STATE_RECEIVE_IP_REPLY;
+            goto ok;
+        /* Receive REPLCONF ip-address reply. */
+        case REPL_STATE_RECEIVE_IP_REPLY: 
+            if (server.replica_announce_ip) {
+                err = receiveSynchronousResponse(conn);
+                if (err == NULL) goto no_response_error;
+                /* Ignore the error if any, not all the Redis OSS versions support
+                * REPLCONF ip-address. */
+                if (err[0] == '-') {
+                    serverLog(LL_NOTICE,
+                            "(Non critical) Primary does not understand "
+                            "REPLCONF ip-address: %s",
+                            err);
+                }
+                server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
+                goto ok;
+            }
+            server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
+        /* Receive CAPA reply. */
+        case REPL_STATE_RECEIVE_CAPA_REPLY: 
+            err = receiveSynchronousResponse(conn);
+            if (err == NULL) goto no_response_error;
+            /* Ignore the error if any, not all the Redis OSS versions support
+            * REPLCONF capa. */
+            if (err[0] == '-') {
+                serverLog(LL_NOTICE,
+                          "(Non critical) Primary does not understand "
+                          "REPLCONF capa: %s",
+                          err);
+            }
+            server.repl_state = REPL_STATE_RECEIVE_VERSION_REPLY;
+            goto ok;
+        /* Receive VERSION reply. */
+        case REPL_STATE_RECEIVE_VERSION_REPLY: 
+            err = receiveSynchronousResponse(conn);
+            if (err == NULL) goto no_response_error;
+            /* Ignore the error if any. Valkey >= 8 supports REPLCONF VERSION. */
+            if (err[0] == '-') {
+                serverLog(LL_NOTICE,
+                          "(Non critical) Primary does not understand "
+                          "REPLCONF VERSION: %s",
+                          err);
+            }
+            server.repl_state = REPL_STATE_SEND_PSYNC;
+        /* Try a partial resynchronization. If we don't have a cached primary
+        * replicaTryPartialResynchronization() will at least try to use PSYNC
+        * to start a full resynchronization so that we get the primary replid
+        * and the global offset, to try a partial resync at the next
+        * reconnection attempt. */
+        case REPL_STATE_SEND_PSYNC: 
+            if (replicaTryPartialResynchronization(conn, 0) == PSYNC_WRITE_ERROR) {
+                err = sdsnew("Write error sending the PSYNC command.");
+                abortFailover("Write error to failover target");
+                goto write_error;
+            }
+            server.repl_state = REPL_STATE_RECEIVE_PSYNC_REPLY;
+            goto ok;
+        
+        /* If reached this point, we should be in REPL_STATE_RECEIVE_PSYNC_REPLY. */
+        default: 
+            if (server.repl_state != REPL_STATE_RECEIVE_PSYNC_REPLY) {
+                serverLog(LL_WARNING,
+                    "syncWithPrimary(): state machine error, "
+                    "state should be RECEIVE_PSYNC but is %d",
+                    server.repl_state);
+                goto error;
+            }
     }
-
-    if (server.repl_state == REPL_STATE_RECEIVE_AUTH_REPLY && !server.primary_auth)
-        server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
-
-    /* Receive AUTH reply. */
-    if (server.repl_state == REPL_STATE_RECEIVE_AUTH_REPLY) {
-        err = receiveSynchronousResponse(conn);
-        if (err == NULL) goto no_response_error;
-        if (err[0] == '-') {
-            serverLog(LL_WARNING, "Unable to AUTH to PRIMARY: %s", err);
-            goto error;
-        }
-        server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
-        goto ok;
-    }
-
-    /* Receive REPLCONF listening-port reply. */
-    if (server.repl_state == REPL_STATE_RECEIVE_PORT_REPLY) {
-        err = receiveSynchronousResponse(conn);
-        if (err == NULL) goto no_response_error;
-        /* Ignore the error if any, not all the Redis OSS versions support
-         * REPLCONF listening-port. */
-        if (err[0] == '-') {
-            serverLog(LL_NOTICE,
-                      "(Non critical) Primary does not understand "
-                      "REPLCONF listening-port: %s",
-                      err);
-        }
-        server.repl_state = REPL_STATE_RECEIVE_IP_REPLY;
-        goto ok;
-    }
-
-    if (server.repl_state == REPL_STATE_RECEIVE_IP_REPLY && !server.replica_announce_ip)
-        server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
-
-    /* Receive REPLCONF ip-address reply. */
-    if (server.repl_state == REPL_STATE_RECEIVE_IP_REPLY) {
-        err = receiveSynchronousResponse(conn);
-        if (err == NULL) goto no_response_error;
-        /* Ignore the error if any, not all the Redis OSS versions support
-         * REPLCONF ip-address. */
-        if (err[0] == '-') {
-            serverLog(LL_NOTICE,
-                      "(Non critical) Primary does not understand "
-                      "REPLCONF ip-address: %s",
-                      err);
-        }
-        server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
-        goto ok;
-    }
-
-    /* Receive CAPA reply. */
-    if (server.repl_state == REPL_STATE_RECEIVE_CAPA_REPLY) {
-        err = receiveSynchronousResponse(conn);
-        if (err == NULL) goto no_response_error;
-        /* Ignore the error if any, not all the Redis OSS versions support
-         * REPLCONF capa. */
-        if (err[0] == '-') {
-            serverLog(LL_NOTICE,
-                      "(Non critical) Primary does not understand "
-                      "REPLCONF capa: %s",
-                      err);
-        }
-        server.repl_state = REPL_STATE_RECEIVE_VERSION_REPLY;
-        goto ok;
-    }
-
-    /* Receive VERSION reply. */
-    if (server.repl_state == REPL_STATE_RECEIVE_VERSION_REPLY) {
-        err = receiveSynchronousResponse(conn);
-        if (err == NULL) goto no_response_error;
-        /* Ignore the error if any. Valkey >= 8 supports REPLCONF VERSION. */
-        if (err[0] == '-') {
-            serverLog(LL_NOTICE,
-                      "(Non critical) Primary does not understand "
-                      "REPLCONF VERSION: %s",
-                      err);
-        }
-        server.repl_state = REPL_STATE_SEND_PSYNC;
-    }
-
-    /* Try a partial resynchronization. If we don't have a cached primary
-     * replicaTryPartialResynchronization() will at least try to use PSYNC
-     * to start a full resynchronization so that we get the primary replid
-     * and the global offset, to try a partial resync at the next
-     * reconnection attempt. */
-    if (server.repl_state == REPL_STATE_SEND_PSYNC) {
-        if (replicaTryPartialResynchronization(conn, 0) == PSYNC_WRITE_ERROR) {
-            err = sdsnew("Write error sending the PSYNC command.");
-            abortFailover("Write error to failover target");
-            goto write_error;
-        }
-        server.repl_state = REPL_STATE_RECEIVE_PSYNC_REPLY;
-        goto ok;
-    }
-
-    /* If reached this point, we should be in REPL_STATE_RECEIVE_PSYNC_REPLY. */
-    if (server.repl_state != REPL_STATE_RECEIVE_PSYNC_REPLY) {
-        serverLog(LL_WARNING,
-                  "syncWithPrimary(): state machine error, "
-                  "state should be RECEIVE_PSYNC but is %d",
-                  server.repl_state);
-        goto error;
-    }
-
+        
     psync_result = replicaTryPartialResynchronization(conn, 1);
     if (psync_result == PSYNC_WAIT_REPLY) return; /* Try again later... */
 
     /* Check the status of the planned failover. We expect PSYNC_CONTINUE,
-     * but there is nothing technically wrong with a full resync which
-     * could happen in edge cases. */
+    * but there is nothing technically wrong with a full resync which
+    * could happen in edge cases. */
     if (server.failover_state == FAILOVER_IN_PROGRESS) {
         if (psync_result == PSYNC_CONTINUE || psync_result == PSYNC_FULLRESYNC) {
             clearFailoverState();
@@ -3749,26 +3734,26 @@ void syncWithPrimary(connection *conn) {
     }
 
     /* If the primary is in an transient error, we should try to PSYNC
-     * from scratch later, so go to the error path. This happens when
-     * the server is loading the dataset or is not connected with its
-     * primary and so forth. */
+    * from scratch later, so go to the error path. This happens when
+    * the server is loading the dataset or is not connected with its
+    * primary and so forth. */
     if (psync_result == PSYNC_TRY_LATER) goto error;
-
+    
     /* Note: if PSYNC does not return WAIT_REPLY, it will take care of
-     * uninstalling the read handler from the file descriptor. */
+    * uninstalling the read handler from the file descriptor. */
 
     if (psync_result == PSYNC_CONTINUE) {
         serverLog(LL_NOTICE, "PRIMARY <-> REPLICA sync: Primary accepted a Partial Resynchronization.");
         if (server.supervised_mode == SUPERVISED_SYSTEMD) {
             serverCommunicateSystemd("STATUS=PRIMARY <-> REPLICA sync: Partial Resynchronization accepted. Ready to "
-                                     "accept connections in read-write mode.\n");
+                                        "accept connections in read-write mode.\n");
         }
         goto ok;
     }
 
     /* Fall back to SYNC if needed. Otherwise psync_result == PSYNC_FULLRESYNC
-     * and the server.primary_replid and primary_initial_offset are
-     * already populated. */
+    * and the server.primary_replid and primary_initial_offset are
+    * already populated. */
     if (psync_result == PSYNC_NOT_SUPPORTED) {
         serverLog(LL_NOTICE, "Retrying with SYNC...");
         if (connSyncWrite(conn, "SYNC\r\n", 6, server.repl_syncio_timeout * 1000) == -1) {
@@ -3785,14 +3770,14 @@ void syncWithPrimary(connection *conn) {
             dfd = open(tmpfile, O_CREAT | O_WRONLY | O_EXCL, 0644);
             if (dfd != -1) break;
             /* We save the errno of open to prevent some systems from modifying it after
-             * the sleep call. For example, sleep in Mac will change errno to ETIMEDOUT. */
+            * the sleep call. For example, sleep in Mac will change errno to ETIMEDOUT. */
             int saved_errno = errno;
             sleep(1);
             errno = saved_errno;
         }
         if (dfd == -1) {
             serverLog(LL_WARNING, "Opening the temp file needed for PRIMARY <-> REPLICA synchronization: %s",
-                      strerror(errno));
+                        strerror(errno));
             goto error;
         }
         server.repl_transfer_tmpfile = zstrdup(tmpfile);
@@ -3800,7 +3785,7 @@ void syncWithPrimary(connection *conn) {
     }
 
     /* Using dual-channel-replication, the primary responded +DUALCHANNELSYNC. We need to
-     * initialize the RDB channel. */
+    * initialize the RDB channel. */
     if (psync_result == PSYNC_FULLRESYNC_DUAL_CHANNEL) {
         /* Create RDB connection */
         server.repl_rdb_transfer_s = connCreate(connTypeOfReplication());
@@ -3814,7 +3799,7 @@ void syncWithPrimary(connection *conn) {
         if (connSetReadHandler(conn, NULL) == C_ERR) {
             char conninfo[CONN_INFO_LEN];
             dualChannelServerLog(LL_WARNING, "Can't clear main connection handler: %s (%s)", strerror(errno),
-                                 connGetInfo(conn, conninfo, sizeof(conninfo)));
+                                    connGetInfo(conn, conninfo, sizeof(conninfo)));
             goto error;
         }
         server.repl_rdb_channel_state = REPL_DUAL_CHANNEL_SEND_HANDSHAKE;
@@ -3824,7 +3809,7 @@ void syncWithPrimary(connection *conn) {
     if (connSetReadHandler(conn, readSyncBulkPayload) == C_ERR) {
         char conninfo[CONN_INFO_LEN];
         serverLog(LL_WARNING, "Can't create readable event for SYNC: %s (%s)", strerror(errno),
-                  connGetInfo(conn, conninfo, sizeof(conninfo)));
+                    connGetInfo(conn, conninfo, sizeof(conninfo)));
         goto error;
     }
 
