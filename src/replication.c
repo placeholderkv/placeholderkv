@@ -3076,54 +3076,19 @@ void dualChannelSyncHandleRdbLoadCompletion(void) {
     return;
 }
 
-/* Try a partial resynchronization with the primary if we are about to reconnect.
- * If there is no cached primary structure, at least try to issue a
- * "PSYNC ? -1" command in order to trigger a full resync using the PSYNC
- * command in order to obtain the primary replid and the primary replication
- * global offset.
+/**
+ * Handles the initial step of the partial resynchronization process by
+ * preparing and sending a PSYNC command to the primary server.
+ * This function determines the appropriate replication ID (replid)
+ * and replication offset based on the server's state. If successful,
+ * the function signals readiness for the reply processing phase, which is
+ * processed in replicaProcessPsyncReply().
  *
- * This function is designed to be called from syncWithPrimary(), so the
- * following assumptions are made:
- *
- * 1) We pass the function an already connected socket "fd".
- * 2) This function does not close the file descriptor "fd". However in case
- *    of successful partial resynchronization, the function will reuse
- *    'fd' as file descriptor of the server.primary client structure.
- *
- * The function is split in two halves: if read_reply is 0, the function
- * writes the PSYNC command on the socket, and a new function call is
- * needed, with read_reply set to 1, in order to read the reply of the
- * command. This is useful in order to support non blocking operations, so
- * that we write, return into the event loop, and read when there are data.
- *
- * When read_reply is 0 the function returns PSYNC_WRITE_ERR if there
- * was a write error, or PSYNC_WAIT_REPLY to signal we need another call
- * with read_reply set to 1. However even when read_reply is set to 1
- * the function may return PSYNC_WAIT_REPLY again to signal there were
- * insufficient data to read to complete its work. We should re-enter
- * into the event loop and wait in such a case.
- *
- * The function returns:
- *
- * PSYNC_CONTINUE: If the PSYNC command succeeded and we can continue.
- * PSYNC_FULLRESYNC: If PSYNC is supported but a full resync is needed.
- *                   In this case the primary replid and global replication
- *                   offset is saved.
- * PSYNC_NOT_SUPPORTED: If the server does not understand PSYNC at all and
- *                      the caller should fall back to SYNC.
- * PSYNC_WRITE_ERROR: There was an error writing the command to the socket.
- * PSYNC_WAIT_REPLY: Call again the function with read_reply set to 1.
- * PSYNC_TRY_LATER: Primary is currently in a transient error condition.
- *
- * Notable side effects:
- *
- * 1) As a side effect of the function call the function removes the readable
- *    event handler from "fd", unless the return value is PSYNC_WAIT_REPLY.
- * 2) server.primary_initial_offset is set to the right value according
- *    to the primary reply. This will be used to populate the 'server.primary'
- *    structure replication offset.
+ * Return Values:
+ * - PSYNC_WRITE_ERROR: There was an error writing the command to the socket.
+ * - PSYNC_WAIT_REPLY: PSYNC was successfully sent, awaiting a reply. The next
+ *   step is to call replicaProcessPsyncReply().
  */
-
 #define PSYNC_WRITE_ERROR 0
 #define PSYNC_WAIT_REPLY 1
 #define PSYNC_CONTINUE 2
@@ -3178,6 +3143,28 @@ int replicaSendPsyncCommand(connection *conn) {
     return PSYNC_WAIT_REPLY;
 }
 
+
+/**
+ * Processes the reply from the primary server following a PSYNC command that
+ * was sent with replicaSendPsyncCommand().
+ * This function interprets the reply to determine if partial resynchronization
+ * can proceed or if a full synchronization is required.
+ *
+ * Return Values:
+ * - PSYNC_TRY_LATER: Primary is currently in a transient error condition.
+ * - PSYNC_FULLRESYNC: If PSYNC is supported but a full resync is needed.
+ *                     In this case the primary replid and global replication
+ *                     offset is saved.
+ * - PSYNC_CONTINUE:  If the PSYNC command succeeded and we can continue
+ * - PSYNC_WAIT_REPLY: Still awaiting a reply, call this function again.
+ * - PSYNC_NOT_SUPPORTED: If the server does not understand PSYNC at all and
+ *                        the caller should fall back to SYNC.
+ * - PSYNC_FULLRESYNC_DUAL_CHANNEL: If partial synchronization is not possible
+ *                      but the primary supports full synchronization using
+ *                      a dedicated RDB channel. In this case, the RDB channel
+ *                      is initialized, and full synchronization will continue
+ *                      via the dual-channel approach.
+ */
 int replicaProcessPsyncReply(connection *conn) {
     sds reply;
 
