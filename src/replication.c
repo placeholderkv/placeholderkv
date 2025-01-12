@@ -3076,8 +3076,7 @@ void dualChannelSyncHandleRdbLoadCompletion(void) {
     return;
 }
 
-/**
- * Handles the initial step of the partial resynchronization process by
+/* Handles the initial step of the partial resynchronization process by
  * preparing and sending a PSYNC command to the primary server.
  * This function determines the appropriate replication ID (replid)
  * and replication offset based on the server's state. If successful,
@@ -3087,8 +3086,7 @@ void dualChannelSyncHandleRdbLoadCompletion(void) {
  * Return Values:
  * - PSYNC_WRITE_ERROR: There was an error writing the command to the socket.
  * - PSYNC_WAIT_REPLY: PSYNC was successfully sent, awaiting a reply. The next
- *   step is to call replicaProcessPsyncReply().
- */
+ *   step is to call replicaProcessPsyncReply(). */
 #define PSYNC_WRITE_ERROR 0
 #define PSYNC_WAIT_REPLY 1
 #define PSYNC_CONTINUE 2
@@ -3143,9 +3141,7 @@ int replicaSendPsyncCommand(connection *conn) {
     return PSYNC_WAIT_REPLY;
 }
 
-
-/**
- * Processes the reply from the primary server following a PSYNC command that
+/* Processes the reply from the primary server following a PSYNC command that
  * was sent with replicaSendPsyncCommand().
  * This function interprets the reply to determine if partial resynchronization
  * can proceed or if a full synchronization is required.
@@ -3163,8 +3159,7 @@ int replicaSendPsyncCommand(connection *conn) {
  *                      but the primary supports full synchronization using
  *                      a dedicated RDB channel. In this case, the RDB channel
  *                      is initialized, and full synchronization will continue
- *                      via the dual-channel approach.
- */
+ *                      via the dual-channel approach. */
 int replicaProcessPsyncReply(connection *conn) {
     sds reply;
 
