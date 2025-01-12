@@ -3786,10 +3786,10 @@ void syncWithPrimary(connection *conn) {
         server.repl_state = REPL_STATE_SEND_PSYNC;
         /* fall through */
     /* Try a partial resynchronization. If we don't have a cached primary
-        * replicaSendPsyncCommand() will at least try to use PSYNC
-        * to start a full resynchronization so that we get the primary replid
-        * and the global offset, to try a partial resync at the next
-        * reconnection attempt. */
+     * replicaSendPsyncCommand() will at least try to use PSYNC
+     * to start a full resynchronization so that we get the primary replid
+     * and the global offset, to try a partial resync at the next
+     * reconnection attempt. */
     case REPL_STATE_SEND_PSYNC:
         if (syncWithPrimaryHandleSendPsyncState(conn, &err) == C_ERR) {
             syncWithPrimaryHandleWriteError(conn, &err);
