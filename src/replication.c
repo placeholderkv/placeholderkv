@@ -3589,6 +3589,32 @@ int syncWithPrimaryHandleSendPsyncState(connection *conn, sds *err) {
     return C_OK;
 }
 
+void syncWithPrimaryHandleError(connection *conn, sds *err) {
+    connClose(conn);
+    server.repl_transfer_s = NULL;
+    if (server.repl_rdb_transfer_s) {
+        connClose(server.repl_rdb_transfer_s);
+        server.repl_rdb_transfer_s = NULL;
+    }
+    if (server.repl_transfer_fd != -1) close(server.repl_transfer_fd);
+    if (server.repl_transfer_tmpfile) zfree(server.repl_transfer_tmpfile);
+    server.repl_transfer_tmpfile = NULL;
+    server.repl_transfer_fd = -1;
+    server.repl_state = REPL_STATE_CONNECT;
+    if (*err) sdsfree(*err);
+}
+
+void syncWithPrimaryHandleWriteError(connection *conn, sds *err) {
+    serverLog(LL_WARNING, "Sending command to primary in replication handshake: %s", *err);
+    syncWithPrimaryHandleError(conn, err);
+}
+
+void syncWithPrimaryHandleNoResponseError(connection *conn, sds *err) {
+    serverLog(LL_WARNING, "Primary did not respond to command during SYNC handshake");
+    syncWithPrimaryHandleError(conn, err);
+}
+
+
 /*
  * Dual channel for full sync
  *
@@ -3669,7 +3695,7 @@ int syncWithPrimaryHandleSendPsyncState(connection *conn, sds *err) {
  * establish a connection with the primary. */
 void syncWithPrimary(connection *conn) {
     char tmpfile[256], *err = NULL;
-    int psync_result, ret;
+    int psync_result;
 
     /* If this event fired after the user turned the instance into a primary
      * with REPLICAOF NO ONE we must just return ASAP. */
@@ -3682,76 +3708,95 @@ void syncWithPrimary(connection *conn) {
      * may find that the socket is in error state. */
     if (connGetState(conn) != CONN_STATE_CONNECTED) {
         serverLog(LL_WARNING, "Error condition on socket for SYNC: %s", connGetLastError(conn));
-        goto error;
+        syncWithPrimaryHandleError(conn, &err);
+        return;
     }
     switch (server.repl_state) {
     /* Send a PING to check the primary is able to reply without errors. */
     case REPL_STATE_CONNECTING:
-        ret = syncWithPrimaryHandleConnectingState(conn, &err);
-        if (ret == C_ERR) goto write_error;
+        if (syncWithPrimaryHandleConnectingState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleWriteError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;
-        goto ok;
+        return;
     /* Receive the PONG command. */
     case REPL_STATE_RECEIVE_PING_REPLY:
-        ret = syncWithPrimaryHandleReceivePingReplyState(conn, &err);
-        if (ret == C_ERR) {
-            if (err == NULL) goto no_response_error;
-            goto error;
+        if (syncWithPrimaryHandleReceivePingReplyState(conn, &err) == C_ERR) {
+            if (err == NULL)
+                syncWithPrimaryHandleNoResponseError(conn, &err);
+            else
+                syncWithPrimaryHandleError(conn, &err);
+            return;
         }
         if (err) sdsfree(err);
         err = NULL;
         server.repl_state = REPL_STATE_SEND_HANDSHAKE;
         /* fall through */
     case REPL_STATE_SEND_HANDSHAKE:
-        ret = syncWithPrimaryHandleSendHandshakeState(conn, &err);
-        if (ret == C_ERR) goto write_error;
+        if (syncWithPrimaryHandleSendHandshakeState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleWriteError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;
-        goto ok;
+        return;
     /* Receive AUTH reply. */
     case REPL_STATE_RECEIVE_AUTH_REPLY:
-        ret = syncWithPrimaryHandleReceiveAuthReplyState(conn, &err);
-        if (ret == C_ERR) {
-            if (err == NULL) goto no_response_error;
-            goto error;
+        if (syncWithPrimaryHandleReceiveAuthReplyState(conn, &err) == C_ERR) {
+            if (err == NULL)
+                syncWithPrimaryHandleNoResponseError(conn, &err);
+            else
+                syncWithPrimaryHandleError(conn, &err);
+            return;
         }
         server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
-        if (server.primary_auth) goto ok;
+        if (server.primary_auth) return;
         /* fall through */
     /* Receive REPLCONF listening-port reply. */
     case REPL_STATE_RECEIVE_PORT_REPLY:
-        ret = syncWithPrimaryHandleReceivePortReplyState(conn, &err);
-        if (ret == C_ERR) goto no_response_error;
+        if (syncWithPrimaryHandleReceivePortReplyState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleNoResponseError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_IP_REPLY;
-        goto ok;
+        return;
     /* Receive REPLCONF ip-address reply. */
     case REPL_STATE_RECEIVE_IP_REPLY:
-        ret = syncWithPrimaryHandleReceiveIPReplyState(conn, &err);
-        if (ret == C_ERR) goto no_response_error;
+        if (syncWithPrimaryHandleReceiveIPReplyState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleNoResponseError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
-        if (server.replica_announce_ip) goto ok;
+        if (server.replica_announce_ip) return;
         /* fall through */
     /* Receive CAPA reply. */
     case REPL_STATE_RECEIVE_CAPA_REPLY:
-        ret = syncWithPrimaryHandleReceiveCapaReplyState(conn, &err);
-        if (ret == C_ERR) goto no_response_error;
+        if (syncWithPrimaryHandleReceiveCapaReplyState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleNoResponseError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_VERSION_REPLY;
-        goto ok;
+        return;
     /* Receive VERSION reply. */
     case REPL_STATE_RECEIVE_VERSION_REPLY:
-        ret = syncWithPrimaryHandleReceiveVersionReplyState(conn, &err);
-        if (ret == C_ERR) goto no_response_error;
+        if (syncWithPrimaryHandleReceiveVersionReplyState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleNoResponseError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_SEND_PSYNC;
         /* fall through */
     /* Try a partial resynchronization. If we don't have a cached primary
-     * replicaSendPsyncCommand() will at least try to use PSYNC
-     * to start a full resynchronization so that we get the primary replid
-     * and the global offset, to try a partial resync at the next
-     * reconnection attempt. */
+        * replicaSendPsyncCommand() will at least try to use PSYNC
+        * to start a full resynchronization so that we get the primary replid
+        * and the global offset, to try a partial resync at the next
+        * reconnection attempt. */
     case REPL_STATE_SEND_PSYNC:
-        ret = syncWithPrimaryHandleSendPsyncState(conn, &err);
-        if (ret == C_ERR) goto write_error;
+        if (syncWithPrimaryHandleSendPsyncState(conn, &err) == C_ERR) {
+            syncWithPrimaryHandleWriteError(conn, &err);
+            return;
+        }
         server.repl_state = REPL_STATE_RECEIVE_PSYNC_REPLY;
-        goto ok;
+        return;
     /* If reached this point, we should be in REPL_STATE_RECEIVE_PSYNC_REPLY. */
     default:
         if (server.repl_state != REPL_STATE_RECEIVE_PSYNC_REPLY) {
@@ -3759,7 +3804,8 @@ void syncWithPrimary(connection *conn) {
                       "syncWithPrimary(): state machine error, "
                       "state should be RECEIVE_PSYNC but is %d",
                       server.repl_state);
-            goto error;
+            syncWithPrimaryHandleError(conn, &err);
+            return;
         }
     }
 
@@ -3782,7 +3828,10 @@ void syncWithPrimary(connection *conn) {
      * from scratch later, so go to the error path. This happens when
      * the server is loading the dataset or is not connected with its
      * primary and so forth. */
-    if (psync_result == PSYNC_TRY_LATER) goto error;
+    if (psync_result == PSYNC_TRY_LATER) {
+        syncWithPrimaryHandleError(conn, &err);
+        return;
+    }
 
     /* Note: if PSYNC does not return WAIT_REPLY, it will take care of
      * uninstalling the read handler from the file descriptor. */
@@ -3793,7 +3842,7 @@ void syncWithPrimary(connection *conn) {
             serverCommunicateSystemd("STATUS=PRIMARY <-> REPLICA sync: Partial Resynchronization accepted. Ready to "
                                      "accept connections in read-write mode.\n");
         }
-        goto ok;
+        return;
     }
 
     /* Fall back to SYNC if needed. Otherwise psync_result == PSYNC_FULLRESYNC
@@ -3803,7 +3852,8 @@ void syncWithPrimary(connection *conn) {
         serverLog(LL_NOTICE, "Retrying with SYNC...");
         if (connSyncWrite(conn, "SYNC\r\n", 6, server.repl_syncio_timeout * 1000) == -1) {
             serverLog(LL_WARNING, "I/O error writing to PRIMARY: %s", connGetLastError(conn));
-            goto error;
+            syncWithPrimaryHandleError(conn, &err);
+            return;
         }
     }
 
@@ -3823,7 +3873,8 @@ void syncWithPrimary(connection *conn) {
         if (dfd == -1) {
             serverLog(LL_WARNING, "Opening the temp file needed for PRIMARY <-> REPLICA synchronization: %s",
                       strerror(errno));
-            goto error;
+            syncWithPrimaryHandleError(conn, &err);
+            return;
         }
         server.repl_transfer_tmpfile = zstrdup(tmpfile);
         server.repl_transfer_fd = dfd;
@@ -3839,23 +3890,26 @@ void syncWithPrimary(connection *conn) {
             serverLog(LL_WARNING, "Unable to connect to Primary: %s", connGetLastError(server.repl_transfer_s));
             connClose(server.repl_rdb_transfer_s);
             server.repl_rdb_transfer_s = NULL;
-            goto error;
+            syncWithPrimaryHandleError(conn, &err);
+            return;
         }
         if (connSetReadHandler(conn, NULL) == C_ERR) {
             char conninfo[CONN_INFO_LEN];
             dualChannelServerLog(LL_WARNING, "Can't clear main connection handler: %s (%s)", strerror(errno),
                                  connGetInfo(conn, conninfo, sizeof(conninfo)));
-            goto error;
+            syncWithPrimaryHandleError(conn, &err);
+            return;
         }
         server.repl_rdb_channel_state = REPL_DUAL_CHANNEL_SEND_HANDSHAKE;
-        goto ok;
+        return;
     }
     /* Setup the non blocking download of the bulk file. */
     if (connSetReadHandler(conn, readSyncBulkPayload) == C_ERR) {
         char conninfo[CONN_INFO_LEN];
         serverLog(LL_WARNING, "Can't create readable event for SYNC: %s (%s)", strerror(errno),
                   connGetInfo(conn, conninfo, sizeof(conninfo)));
-        goto error;
+        syncWithPrimaryHandleError(conn, &err);
+        return;
     }
 
     server.repl_state = REPL_STATE_TRANSFER;
@@ -3863,34 +3917,6 @@ void syncWithPrimary(connection *conn) {
     server.repl_transfer_read = 0;
     server.repl_transfer_last_fsync_off = 0;
     server.repl_transfer_lastio = server.unixtime;
-    goto ok;
-
-no_response_error: /* Handle receiveSynchronousResponse() error when primary has no reply */
-    serverLog(LL_WARNING, "Primary did not respond to command during SYNC handshake");
-    /* Fall through to regular error handling */
-
-error:
-    connClose(conn);
-    server.repl_transfer_s = NULL;
-    if (server.repl_rdb_transfer_s) {
-        connClose(server.repl_rdb_transfer_s);
-        server.repl_rdb_transfer_s = NULL;
-    }
-    if (server.repl_transfer_fd != -1) close(server.repl_transfer_fd);
-    if (server.repl_transfer_tmpfile) zfree(server.repl_transfer_tmpfile);
-    server.repl_transfer_tmpfile = NULL;
-    server.repl_transfer_fd = -1;
-    server.repl_state = REPL_STATE_CONNECT;
-    if (err) sdsfree(err);
-    return;
-
-write_error: /* Handle sendCommand() errors. */
-    serverLog(LL_WARNING, "Sending command to primary in replication handshake: %s", err);
-    goto error;
-
-ok:
-    if (err) sdsfree(err);
-    return;
 }
 
 int connectWithPrimary(void) {
