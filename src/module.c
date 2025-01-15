@@ -8982,6 +8982,8 @@ void VM_RegisterClusterMessageReceiver(ValkeyModuleCtx *ctx,
 /* Send a message to all the nodes in the cluster if `target` is NULL, otherwise
  * at the specified target, which is a VALKEYMODULE_NODE_ID_LEN bytes node ID, as
  * returned by the receiver callback or by the nodes iteration functions.
+ * This API  uses lesser overhead if the target server support the light message header type (~30B)
+ * or else it uses the regular message overhead (~2KB).
  *
  * The function returns VALKEYMODULE_OK if the message was successfully sent,
  * otherwise if the node is not connected or such node ID does not map to any

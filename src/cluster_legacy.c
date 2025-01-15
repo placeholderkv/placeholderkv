@@ -195,11 +195,13 @@ dictType clusterSdsToListType = {
 typedef struct {
     enum {
         ITER_DICT,
-        ITER_LIST
+        ITER_LIST,
+        ITER_NODE,
     } type;
     union {
         dictIterator di;
         listIter li;
+        clusterNode *node;
     };
 } ClusterNodeIterator;
 
@@ -213,6 +215,11 @@ static void clusterNodeIterInitMyShard(ClusterNodeIterator *iter) {
     serverAssert(nodes != NULL);
     iter->type = ITER_LIST;
     listRewind(nodes, &iter->li);
+}
+
+static void clusterNodeIterNode(ClusterNodeIterator *iter, clusterNode *node) {
+    iter->type = ITER_NODE;
+    iter->node = node;
 }
 
 static clusterNode *clusterNodeIterNext(ClusterNodeIterator *iter) {
@@ -229,6 +236,15 @@ static clusterNode *clusterNodeIterNext(ClusterNodeIterator *iter) {
         /* Return the value associated with the node, or NULL if no more nodes */
         return ln ? listNodeValue(ln) : NULL;
     }
+
+    case ITER_NODE: {
+        if (iter->node) {
+            clusterNode *node = iter->node;
+            iter->node = NULL;
+            return node;
+        }
+        return NULL;
+    }
     }
     serverPanic("Unknown iterator type %d", iter->type);
 }
@@ -236,6 +252,8 @@ static clusterNode *clusterNodeIterNext(ClusterNodeIterator *iter) {
 static void clusterNodeIterReset(ClusterNodeIterator *iter) {
     if (iter->type == ITER_DICT) {
         dictResetIterator(&iter->di);
+    } else if (iter->type == ITER_NODE) {
+        iter->node = NULL;
     }
 }
 
@@ -3019,11 +3037,19 @@ static void clusterProcessPublishPacket(clusterMsgDataPublish *publish_data, uin
     }
 }
 
-static void clusterProcessLightPacket(clusterLink *link, uint16_t type) {
+static void clusterProcessLightPacket(clusterNode *sender, clusterLink *link, uint16_t type) {
     clusterMsgLight *hdr = (clusterMsgLight *)link->rcvbuf;
-
+    serverLog(LL_DEBUG, "Processing light packet of type: %s", clusterGetMessageTypeString(type));
     if (type == CLUSTERMSG_TYPE_PUBLISH || type == CLUSTERMSG_TYPE_PUBLISHSHARD) {
         clusterProcessPublishPacket(&hdr->data.publish.msg, type);
+    } else if (type == CLUSTERMSG_TYPE_MODULE) {
+        uint64_t module_id = hdr->data.module.msg.module_id; /* Endian-safe ID */
+        uint32_t len = ntohl(hdr->data.module.msg.len);
+        uint8_t type = hdr->data.module.msg.type;
+        unsigned char *payload = hdr->data.module.msg.bulk_data;
+        moduleCallClusterReceivers(sender->name, module_id, type, payload, len);
+    } else {
+        serverAssert(0);
     }
 }
 
@@ -3031,6 +3057,7 @@ static inline int messageTypeSupportsLightHdr(uint16_t type) {
     switch (type) {
     case CLUSTERMSG_TYPE_PUBLISH: return 1;
     case CLUSTERMSG_TYPE_PUBLISHSHARD: return 1;
+    case CLUSTERMSG_TYPE_MODULE: return 1;
     }
     return 0;
 }
@@ -3123,8 +3150,14 @@ int clusterIsValidPacket(clusterLink *link) {
         explen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
         explen += sizeof(clusterMsgDataUpdate);
     } else if (type == CLUSTERMSG_TYPE_MODULE) {
-        explen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
-        explen += sizeof(clusterMsgModule) - 3 + ntohl(hdr->data.module.msg.len);
+        if (is_light) {
+            clusterMsgLight *hdr_light = (clusterMsgLight *)link->rcvbuf;
+            explen = sizeof(clusterMsgLight) - sizeof(union clusterMsgData);
+            explen += sizeof(clusterMsgModule) - 3 + ntohl(hdr_light->data.module.msg.len);
+        } else {
+            explen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
+            explen += sizeof(clusterMsgModule) - 3 + ntohl(hdr->data.module.msg.len);
+        }
     } else {
         /* We don't know this type of packet, so we assume it's well formed. */
         explen = totlen;
@@ -3178,7 +3211,7 @@ int clusterProcessPacket(clusterLink *link) {
         }
         clusterNode *sender = link->node;
         sender->data_received = now;
-        clusterProcessLightPacket(link, type);
+        clusterProcessLightPacket(sender, link, type);
         return 1;
     }
 
@@ -4326,22 +4359,50 @@ void clusterSendUpdate(clusterLink *link, clusterNode *node) {
  *
  * If link is NULL, then the message is broadcasted to the whole cluster. */
 void clusterSendModule(clusterLink *link, uint64_t module_id, uint8_t type, const char *payload, uint32_t len) {
-    uint32_t msglen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
-    msglen += sizeof(clusterMsgModule) - 3 + len;
-    clusterMsgSendBlock *msgblock = createClusterMsgSendBlock(CLUSTERMSG_TYPE_MODULE, msglen);
+    clusterMsgSendBlock *msgblock = NULL, *msgblock_light = NULL;
+    ClusterNodeIterator iter;
 
-    clusterMsg *hdr = getMessageFromSendBlock(msgblock);
-    hdr->data.module.msg.module_id = module_id; /* Already endian adjusted. */
-    hdr->data.module.msg.type = type;
-    hdr->data.module.msg.len = htonl(len);
-    memcpy(hdr->data.module.msg.bulk_data, payload, len);
-
-    if (link)
-        clusterSendMessage(link, msgblock);
-    else
-        clusterBroadcastMessage(msgblock);
-
-    clusterMsgSendBlockDecrRefCount(msgblock);
+    if (link) {
+        clusterNodeIterNode(&iter, link->node);
+    } else {
+        /* Broadcast to all the nodes. */
+        clusterNodeIterInitAllNodes(&iter);
+    }
+    clusterNode *node;
+    while ((node = clusterNodeIterNext(&iter)) != NULL) {
+        if (node->flags & (CLUSTER_NODE_MYSELF | CLUSTER_NODE_HANDSHAKE)) continue;
+        if (nodeSupportsLightMsgHdr(node)) {
+            if (msgblock_light == NULL) {
+                uint32_t msglen_light = sizeof(clusterMsgLight) - sizeof(union clusterMsgData);
+                msglen_light += sizeof(clusterMsgModule) - 3 + len;
+                int msgtype_light = CLUSTERMSG_TYPE_MODULE;
+                msgtype_light |= CLUSTERMSG_LIGHT;
+                msgblock_light = createClusterMsgSendBlock(msgtype_light, msglen_light);
+                clusterMsgLight *hdr = getLightMessageFromSendBlock(msgblock_light);
+                hdr->data.module.msg.module_id = module_id; /* Already endian adjusted. */
+                hdr->data.module.msg.type = type;
+                hdr->data.module.msg.len = htonl(len);
+                memcpy(hdr->data.module.msg.bulk_data, payload, len);
+            }
+            clusterSendMessage(node->link, msgblock_light);
+        } else {
+            if (msgblock == NULL) {
+                uint32_t msglen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
+                msglen += sizeof(clusterMsgModule) - 3 + len;
+                int msgtype = CLUSTERMSG_TYPE_MODULE;
+                msgblock = createClusterMsgSendBlock(msgtype, msglen);
+                clusterMsg *hdr = getMessageFromSendBlock(msgblock);
+                hdr->data.module.msg.module_id = module_id; /* Already endian adjusted. */
+                hdr->data.module.msg.type = type;
+                hdr->data.module.msg.len = htonl(len);
+                memcpy(hdr->data.module.msg.bulk_data, payload, len);
+            }
+            clusterSendMessage(node->link, msgblock);
+        }
+    }
+    clusterNodeIterReset(&iter);
+    if (msgblock != NULL) clusterMsgSendBlockDecrRefCount(msgblock);
+    if (msgblock_light != NULL) clusterMsgSendBlockDecrRefCount(msgblock_light);
 }
 
 /* This function gets a cluster node ID string as target, the same way the nodes
