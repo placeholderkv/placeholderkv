@@ -69,8 +69,6 @@ void PongReceiver(ValkeyModuleCtx *ctx,
                      sender_id, (int)len, payload);
 }
 
-
-
 int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
     VALKEYMODULE_NOT_USED(argv);
     VALKEYMODULE_NOT_USED(argc);
@@ -81,7 +79,6 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int arg
     if (ValkeyModule_CreateCommand(ctx, "test.pingall", PingallCommand_ValkeyCommand, "readonly", 0, 0, 0) ==
         VALKEYMODULE_ERR)
         return VALKEYMODULE_ERR;
-
 
     if (ValkeyModule_CreateCommand(ctx, "test.cluster_slots", test_cluster_slots, "", 0, 0, 0) == VALKEYMODULE_ERR)
         return VALKEYMODULE_ERR;
