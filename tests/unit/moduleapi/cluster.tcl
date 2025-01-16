@@ -14,23 +14,12 @@ start_cluster 3 0 [list config_lines $modules] {
 
     test "Cluster module send message API - VM_SendClusterMessage" {
         assert_equal OK [$node1 test.pingall]
+        assert_equal 2 [CI 0 cluster_stats_messages_module_sent]
         wait_for_condition 50 100 {
-            [CI 0 cluster_stats_messages_module_sent] eq 2
-        } else {
-            puts [$node1 CLUSTER INFO]
-            puts [$node2 CLUSTER INFO]
-            puts [$node3 CLUSTER INFO]
-            fail "node 1 didn't send cluster module message to all nodes"
-        }
-        wait_for_condition 50 1000 {
-            [CI 1 cluster_stats_messages_module_received] eq 1
-        } else {
-            fail "node 2 didn't receive cluster module message"
-        }
-        wait_for_condition 50 1000 {
+            [CI 1 cluster_stats_messages_module_received] eq 1 &&
             [CI 2 cluster_stats_messages_module_received] eq 1
         } else {
-            fail "node 3 didn't receive cluster module message"
+            fail "node 2 or node 3 didn't receive cluster module message"
         }
     }
 }
