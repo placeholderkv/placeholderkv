@@ -42,18 +42,18 @@ typedef struct clusterLink {
 } clusterLink;
 
 /* Cluster node flags and macros. */
-#define CLUSTER_NODE_PRIMARY (1 << 0)               /* The node is a primary */
-#define CLUSTER_NODE_REPLICA (1 << 1)               /* The node is a replica */
-#define CLUSTER_NODE_PFAIL (1 << 2)                 /* Failure? Need acknowledge */
-#define CLUSTER_NODE_FAIL (1 << 3)                  /* The node is believed to be malfunctioning */
-#define CLUSTER_NODE_MYSELF (1 << 4)                /* This node is myself */
-#define CLUSTER_NODE_HANDSHAKE (1 << 5)             /* We have still to exchange the first ping */
-#define CLUSTER_NODE_NOADDR (1 << 6)                /* We don't know the address of this node */
-#define CLUSTER_NODE_MEET (1 << 7)                  /* Send a MEET message to this node */
-#define CLUSTER_NODE_MIGRATE_TO (1 << 8)            /* Primary eligible for replica migration. */
-#define CLUSTER_NODE_NOFAILOVER (1 << 9)            /* Replica will not try to failover. */
-#define CLUSTER_NODE_EXTENSIONS_SUPPORTED (1 << 10) /* This node supports extensions. */
-#define CLUSTER_NODE_LIGHT_HDR_PUBLISH_SUPPORTED (1 << 11)  /* This node supports light message header for publish type. */
+#define CLUSTER_NODE_PRIMARY (1 << 0)                      /* The node is a primary */
+#define CLUSTER_NODE_REPLICA (1 << 1)                      /* The node is a replica */
+#define CLUSTER_NODE_PFAIL (1 << 2)                        /* Failure? Need acknowledge */
+#define CLUSTER_NODE_FAIL (1 << 3)                         /* The node is believed to be malfunctioning */
+#define CLUSTER_NODE_MYSELF (1 << 4)                       /* This node is myself */
+#define CLUSTER_NODE_HANDSHAKE (1 << 5)                    /* We have still to exchange the first ping */
+#define CLUSTER_NODE_NOADDR (1 << 6)                       /* We don't know the address of this node */
+#define CLUSTER_NODE_MEET (1 << 7)                         /* Send a MEET message to this node */
+#define CLUSTER_NODE_MIGRATE_TO (1 << 8)                   /* Primary eligible for replica migration. */
+#define CLUSTER_NODE_NOFAILOVER (1 << 9)                   /* Replica will not try to failover. */
+#define CLUSTER_NODE_EXTENSIONS_SUPPORTED (1 << 10)        /* This node supports extensions. */
+#define CLUSTER_NODE_LIGHT_HDR_PUBLISH_SUPPORTED (1 << 11) /* This node supports light message header for publish type. */
 #define CLUSTER_NODE_LIGHT_HDR_MODULE_SUPPORTED (1 << 12)  /* This node supports light message header for module type. */
 #define CLUSTER_NODE_NULL_NAME                                                                                         \
     "\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000" \
