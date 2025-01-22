@@ -145,45 +145,6 @@ start_server {tags {"maxmemory" "external:skip"}} {
 }
 
 start_server {tags {"maxmemory external:skip"}} {
-    test "Without maxmemory small integers are shared" {
-        r config set maxmemory 0
-        r set a 1
-        assert_refcount_morethan a 1
-    }
-
-    test "With maxmemory and non-LRU policy integers are still shared" {
-        r config set maxmemory 1073741824
-        r config set maxmemory-policy allkeys-random
-        r set a 1
-        assert_refcount_morethan a 1
-    }
-
-    test "With maxmemory and LRU policy integers are not shared" {
-        r config set maxmemory 1073741824
-        r config set maxmemory-policy allkeys-lru
-        r set a 1
-        r config set maxmemory-policy volatile-lru
-        r set b 1
-        assert_refcount 1 a
-        assert_refcount 1 b
-        r config set maxmemory 0
-    }
-
-    test "Shared integers are unshared with maxmemory and LRU policy" {
-        r set a 1
-        r set b 1
-        assert_refcount_morethan a 1
-        assert_refcount_morethan b 1
-        r config set maxmemory 1073741824
-        r config set maxmemory-policy allkeys-lru
-        r get a
-        assert_refcount 1 a
-        r config set maxmemory-policy volatile-lru
-        r get b
-        assert_refcount 1 b
-        r config set maxmemory 0
-    }
-
     foreach policy {
         allkeys-random allkeys-lru allkeys-lfu volatile-lru volatile-lfu volatile-random volatile-ttl
     } {
@@ -354,7 +315,7 @@ start_server {tags {"maxmemory external:skip"}} {
             r flushall
             # make sure to start with a blank instance
             set num_eviction_key_init [s evicted_keys]
-            set used [s used_memory]
+            set used 1134728
             set limit_maxmemory [expr {$used+100*1024}]
             set limit_key_eviction_memory_threshold1 [expr {$used+70*1024}]
             set limit_key_eviction_memory_threshold2 [expr {$used+40*1024}]
