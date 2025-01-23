@@ -1553,11 +1553,11 @@ static int cliAuth(redisContext *ctx, char *user, char *auth) {
 }
 
 /* Send SELECT input_dbnum to the server */
-static int cliSelect(void) {
+static int cliSelect(struct config* config, redisContext * ctx) {
     redisReply *reply;
-    if (config.conn_info.input_dbnum == config.dbnum) return REDIS_OK;
+    if (config->conn_info.input_dbnum == config->dbnum) return REDIS_OK;
 
-    reply = redisCommand(context, "SELECT %d", config.conn_info.input_dbnum);
+    reply = redisCommand(ctx, "SELECT %d", config->conn_info.input_dbnum);
     if (reply == NULL) {
         fprintf(stderr, "\nI/O error\n");
         return REDIS_ERR;
@@ -1566,9 +1566,9 @@ static int cliSelect(void) {
     int result = REDIS_OK;
     if (reply->type == REDIS_REPLY_ERROR) {
         result = REDIS_ERR;
-        fprintf(stderr, "SELECT %d failed: %s\n", config.conn_info.input_dbnum, reply->str);
+        fprintf(stderr, "SELECT %d failed: %s\n", config->conn_info.input_dbnum, reply->str);
     } else {
-        config.dbnum = config.conn_info.input_dbnum;
+        config->dbnum = config->conn_info.input_dbnum;
         cliRefreshPrompt();
     }
     freeReplyObject(reply);
@@ -1667,7 +1667,7 @@ static int cliConnect(int flags) {
 
         /* Do AUTH, select the right DB, switch to RESP3 if needed. */
         if (cliAuth(context, config.conn_info.user, config.conn_info.auth) != REDIS_OK) return REDIS_ERR;
-        if (cliSelect() != REDIS_OK) return REDIS_ERR;
+        if (cliSelect(&config, context) != REDIS_OK) return REDIS_ERR;
         if (cliSwitchProto() != REDIS_OK) return REDIS_ERR;
     }
 
@@ -2448,7 +2448,7 @@ static int cliSendCommand(int argc, char **argv, long repeat) {
                 config.conn_info.input_dbnum = config.dbnum = atoi(argv[1]);
                 cliRefreshPrompt();
             } else if (!strcasecmp(command, "auth") && (argc == 2 || argc == 3)) {
-                cliSelect();
+                cliSelect(&config, context);
             } else if (!strcasecmp(command, "multi") && argc == 1 && config.last_cmd_type != REDIS_REPLY_ERROR) {
                 config.in_multi = 1;
                 config.pre_multi_dbnum = config.dbnum;
@@ -4789,8 +4789,10 @@ static redisReply *clusterManagerMigrateKeysInReply(clusterManagerNode *source,
     argv_len = zcalloc(argc * sizeof(size_t));
     char portstr[255];
     char timeoutstr[255];
+    char dbnum[255];
     snprintf(portstr, 10, "%d", target->port);
     snprintf(timeoutstr, 10, "%d", timeout);
+    snprintf(dbnum, 10, "%d", config.dbnum);
     argv[0] = "MIGRATE";
     argv_len[0] = 7;
     argv[1] = target->ip;
@@ -4799,8 +4801,8 @@ static redisReply *clusterManagerMigrateKeysInReply(clusterManagerNode *source,
     argv_len[2] = strlen(portstr);
     argv[3] = "";
     argv_len[3] = 0;
-    argv[4] = "0";
-    argv_len[4] = 1;
+    argv[4] = dbnum;
+    argv_len[4] = strlen(dbnum);
     argv[5] = timeoutstr;
     argv_len[5] = strlen(timeoutstr);
     if (replace) {
@@ -4852,6 +4854,8 @@ cleanup:
     return migrate_reply;
 }
 
+static int getDatabases(redisContext * ctx);
+
 /* Migrate all keys in the given slot from source to target.*/
 static int clusterManagerMigrateKeysInSlot(clusterManagerNode *source,
                                            clusterManagerNode *target,
@@ -4863,7 +4867,19 @@ static int clusterManagerMigrateKeysInSlot(clusterManagerNode *source,
     int success = 1;
     int do_fix = config.cluster_manager_command.flags & CLUSTER_MANAGER_CMD_FLAG_FIX;
     int do_replace = config.cluster_manager_command.flags & CLUSTER_MANAGER_CMD_FLAG_REPLACE;
+
+    int dbnum = getDatabases(source->context);
+    int orig_db = config.conn_info.input_dbnum;
+    config.conn_info.input_dbnum = 0;
+
     while (1) {
+        if (config.conn_info.input_dbnum == dbnum) {
+            break;
+        }
+        if (cliSelect(&config, source->context) == REDIS_ERR) {
+            success = 0;
+            goto next;
+        }
         char *dots = NULL;
         redisReply *reply = NULL, *migrate_reply = NULL;
         reply = CLUSTER_MANAGER_COMMAND(source,
@@ -4871,7 +4887,9 @@ static int clusterManagerMigrateKeysInSlot(clusterManagerNode *source,
                                         "GETKEYSINSLOT %d %d",
                                         slot, pipeline);
         success = (reply != NULL);
-        if (!success) return 0;
+        if (!success) {
+            goto next;
+        }
         if (reply->type == REDIS_REPLY_ERROR) {
             success = 0;
             if (err != NULL) {
@@ -4885,7 +4903,9 @@ static int clusterManagerMigrateKeysInSlot(clusterManagerNode *source,
         size_t count = reply->elements;
         if (count == 0) {
             freeReplyObject(reply);
-            break;
+            reply = NULL;
+            config.conn_info.input_dbnum++;
+            continue;
         }
         if (verbose) dots = zmalloc((count + 1) * sizeof(char));
         /* Calling MIGRATE command. */
@@ -5009,8 +5029,13 @@ static int clusterManagerMigrateKeysInSlot(clusterManagerNode *source,
         if (reply != NULL) freeReplyObject(reply);
         if (migrate_reply != NULL) freeReplyObject(migrate_reply);
         if (dots) zfree(dots);
+        reply = NULL;
+        migrate_reply = NULL;
+        dots = NULL;
         if (!success) break;
     }
+    config.conn_info.input_dbnum = orig_db;
+    cliSelect(&config, source->context);
     return success;
 }
 
@@ -8651,11 +8676,11 @@ static int getDbSize(void) {
     return size;
 }
 
-static int getDatabases(void) {
+static int getDatabases(redisContext * ctx) {
     redisReply *reply;
     int dbnum;
 
-    reply = redisCommand(context, "CONFIG GET databases");
+    reply = redisCommand(ctx, "CONFIG GET databases");
 
     if (reply == NULL) {
         fprintf(stderr, "\nI/O error\n");
@@ -9158,7 +9183,7 @@ void bytesToHuman(char *s, size_t size, long long n) {
 static void statMode(void) {
     redisReply *reply;
     long aux, requests = 0;
-    int dbnum = getDatabases();
+    int dbnum = getDatabases(context);
     int i = 0;
 
     while (1) {

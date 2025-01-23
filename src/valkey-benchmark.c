@@ -707,7 +707,7 @@ static client createClient(char *cmd, size_t len, client from, int thread_id) {
      * buffer with the SELECT command, that will be discarded the first
      * time the replies are received, so if the client is reused the
      * SELECT command will not be used again. */
-    if (config.conn_info.input_dbnum != 0 && !is_cluster_client) {
+    if (config.conn_info.input_dbnum) {
         c->obuf = sdscatprintf(c->obuf, "*2\r\n$6\r\nSELECT\r\n$%d\r\n%s\r\n", (int)sdslen(config.input_dbnumstr),
                                config.input_dbnumstr);
         c->prefix_pending++;

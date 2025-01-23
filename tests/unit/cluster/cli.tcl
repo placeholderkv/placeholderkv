@@ -434,6 +434,105 @@ start_server [list overrides [list cluster-enabled yes cluster-node-timeout 1 cl
 
 } ;# foreach ip_or_localhost
 
+start_multiple_servers 3 [list overrides $base_conf] {
+
+    set node1 [srv 0 client]
+    set node2 [srv -1 client]
+    set node3 [srv -2 client]
+    set node3_pid [srv -2 pid]
+    set node3_rd [valkey_deferring_client -2]
+
+    test {Create 3 node cluster} {
+        exec src/valkey-cli --cluster-yes --cluster create \
+                           127.0.0.1:[srv 0 port] \
+                           127.0.0.1:[srv -1 port] \
+                           127.0.0.1:[srv -2 port]
+
+        wait_for_condition 1000 50 {
+            [CI 0 cluster_state] eq {ok} &&
+            [CI 1 cluster_state] eq {ok} &&
+            [CI 2 cluster_state] eq {ok}
+        } else {
+            fail "Cluster doesn't stabilize"
+        }
+    }
+
+    
+    test "Mutli-database fill slot 0" {
+        # keys {3560}* mapped to slot 0
+        # Iterate over databases 0, 1, 2, and 3.
+        for {set db 0} {$db < 4} {incr db} {
+            # Select the database on node1.            
+            $node1 SELECT $db
+
+            # Insert 100 keys into the current database.
+            for {set i 0} {$i < 100} {incr i} {
+                # Each key uses the hash tag {3560} to ensure it maps to slot 0.
+                set key "{3560}_db${db}_$i"
+                set value "value_db${db}_$i"                
+                $node1 SET $key $value
+            }
+            
+            # Verify the key count in slot 0.
+            set count [$node1 CLUSTER COUNTKEYSINSLOT 0]
+            if { $count != 100 } {
+                fail "For DB $db, expected 100 keys in slot 0, got $count"
+            }
+        }
+    }
+
+    test "Perform a Multi-database Resharding" {
+        # 4 batches to migrate 100 keys
+        for {set i 0} {$i < 4} {incr i} {
+            exec src/valkey-cli --cluster-yes --cluster reshard 127.0.0.1:[srv 0 port] \
+                                --cluster-to [$node3 cluster myid] \
+                                --cluster-from [$node1 cluster myid] \
+                                --cluster-pipeline 25 \
+                                --cluster-slots 1
+        }
+    }
+
+
+    test "Verify multi-database slot migrate" {
+
+        # For each database, verify that node3 now holds all 100 keys in slot 0 with correct contents.
+        for {set db 0} {$db < 4} {incr db} {
+            # Select the current database on node3.
+            $node3 SELECT $db
+
+            
+            # First, verify the key count in slot 0 on node 3
+            set count [$node3 CLUSTER COUNTKEYSINSLOT 0]
+            if { $count != 100 } {
+                bp 1
+                fail "For DB $db, expected 100 keys in slot 0 on node3, got $count"
+            }
+
+            # First, verify the key count in slot 0 on node 1
+            set count [$node1 CLUSTER COUNTKEYSINSLOT 0]
+            if { $count != 0 } {
+                bp 1
+                fail "For DB $db, expected 100 keys in slot 0 on node3, got $count"
+            }
+
+
+            # Now verify that each key has the expected value.
+            for {set i 0} {$i < 100} {incr i} {
+                # Construct the key with hash tag {3560} which we used we filling the db
+                set key "{3560}_db${db}_$i"
+                # The expected value is based on the original test.
+                set expected "value_db${db}_$i"
+                # Retrieve the actual value stored on node3.
+                set actual [$node3 GET $key]
+
+                if { $actual ne $expected } {                    
+                    fail "For DB $db, key $key: expected '$expected', got '$actual'"
+                }
+            }
+        }
+    }
+}
+
 } ;# tags
 
 set ::singledb $old_singledb
