@@ -4,6 +4,11 @@
         "complexity": "Depends on subcommand.",
         "group": "server",
         "since": "2.2.12",
-        "arity": -2
+        "arity": -2,
+        "deprecated_since": "8.1.0",
+        "replaced_by": "`COMMANDLOG`",
+        "doc_flags": [
+            "DEPRECATED"
+        ]
     }
 }

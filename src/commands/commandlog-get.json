@@ -1,23 +1,12 @@
 {
     "GET": {
-        "summary": "Returns the slow log's entries.",
+        "summary": "Returns the specified command log's entries.",
         "complexity": "O(N) where N is the number of entries returned",
         "group": "server",
-        "since": "2.2.12",
-        "arity": -2,
-        "container": "SLOWLOG",
-        "function": "slowlogCommand",
-        "deprecated_since": "8.1.0",
-        "replaced_by": "`COMMANDLOG GET <count> SLOW`",
-        "doc_flags": [
-            "DEPRECATED"
-        ],
-        "history": [
-            [
-                "4.0.0",
-                "Added client IP address, port and name to the reply."
-            ]
-        ],
+        "since": "8.1.0",
+        "arity": 4,
+        "container": "COMMANDLOG",
+        "function": "commandlogCommand",
         "command_flags": [
             "ADMIN",
             "LOADING",
@@ -29,7 +18,7 @@
         ],
         "reply_schema": {
             "type": "array",
-            "description": "Entries from the slow log in chronological order.",
+            "description": "Entries from the command log in chronological order.",
             "uniqueItems": true,
             "items": {
                 "type": "array",
@@ -38,7 +27,7 @@
                 "items": [
                     {
                         "type": "integer",
-                        "description": "Slow log entry ID."
+                        "description": "Command log entry ID."
                     },
                     {
                         "type": "integer",
@@ -47,7 +36,7 @@
                     },
                     {
                         "type": "integer",
-                        "description": "The amount of time needed for its execution, in microseconds.",
+                        "description": "Determined by the type parameter.",
                         "minimum": 0
                     },
                     {
@@ -71,8 +60,25 @@
         "arguments": [
             {
                 "name": "count",
-                "type": "integer",
-                "optional": true
+                "type": "integer"
+            },
+            {
+                "name": "type",
+                "type": "oneof",
+                "arguments": [
+                    {
+                        "name": "slow",
+                        "type": "string"
+                    },
+                    {
+                        "name": "large-request",
+                        "type": "string"
+                    },
+                    {
+                        "name": "large-reply",
+                        "type": "string"
+                    }
+                ]
             }
         ]
     }

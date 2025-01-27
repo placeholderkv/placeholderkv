@@ -250,7 +250,7 @@ void execCommand(client *c) {
         c->mstate->commands[j].argv_len = c->argv_len;
         c->mstate->commands[j].cmd = c->cmd;
 
-        /* The original argv has already been processed for slowlog and monitor,
+        /* The original argv has already been processed for commandlog and monitor,
          * so we can safely free it before proceeding to the next command. */
         freeClientOriginalArgv(c);
     }

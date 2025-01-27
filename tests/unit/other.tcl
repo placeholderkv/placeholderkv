@@ -11,6 +11,7 @@ start_server {tags {"other"}} {
         assert_match "*MEMORY <subcommand> *" [r MEMORY HELP]
         assert_match "*PUBSUB <subcommand> *" [r PUBSUB HELP]
         assert_match "*SLOWLOG <subcommand> *" [r SLOWLOG HELP]
+        assert_match "*COMMANDLOG <subcommand> *" [r COMMANDLOG HELP]
         assert_match "*CLIENT <subcommand> *" [r CLIENT HELP]
         assert_match "*COMMAND <subcommand> *" [r COMMAND HELP]
         assert_match "*CONFIG <subcommand> *" [r CONFIG HELP]

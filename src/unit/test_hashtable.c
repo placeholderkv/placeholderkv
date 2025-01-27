@@ -21,6 +21,9 @@ static void randomSeed(void) {
     getRandomBytes((void *)&seed, sizeof(seed));
     init_genrand64(seed);
     srandom((unsigned)seed);
+    uint8_t hashseed[16];
+    getRandomBytes(hashseed, sizeof(hashseed));
+    hashtableSetHashFunctionSeed(hashseed);
 }
 
 /* An entry holding a string key and a string value in one allocation. */
@@ -749,7 +752,7 @@ int test_random_entry(int argc, char **argv, int flags) {
     /* With large n, the distribution approaches a normal distribution and we
      * can use p68 = within 1 std dev, p95 = within 2 std dev, p99.7 = within 3
      * std dev. */
-    long p68 = 0, p95 = 0, p99 = 0, p4dev = 0, p5dev = 0;
+    long p68 = 0, p95 = 0, p99 = 0, p4dev = 0, p5dev = 0, p10percent = 0;
     for (size_t j = 0; j < count; j++) {
         double dev = expected - times_picked[j];
         p68 += (dev >= -std_dev && dev <= std_dev);
@@ -757,7 +760,9 @@ int test_random_entry(int argc, char **argv, int flags) {
         p99 += (dev >= -std_dev * 3 && dev <= std_dev * 3);
         p4dev += (dev >= -std_dev * 4 && dev <= std_dev * 4);
         p5dev += (dev >= -std_dev * 5 && dev <= std_dev * 5);
+        p10percent += (dev >= -0.1 * expected && dev <= 0.1 * expected);
     }
+
     printf("Random entry fairness test\n");
     printf("  Pick one of %zu entries, %ld times.\n", count, num_rounds);
     printf("  Expecting each entry to be picked %.2lf times, std dev %.3lf.\n", expected, std_dev);
@@ -766,12 +771,25 @@ int test_random_entry(int argc, char **argv, int flags) {
     printf("  Within 3 std dev (p99) = %.2lf%%\n", 100 * p99 / m);
     printf("  Within 4 std dev       = %.2lf%%\n", 100 * p4dev / m);
     printf("  Within 5 std dev       = %.2lf%%\n", 100 * p5dev / m);
+    printf("  Within 10%% dev         = %.2lf%%\n", 100 * p10percent / m);
 
     /* Conclusion? The number of trials (n) relative to the probabilities (p and
      * 1 − p) must be sufficiently large (n * p ≥ 5 and n * (1 − p) ≥ 5) to
      * approximate a binomial distribution with a normal distribution. */
     if (n / m >= 5 && n * (1 - 1 / m) >= 5) {
-        TEST_ASSERT_MESSAGE("Too unfair randomness", 100 * p99 / m >= 60.0);
+        /* Check that 80% of the elements are picked within 3 std deviations of
+         * the expected number. This is a low bar, since typically the 99% of
+         * the elements are within this range.
+         *
+         * There is an edge case. When n is very large and m is very small, the
+         * std dev of a binomial distribution is very small, which becomes too
+         * strict for our bucket layout and makes the test flaky. For example
+         * with m = 400 and n = 1M, we get an expected value of 2500 and a std
+         * dev of 50, which is just 2% of the expected value. We lower the bar
+         * for this case and accept that 80% of elements are just within 10% of
+         * the expected value. */
+        TEST_ASSERT_MESSAGE("Too unfair randomness",
+                            100 * p99 / m >= 80.0 || 100 * p10percent / m >= 80.0);
     } else {
         printf("To uncertain numbers to draw any conclusions about fairness.\n");
     }
