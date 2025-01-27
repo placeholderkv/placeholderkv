@@ -2971,6 +2971,7 @@ int allPersistenceDisabled(void);
 #define DISK_ERROR_TYPE_RDB 2  /* Don't accept writes: RDB errors. */
 #define DISK_ERROR_TYPE_NONE 0 /* No problems, we can accept writes. */
 int writeCommandsDeniedByDiskError(void);
+char *getAofWriteErrStr(int);
 sds writeCommandsGetDiskErrorMessage(int);
 
 /* RDB persistence */

@@ -16,9 +16,9 @@ start_server {tags {"external:skip"}} {
     set master_host [srv 0 host]
     set master_port [srv 0 port]
 
-    test "Low aof-max-size stops writing AOF with ENOSPC" {
+    test "Low aof-max-size stops writing AOF with EFBIG" {
         setup
-        wait_for_log_messages 0 {"*Error writing to the AOF file: No space left on device*"} 0 100 10
+        wait_for_log_messages 0 {"*Error writing to the AOF file: Reached aof-max-size*"} 0 100 10
         cleanup
     }
 
@@ -29,7 +29,7 @@ start_server {tags {"external:skip"}} {
         set len1 [getInfoProperty $info1 aof_buffer_length]
 
         catch {r set somelongerkey somelongrvalue} err
-        assert {$err eq "MISCONF Errors writing to the AOF file: No space left on device"}
+        assert {$err eq "MISCONF Errors writing to the AOF file: Reached aof-max-size"}
         assert_equal [r get somelongerkey] ""
 
         set info2 [r info]
