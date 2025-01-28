@@ -5,7 +5,7 @@
 # To disable `SELECT` command to be ran on the server.
 set ::singledb 1
 
-tags {external:skip cluster modules} {
+tags {external:skip needs:other-server cluster modules} {
 
 # To run this test use the `--other-server-path` parameter and pass in a compatible server path supporting
 # SendClusterMessage module API. 
