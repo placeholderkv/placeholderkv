@@ -2,7 +2,8 @@
 #
 # Use minimal.conf to make sure we don't use any configs not supported on the old version.
 
-# To disable `SELECT` command to be ran on the server.
+# make sure the test infra won't use SELECT
+set old_singledb $::singledb
 set ::singledb 1
 
 tags {external:skip needs:other-server cluster modules} {
@@ -59,3 +60,5 @@ start_server {config "minimal-cluster.conf" start-other-server 1} {
     }
 }
 }
+
+set ::singledb $old_singledb
