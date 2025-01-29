@@ -3038,14 +3038,14 @@ static void clusterProcessPublishPacket(clusterMsgDataPublish *publish_data, uin
 }
 
 static void clusterProcessModulePacket(clusterMsgModule *module_data, clusterNode *sender) {
-        if (!sender) return; /* Protect the module from unknown nodes. */
-        /* We need to route this message back to the right module subscribed
-         * for the right message type. */
-        uint64_t module_id = module_data->module_id; /* Endian-safe ID */
-        uint32_t len = ntohl(module_data->len);
-        uint8_t type = module_data->type;
-        unsigned char *payload = module_data->bulk_data;
-        moduleCallClusterReceivers(sender->name, module_id, type, payload, len);
+    if (!sender) return; /* Protect the module from unknown nodes. */
+    /* We need to route this message back to the right module subscribed
+     * for the right message type. */
+    uint64_t module_id = module_data->module_id; /* Endian-safe ID */
+    uint32_t len = ntohl(module_data->len);
+    uint8_t type = module_data->type;
+    unsigned char *payload = module_data->bulk_data;
+    moduleCallClusterReceivers(sender->name, module_id, type, payload, len);
 }
 
 static void clusterProcessLightPacket(clusterNode *sender, clusterLink *link, uint16_t type) {
@@ -4388,7 +4388,7 @@ static clusterMsgSendBlock *createModuleMsgBlock(int64_t module_id, uint8_t type
         module_data = &hdr->data.module.msg;
     }
 
-    module_data->module_id = module_id;  /* Already endian adjusted */
+    module_data->module_id = module_id; /* Already endian adjusted */
     module_data->type = type;
     module_data->len = htonl(len);
     memcpy(module_data->bulk_data, payload, len);
