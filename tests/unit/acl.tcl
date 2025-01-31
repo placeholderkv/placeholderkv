@@ -1245,7 +1245,14 @@ start_server {overrides {user "default on nopass ~* +@all -flushdb"} tags {acl e
 }
 
 tags {acl external:skip} {
-    set renames [list rename-command "PING RainWasHere" rename-command "RainWasHere VPING" rename-command "INCR VINCR" rename-command "SET VSET" rename-command "SADD VSADD" rename-command "HGET VHGET" rename-command "HSET VHSET" rename-command "CONFIG VCONFIG" ]
+    set renames [list rename-command "PING RainWasHere" \
+                      rename-command "RainWasHere VPING" \
+                      rename-command "INCR VINCR" \
+                      rename-command "SET VSET" \
+                      rename-command "SADD VSADD" \
+                      rename-command "HGET VHGET" \
+                      rename-command "HSET VHSET" \
+                      rename-command "CONFIG VCONFIG" ]
     start_server [list config_lines $renames ] {
         test {ACL still denies individual renamed commands} {
             r ACL setuser newuser on nopass ~* +acl -ping +incr

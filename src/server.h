@@ -2464,7 +2464,7 @@ struct serverCommand {
                          ACLs. A connection is able to execute a given command if
                          the user associated to the connection has this command
                          bit set in the bitmap of allowed commands. */
-    sds fullname;     /* A SDS string representing the command fullname. */
+    sds fullname;     /* Includes parent name if any: "parentcmd|childcmd". Unchanged if command is renamed. */
     sds current_name; /* Same as fullname, becomes a separate string if command is renamed. */
     struct hdr_histogram
         *latency_histogram;        /* Points to the command latency command histogram (unit of time nanosecond). */

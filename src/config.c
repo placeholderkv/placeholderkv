@@ -543,10 +543,6 @@ void loadServerConfigFromString(char *config) {
             /* Otherwise we re-add the command under a different name. */
             if (sdslen(argv[2]) != 0) {
                 if (cmd->current_name != cmd->fullname) {
-                    /* cmd->current_name initially points to the same string,
-                     * and we can't leave fullname dangling.
-                     * If its been renamed previously then this string is only
-                     * used here and should be freed. */
                     sdsfree(cmd->current_name);
                 }
                 cmd->current_name = sdsdup(argv[2]);
