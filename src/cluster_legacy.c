@@ -4400,7 +4400,8 @@ static clusterMsgSendBlock *createModuleMsgBlock(int64_t module_id, uint8_t type
  *
  * If link is NULL, then the message is broadcasted to the whole cluster. */
 void clusterSendModule(clusterLink *link, uint64_t module_id, uint8_t type, const char *payload, uint32_t len) {
-    clusterMsgSendBlock *msgblock = NULL, *msgblock_light = NULL;
+    clusterMsgSendBlock *msgblock[CLUSTERMSG_HDR_NUM];
+    memset(msgblock, 0, sizeof(msgblock));
     ClusterNodeIterator iter;
 
     if (link) {
@@ -4412,21 +4413,18 @@ void clusterSendModule(clusterLink *link, uint64_t module_id, uint8_t type, cons
     clusterNode *node;
     while ((node = clusterNodeIterNext(&iter)) != NULL) {
         if (node->flags & (CLUSTER_NODE_MYSELF | CLUSTER_NODE_HANDSHAKE)) continue;
-        if (nodeSupportsLightMsgHdrForModule(node)) {
-            if (msgblock_light == NULL) {
-                msgblock_light = createModuleMsgBlock(module_id, type, payload, len, 1);
-            }
-            clusterSendMessage(node->link, msgblock_light);
-        } else {
-            if (msgblock == NULL) {
-                msgblock = createModuleMsgBlock(module_id, type, payload, len, 0);
-            }
-            clusterSendMessage(node->link, msgblock);
+        int is_light = nodeSupportsLightMsgHdrForModule(node) ? CLUSTERMSG_HDR_LIGHT : CLUSTERMSG_HDR_NORMAL;
+        if (msgblock[is_light] == NULL) {
+            msgblock[is_light] = createModuleMsgBlock(module_id, type, payload, len, is_light);
         }
+        clusterSendMessage(node->link, msgblock[is_light]);
     }
     clusterNodeIterReset(&iter);
-    if (msgblock != NULL) clusterMsgSendBlockDecrRefCount(msgblock);
-    if (msgblock_light != NULL) clusterMsgSendBlockDecrRefCount(msgblock_light);
+    for (int hdr_type = CLUSTERMSG_HDR_NORMAL; hdr_type < CLUSTERMSG_HDR_NUM; hdr_type++) {
+        if (msgblock[hdr_type]) {
+            clusterMsgSendBlockDecrRefCount(msgblock[hdr_type]);
+        }
+    }
 }
 
 /* This function gets a cluster node ID string as target, the same way the nodes

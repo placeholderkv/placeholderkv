@@ -106,6 +106,14 @@ typedef struct clusterNodeFailReport {
 /* We check for the modifier bit to determine if the message is sent using light header.*/
 #define IS_LIGHT_MESSAGE(type) ((type) & CLUSTERMSG_LIGHT)
 
+/* Types of header supported over the cluster bus. */
+typedef enum {
+    CLUSTERMSG_HDR_NORMAL = 0, /* This corresponds to `clusterMsg` struct. */
+    CLUSTERMSG_HDR_LIGHT,      /* This corresponds to `clusterMsgLight` struct. */
+    CLUSTERMSG_HDR_NUM,        /* Overall count of header type supported. */
+} clusterMsgHdrType;
+
+
 /* Initially we don't know our "name", but we'll find it once we connect
  * to the first node, using the getsockname() function. Then we'll use this
  * address for all the next messages. */
