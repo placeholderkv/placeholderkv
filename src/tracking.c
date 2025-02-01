@@ -69,7 +69,7 @@ void disableTracking(client *c) {
      * from all the prefixes it is registered to. */
     if (c->flag.tracking_bcast) {
         raxIterator ri;
-        raxStart(&ri, c->client_tracking_prefixes);
+        raxStart(&ri, c->pubsub_data->client_tracking_prefixes);
         raxSeek(&ri, "^", NULL, 0);
         while (raxNext(&ri)) {
             void *result;
@@ -87,8 +87,8 @@ void disableTracking(client *c) {
             }
         }
         raxStop(&ri);
-        raxFree(c->client_tracking_prefixes);
-        c->client_tracking_prefixes = NULL;
+        raxFree(c->pubsub_data->client_tracking_prefixes);
+        c->pubsub_data->client_tracking_prefixes = NULL;
     }
 
     /* Clear flags and adjust the count. */
@@ -117,9 +117,9 @@ static int stringCheckPrefix(unsigned char *s1, size_t s1_len, unsigned char *s2
 int checkPrefixCollisionsOrReply(client *c, robj **prefixes, size_t numprefix) {
     for (size_t i = 0; i < numprefix; i++) {
         /* Check input list has no overlap with existing prefixes. */
-        if (c->client_tracking_prefixes) {
+        if (c->pubsub_data->client_tracking_prefixes) {
             raxIterator ri;
-            raxStart(&ri, c->client_tracking_prefixes);
+            raxStart(&ri, c->pubsub_data->client_tracking_prefixes);
             raxSeek(&ri, "^", NULL, 0);
             while (raxNext(&ri)) {
                 if (stringCheckPrefix(ri.key, ri.key_len, prefixes[i]->ptr, sdslen(prefixes[i]->ptr))) {
@@ -166,8 +166,8 @@ void enableBcastTrackingForPrefix(client *c, char *prefix, size_t plen) {
         bs = result;
     }
     if (raxTryInsert(bs->clients, (unsigned char *)&c, sizeof(c), NULL, NULL)) {
-        if (c->client_tracking_prefixes == NULL) c->client_tracking_prefixes = raxNew();
-        raxInsert(c->client_tracking_prefixes, (unsigned char *)prefix, plen, NULL, NULL);
+        if (c->pubsub_data->client_tracking_prefixes == NULL) c->pubsub_data->client_tracking_prefixes = raxNew();
+        raxInsert(c->pubsub_data->client_tracking_prefixes, (unsigned char *)prefix, plen, NULL, NULL);
     }
 }
 
@@ -186,7 +186,8 @@ void enableTracking(client *c, uint64_t redirect_to, struct ClientFlags options,
     c->flag.tracking_optin = 0;
     c->flag.tracking_optout = 0;
     c->flag.tracking_noloop = 0;
-    c->client_tracking_redirection = redirect_to;
+    initClientPubSubData(c);
+    c->pubsub_data->client_tracking_redirection = redirect_to;
 
     /* This may be the first client we ever enable. Create the tracking
      * table if it does not exist. */
@@ -277,8 +278,8 @@ void sendTrackingMessage(client *c, char *keyname, size_t keylen, int proto) {
     c->flag.pushing = 1;
 
     int using_redirection = 0;
-    if (c->client_tracking_redirection) {
-        client *redir = lookupClientByID(c->client_tracking_redirection);
+    if (c->pubsub_data->client_tracking_redirection) {
+        client *redir = lookupClientByID(c->pubsub_data->client_tracking_redirection);
         if (!redir) {
             c->flag.tracking_broken_redir = 1;
             /* We need to signal to the original connection that we
@@ -287,7 +288,7 @@ void sendTrackingMessage(client *c, char *keyname, size_t keylen, int proto) {
             if (c->resp > 2) {
                 addReplyPushLen(c, 2);
                 addReplyBulkCBuffer(c, "tracking-redir-broken", 21);
-                addReplyLongLong(c, c->client_tracking_redirection);
+                addReplyLongLong(c, c->pubsub_data->client_tracking_redirection);
             }
             if (!old_flags.pushing) c->flag.pushing = 0;
             return;

@@ -6,7 +6,7 @@
         "since": "2.6.9",
         "arity": 2,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientGetNameCommand",
         "command_flags": [
             "NOSCRIPT",
             "LOADING",

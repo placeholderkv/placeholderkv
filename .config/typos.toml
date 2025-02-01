@@ -2,16 +2,16 @@
 
 [files]
 extend-exclude = [
+    ".git/",
     "deps/",
     # crc16_slottable is primarily pre-generated random strings.
     "src/crc16_slottable.h",
 ]
+ignore-hidden = false
 
 [default.extend-words]
-advices = "advices"
 exat = "exat"
 optin = "optin"
-ro = "ro"
 smove = "smove"
 
 [type.c]
@@ -20,7 +20,7 @@ extend-ignore-re = [
     "D4C4DAA4", # sha1.c
     "Georg Nees",
     "\\[l\\]ist", # eval.c
-    "LKE", # test_rax.c
+    '"LKE"', # test_rax.c
 ]
 
 [type.tcl]
@@ -28,26 +28,23 @@ extend-ignore-re = [
     "DUMPed",
 ]
 
-[type.sv.extend-identifiers]
-# sv = .h
-module_gil_acquring = "module_gil_acquring"
-
 [type.c.extend-identifiers]
-ang = "ang"
+advices = "advices"
 clen = "clen"
 fle = "fle"
-module_gil_acquring = "module_gil_acquring"
 nd = "nd"
 ot = "ot"
 
 [type.tcl.extend-identifiers]
-fo = "fo"
 oll = "oll"
 stressers = "stressers"
 
-[type.sv.extend-words]
+[type.sv.extend-identifiers]
 # sv = .h
 fo = "fo"
+
+[type.sv.extend-words]
+# sv = .h
 seeked = "seeked"
 
 [type.c.extend-words]
@@ -58,7 +55,6 @@ limite = "limite"
 pn = "pn"
 seeked = "seeked"
 tre = "tre"
-ws = "ws"
 
 [type.systemd.extend-words]
 # systemd = .conf
@@ -66,5 +62,4 @@ ake = "ake"
 
 [type.tcl.extend-words]
 fo = "fo"
-lst = "lst"
 tre = "tre"

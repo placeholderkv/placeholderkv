@@ -6,7 +6,7 @@
         "since": "3.2.0",
         "arity": 3,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientReplyCommand",
         "command_flags": [
             "NOSCRIPT",
             "LOADING",

@@ -8,6 +8,10 @@
         "function": "helloCommand",
         "history": [
             [
+                "8.1.0",
+                "A new `availability_zone` field is added to the response if the `availability-zone` config is set."
+            ],
+            [
                 "6.2.0",
                 "`protover` made optional; when called without arguments the command reports the current connection's context."
             ]

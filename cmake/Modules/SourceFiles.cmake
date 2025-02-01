@@ -47,7 +47,7 @@ set(VALKEY_SERVER_SRCS
     ${CMAKE_SOURCE_DIR}/src/cluster_slot_stats.c
     ${CMAKE_SOURCE_DIR}/src/crc16.c
     ${CMAKE_SOURCE_DIR}/src/endianconv.c
-    ${CMAKE_SOURCE_DIR}/src/slowlog.c
+    ${CMAKE_SOURCE_DIR}/src/commandlog.c
     ${CMAKE_SOURCE_DIR}/src/eval.c
     ${CMAKE_SOURCE_DIR}/src/bio.c
     ${CMAKE_SOURCE_DIR}/src/rio.c
@@ -100,6 +100,7 @@ set(VALKEY_SERVER_SRCS
     ${CMAKE_SOURCE_DIR}/src/script_lua.c
     ${CMAKE_SOURCE_DIR}/src/script.c
     ${CMAKE_SOURCE_DIR}/src/functions.c
+    ${CMAKE_SOURCE_DIR}/src/scripting_engine.c
     ${CMAKE_SOURCE_DIR}/src/function_lua.c
     ${CMAKE_SOURCE_DIR}/src/commands.c
     ${CMAKE_SOURCE_DIR}/src/strl.c

@@ -285,7 +285,7 @@ void scriptingInit(int setup) {
 void freeLuaScriptsSync(dict *lua_scripts, list *lua_scripts_lru_list, lua_State *lua) {
     dictRelease(lua_scripts);
     listRelease(lua_scripts_lru_list);
-    lua_gc(lctx.lua, LUA_GCCOLLECT, 0);
+    lua_gc(lua, LUA_GCCOLLECT, 0);
     lua_close(lua);
 
 #if !defined(USE_LIBC)

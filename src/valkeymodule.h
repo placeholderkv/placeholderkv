@@ -818,7 +818,12 @@ typedef struct ValkeyModuleScriptingEngineCompiledFunction {
 } ValkeyModuleScriptingEngineCompiledFunction;
 
 /* This struct is used to return the memory information of the scripting
- * engine. */
+ * engine.
+ *
+ * IMPORTANT: If we ever need to add/remove fields from this struct, we need
+ * to bump the version number defined in the
+ * `VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION` constant.
+ */
 typedef struct ValkeyModuleScriptingEngineMemoryInfo {
     /* The memory used by the scripting engine runtime. */
     size_t used_memory;
@@ -826,14 +831,55 @@ typedef struct ValkeyModuleScriptingEngineMemoryInfo {
     size_t engine_memory_overhead;
 } ValkeyModuleScriptingEngineMemoryInfo;
 
+/* The callback function called when `FUNCTION LOAD` command is called to load
+ * a library of functions.
+ * This callback function evaluates the source code passed to `FUNCTION LOAD`
+ * and registers the functions declared in the source code.
+ *
+ * - `engine_ctx`: the engine specific context pointer.
+ *
+ * - `code`: string pointer to the source code.
+ *
+ * - `timeout`: timeout for the library creation (0 for no timeout).
+ *
+ * - `out_num_compiled_functions`: out param with the number of objects
+ *   returned by this function.
+ *
+ * - `err` - out param with the description of error (if occurred).
+ *
+ * Returns an array of compiled function objects, or `NULL` if some error
+ * occurred.
+ */
 typedef ValkeyModuleScriptingEngineCompiledFunction **(*ValkeyModuleScriptingEngineCreateFunctionsLibraryFunc)(
     ValkeyModuleCtx *module_ctx,
     ValkeyModuleScriptingEngineCtx *engine_ctx,
     const char *code,
     size_t timeout,
     size_t *out_num_compiled_functions,
-    char **err);
+    ValkeyModuleString **err);
 
+/* The callback function called when `FCALL` command is called on a function
+ * registered in the scripting engine.
+ * This callback function executes the `compiled_function` code.
+ *
+ * - `module_ctx`: the module runtime context.
+ *
+ * - `engine_ctx`: the engine specific context pointer.
+ *
+ * - `func_ctx`: the context opaque structure that represents the runtime
+ *               context for the function.
+ *
+ * - `compiled_function`: pointer to the compiled function registered by the
+ *   engine.
+ *
+ * - `keys`: the array of key strings passed in the `FCALL` command.
+ *
+ * - `nkeys`: the number of elements present in the `keys` array.
+ *
+ * - `args`: the array of string arguments passed in the `FCALL` command.
+ *
+ * - `nargs`: the number of elements present in the `args` array.
+ */
 typedef void (*ValkeyModuleScriptingEngineCallFunctionFunc)(
     ValkeyModuleCtx *module_ctx,
     ValkeyModuleScriptingEngineCtx *engine_ctx,
@@ -844,10 +890,15 @@ typedef void (*ValkeyModuleScriptingEngineCallFunctionFunc)(
     ValkeyModuleString **args,
     size_t nargs);
 
+
+/* Return memory overhead for a given function, such memory is not counted as
+ * engine memory but as general structs memory that hold different information
+ */
 typedef size_t (*ValkeyModuleScriptingEngineGetFunctionMemoryOverheadFunc)(
     ValkeyModuleCtx *module_ctx,
     void *compiled_function);
 
+/* Free the given function */
 typedef void (*ValkeyModuleScriptingEngineFreeFunctionFunc)(
     ValkeyModuleCtx *module_ctx,
     ValkeyModuleScriptingEngineCtx *engine_ctx,
@@ -865,12 +916,12 @@ typedef struct ValkeyModuleScriptingEngineMethodsV1 {
      * ValkeyModuleScriptingEngineCompiledFunc objects. */
     ValkeyModuleScriptingEngineCreateFunctionsLibraryFunc create_functions_library;
 
-    /* Function callback to free the memory of a registered engine function. */
-    ValkeyModuleScriptingEngineFreeFunctionFunc free_function;
-
     /* The callback function called when `FCALL` command is called on a function
      * registered in this engine. */
     ValkeyModuleScriptingEngineCallFunctionFunc call_function;
+
+    /* Function callback to free the memory of a registered engine function. */
+    ValkeyModuleScriptingEngineFreeFunctionFunc free_function;
 
     /* Function callback to return memory overhead for a given function. */
     ValkeyModuleScriptingEngineGetFunctionMemoryOverheadFunc get_function_memory_overhead;

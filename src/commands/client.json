@@ -4,6 +4,7 @@
         "complexity": "Depends on subcommand.",
         "group": "connection",
         "since": "2.4.0",
+        "function": "clientCommand",
         "arity": -2,
         "command_flags": [
             "SENTINEL"

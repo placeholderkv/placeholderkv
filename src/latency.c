@@ -266,10 +266,10 @@ sds createLatencyReport(void) {
 
         /* Potentially commands. */
         if (!strcasecmp(event, "command")) {
-            if (server.slowlog_log_slower_than < 0 || server.slowlog_max_len == 0) {
+            if (server.commandlog[COMMANDLOG_TYPE_SLOW].threshold < 0 || server.commandlog[COMMANDLOG_TYPE_SLOW].max_len == 0) {
                 advise_slowlog_enabled = 1;
                 advices++;
-            } else if (server.slowlog_log_slower_than / 1000 > server.latency_monitor_threshold) {
+            } else if (server.commandlog[COMMANDLOG_TYPE_SLOW].threshold / 1000 > server.latency_monitor_threshold) {
                 advise_slowlog_tuning = 1;
                 advices++;
             }
@@ -528,7 +528,7 @@ void fillCommandCDF(client *c, struct hdr_histogram *histogram) {
  * a per command cumulative distribution of latencies. */
 void latencyAllCommandsFillCDF(client *c, hashtable *commands, int *command_with_data) {
     hashtableIterator iter;
-    hashtableInitSafeIterator(&iter, commands);
+    hashtableInitIterator(&iter, commands, HASHTABLE_ITER_SAFE);
     void *next;
     while (hashtableNext(&iter, &next)) {
         struct serverCommand *cmd = next;
@@ -565,7 +565,7 @@ void latencySpecificCommandsFillCDF(client *c) {
 
         if (cmd->subcommands_ht) {
             hashtableIterator iter;
-            hashtableInitSafeIterator(&iter, cmd->subcommands_ht);
+            hashtableInitIterator(&iter, cmd->subcommands_ht, HASHTABLE_ITER_SAFE);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 struct serverCommand *sub = next;

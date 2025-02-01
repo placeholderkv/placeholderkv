@@ -11,6 +11,7 @@ start_server {tags {"other"}} {
         assert_match "*MEMORY <subcommand> *" [r MEMORY HELP]
         assert_match "*PUBSUB <subcommand> *" [r PUBSUB HELP]
         assert_match "*SLOWLOG <subcommand> *" [r SLOWLOG HELP]
+        assert_match "*COMMANDLOG <subcommand> *" [r COMMANDLOG HELP]
         assert_match "*CLIENT <subcommand> *" [r CLIENT HELP]
         assert_match "*COMMAND <subcommand> *" [r COMMAND HELP]
         assert_match "*CONFIG <subcommand> *" [r CONFIG HELP]
@@ -28,6 +29,10 @@ start_server {tags {"other"}} {
         if {[string match {*jemalloc*} [s mem_allocator]]} {
             assert_equal {OK} [r memory purge]
         }
+    }
+
+    test {Coverage: ECHO} {
+        assert_equal bang [r ECHO bang]
     }
 
     test {SAVE - make sure there are all the types as values} {
@@ -564,7 +569,8 @@ if {$::verbose} {
 set tempFileId [open $tempFileName w]
 set group [dict get [file attributes $tempFileName] -group]
 if {$group != ""} {
-    start_server [list tags {"repl external:skip"} overrides [list unixsocketgroup $group unixsocketperm 744]] {
+    set escaped_group "\"[string map {"\\" "\\\\"} $group]\""
+    start_server [list tags {"repl external:skip"} overrides [list unixsocketgroup $escaped_group unixsocketperm 744]] {
         test {test unixsocket options are set correctly} {
             set socketpath [lindex [r config get unixsocket] 1]
             set attributes [file attributes $socketpath]

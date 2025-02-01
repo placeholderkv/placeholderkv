@@ -6,7 +6,7 @@
         "since": "7.2.0",
         "arity": 3,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientNoTouchCommand",
         "command_flags": [
             "NOSCRIPT",
             "LOADING",

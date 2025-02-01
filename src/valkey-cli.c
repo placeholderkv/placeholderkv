@@ -218,6 +218,8 @@ static struct config {
     int shutdown;
     int monitor_mode;
     int pubsub_mode;
+    int pubsub_unsharded_count; /* channels and patterns */
+    int pubsub_sharded_count;   /* shard channels */
     int blocking_state_aborted; /* used to abort monitor_mode and pubsub_mode. */
     int latency_mode;
     int latency_dist_mode;
@@ -2229,6 +2231,28 @@ static int cliReadReply(int output_raw_strings) {
     return REDIS_OK;
 }
 
+/* Helper method to handle pubsub subscription/unsubscription. */
+static void handlePubSubMode(redisReply *reply) {
+    char *cmd = reply->element[0]->str;
+    int count = reply->element[2]->integer;
+
+    /* Update counts based on the command type */
+    if (strcmp(cmd, "subscribe") == 0 || strcmp(cmd, "psubscribe") == 0 || strcmp(cmd, "unsubscribe") == 0 || strcmp(cmd, "punsubscribe") == 0) {
+        config.pubsub_unsharded_count = count;
+    } else if (strcmp(cmd, "ssubscribe") == 0 || strcmp(cmd, "sunsubscribe") == 0) {
+        config.pubsub_sharded_count = count;
+    }
+
+    /* Update pubsub mode based on the current counts */
+    if (config.pubsub_unsharded_count + config.pubsub_sharded_count == 0 && config.pubsub_mode) {
+        config.pubsub_mode = 0;
+        cliRefreshPrompt();
+    } else if (config.pubsub_unsharded_count + config.pubsub_sharded_count > 0 && !config.pubsub_mode) {
+        config.pubsub_mode = 1;
+        cliRefreshPrompt();
+    }
+}
+
 /* Simultaneously wait for pubsub messages from the server and input on stdin. */
 static void cliWaitForMessagesOrStdin(void) {
     int show_info = config.output != OUTPUT_RAW && (isatty(STDOUT_FILENO) || getenv("FAKETTY"));
@@ -2246,7 +2270,13 @@ static void cliWaitForMessagesOrStdin(void) {
                 sds out = cliFormatReply(reply, config.output, 0);
                 fwrite(out, sdslen(out), 1, stdout);
                 fflush(stdout);
+
+                if (isPubsubPush(reply)) {
+                    handlePubSubMode(reply);
+                }
+
                 sdsfree(out);
+                freeReplyObject(reply);
             }
         } while (reply);
 
@@ -2397,13 +2427,11 @@ static int cliSendCommand(int argc, char **argv, long repeat) {
             fflush(stdout);
             if (config.pubsub_mode || num_expected_pubsub_push > 0) {
                 if (isPubsubPush(config.last_reply)) {
+                    handlePubSubMode(config.last_reply);
+
                     if (num_expected_pubsub_push > 0 && !strcasecmp(config.last_reply->element[0]->str, command)) {
                         /* This pushed message confirms the
                          * [p|s][un]subscribe command. */
-                        if (is_subscribe && !config.pubsub_mode) {
-                            config.pubsub_mode = 1;
-                            cliRefreshPrompt();
-                        }
                         if (--num_expected_pubsub_push > 0) {
                             continue; /* We need more of these. */
                         }
@@ -3117,6 +3145,13 @@ void cliSetPreferences(char **argv, int argc, int interactive) {
         else {
             printf("%sunknown valkey-cli preference '%s'\n", interactive ? "" : ".valkeyclirc: ", argv[1]);
         }
+    } else if (!strcasecmp(argv[0], ":get") && argc >= 2) {
+        if (!strcasecmp(argv[1], "pubsub")) {
+            printf("%d\n", config.pubsub_mode);
+        } else {
+            printf("%sunknown valkey-cli get option '%s'\n", interactive ? "" : ".valkeyclirc: ", argv[1]);
+        }
+        fflush(stdout);
     } else {
         printf("%sunknown valkey-cli internal command '%s'\n", interactive ? "" : ".valkeyclirc: ", argv[0]);
     }
@@ -9495,6 +9530,8 @@ int main(int argc, char **argv) {
     config.shutdown = 0;
     config.monitor_mode = 0;
     config.pubsub_mode = 0;
+    config.pubsub_unsharded_count = 0;
+    config.pubsub_sharded_count = 0;
     config.blocking_state_aborted = 0;
     config.latency_mode = 0;
     config.latency_dist_mode = 0;

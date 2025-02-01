@@ -69,7 +69,7 @@ start_server {tags {"protocol network"}} {
     }
 
     set c 0
-    foreach seq [list "\x00" "*\x00" "$\x00"] {
+    foreach seq [list "\x00" "*\x00" "$\x00" "*1\r\n$\x00"] {
         incr c
         test "Protocol desync regression test #$c" {
             if {$::tls} {
@@ -78,28 +78,24 @@ start_server {tags {"protocol network"}} {
                 set s [socket [srv 0 host] [srv 0 port]]
             }
             puts -nonewline $s $seq
+            # PROTO_INLINE_MAX_SIZE is hardcoded in Valkey code to 64K. doing the same here 
+            # since we would like to validate it is enforced. 
+            set PROTO_INLINE_MAX_SIZE [expr 1024 * 64]
             set payload [string repeat A 1024]"\n"
-            set test_start [clock seconds]
-            set test_time_limit 30
-            while 1 {
+            set payload_size 0
+            while {$payload_size <= $PROTO_INLINE_MAX_SIZE} {
                 if {[catch {
-                    puts -nonewline $s payload
-                    flush $s
                     incr payload_size [string length $payload]
+                    puts -nonewline $s $payload
+                    flush $s
                 }]} {
-                    set retval [gets $s]
-                    close $s
+                    assert_morethan $payload_size $PROTO_INLINE_MAX_SIZE
                     break
-                } else {
-                    set elapsed [expr {[clock seconds]-$test_start}]
-                    if {$elapsed > $test_time_limit} {
-                        close $s
-                        error "assertion:Valkey did not closed connection after protocol desync"
-                    }
                 }
             }
-            set retval
-        } {*Protocol error*}
+            assert_match {*Protocol error*} [gets $s]]
+            close $s
+        }
     }
     unset c
 
@@ -230,6 +226,40 @@ start_server {tags {"protocol network"}} {
         assert_equal [r exec] 2
     }
 
+}
+
+start_server {tags {"protocol hello logreqres:skip"}} {
+    test {HELLO without protover} {
+        set reply [r HELLO 3]
+        assert_equal [dict get $reply proto] 3
+
+        set reply [r HELLO]
+        assert_equal [dict get $reply proto] 3
+
+        set reply [r HELLO 2]
+        assert_equal [dict get $reply proto] 2
+
+        set reply [r HELLO]
+        assert_equal [dict get $reply proto] 2
+    }
+
+    test {HELLO and availability-zone} {
+        r CONFIG SET availability-zone myzone
+
+        set reply [r HELLO 3]
+        assert_equal [dict get $reply availability_zone] myzone
+
+        set reply [r HELLO 2]
+        assert_equal [dict get $reply availability_zone] myzone
+
+        r CONFIG SET availability-zone ""
+
+        set reply [r HELLO 3]
+        assert_equal [dict exists $reply availability_zone] 0
+
+        set reply [r HELLO 2]
+        assert_equal [dict exists $reply availability_zone] 0
+    }
 }
 
 start_server {tags {"regression"}} {

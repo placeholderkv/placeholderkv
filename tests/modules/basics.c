@@ -669,6 +669,24 @@ err:
     return ValkeyModule_ReplyWithSimpleString(ctx, "ERR");
 }
 
+/* test.latency latency_ms */
+int TestLatency(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
+    if (argc != 2) {
+        ValkeyModule_WrongArity(ctx);
+        return VALKEYMODULE_OK;
+    }
+
+    long long latency_ms;
+    if (ValkeyModule_StringToLongLong(argv[1], &latency_ms) != VALKEYMODULE_OK) {
+        ValkeyModule_ReplyWithError(ctx, "Invalid integer value");
+        return VALKEYMODULE_OK;
+    }
+
+    ValkeyModule_LatencyAddSample("test", latency_ms);
+    ValkeyModule_ReplyWithSimpleString(ctx, "OK");
+    return VALKEYMODULE_OK;
+}
+
 /* TEST.CTXFLAGS -- Test GetContextFlags. */
 int TestCtxFlags(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
     VALKEYMODULE_NOT_USED(argc);
@@ -1046,6 +1064,9 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int arg
                                         NotifyCallback);
     if (ValkeyModule_CreateCommand(ctx,"test.notify",
         TestNotifications,"write deny-oom",1,1,1) == VALKEYMODULE_ERR)
+        return VALKEYMODULE_ERR;
+
+    if (ValkeyModule_CreateCommand(ctx, "test.latency", TestLatency, "readonly", 0, 0, 0) == VALKEYMODULE_ERR)
         return VALKEYMODULE_ERR;
 
     return VALKEYMODULE_OK;

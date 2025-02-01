@@ -6,7 +6,7 @@
         "since": "8.1.0",
         "arity": 3,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientImportSourceCommand",
         "command_flags": [
             "NOSCRIPT",
             "LOADING",

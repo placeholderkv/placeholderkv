@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <sys/mman.h>
 
 #define CONN_TYPE_RDMA "rdma"
 
@@ -134,6 +135,8 @@ static list *pending_list;
 static rdma_listener *rdma_listeners;
 static serverRdmaContextConfig *rdma_config;
 
+static size_t page_size;
+
 static ConnectionType CT_RDMA;
 
 static void serverRdmaError(char *err, const char *fmt, ...) {
@@ -191,31 +194,56 @@ static int rdmaPostRecv(RdmaContext *ctx, struct rdma_cm_id *cm_id, ValkeyRdmaCm
     return C_OK;
 }
 
-/* To make Valkey forkable, buffer which is registered as RDMA
- * memory region should be aligned to page size. And the length
- * also need be aligned to page size.
+/* To make Valkey forkable, buffer which is registered as RDMA memory region should be
+ * aligned to page size. And the length  also need be aligned to page size.
  * Random segment-fault case like this:
  * 0x7f2764ac5000      -      0x7f2764ac7000
  * |ptr0 128| ... |ptr1 4096| ... |ptr2 512|
  *
- * After ibv_reg_mr(pd, ptr1, 4096, access), the full range of 8K
- * becomes DONTFORK. And the child process will hit a segment fault
- * during access ptr0/ptr2.
- * Note that the memory can be freed by libc free only.
- * TODO: move it to zmalloc.c if necessary
+ * After ibv_reg_mr(pd, ptr1, 4096, access), the full range of 8K  becomes DONTFORK. And
+ * the child process will hit a segment fault during access ptr0/ptr2.
+ *
+ * The portable posix_memalign(&tmp, page_size, aligned_size) would be fine too. However,
+ * RDMA is supported by Linux only, so it would not break anything. Using raw mmap syscall
+ * to allocate a separate virtual memory area(VMA), also make it protected by the 2 guard
+ * pages (a top one and a bottom one).
  */
-static void *page_aligned_zalloc(size_t size) {
-    void *tmp;
-    size_t aligned_size, page_size = sysconf(_SC_PAGESIZE);
+static void *rdmaMemoryAlloc(size_t size) {
+    size_t real_size, aligned_size = (size + page_size - 1) & (~(page_size - 1));
+    uint8_t *ptr;
 
-    aligned_size = (size + page_size - 1) & (~(page_size - 1));
-    if (posix_memalign(&tmp, page_size, aligned_size)) {
-        serverPanic("posix_memalign failed");
+    real_size = aligned_size + 2 * page_size;
+    ptr = mmap(NULL, real_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED) {
+        serverPanic("failed to allocate memory for RDMA region");
     }
 
-    memset(tmp, 0x00, aligned_size);
+    madvise(ptr, real_size, MADV_DONTDUMP);                 /* no need to dump this VMA on coredump */
+    mprotect(ptr, page_size, PROT_NONE);                    /* top page of this VMA */
+    mprotect(ptr + size + page_size, page_size, PROT_NONE); /* bottom page of this VMA */
 
-    return tmp;
+    return ptr + page_size;
+}
+
+static void rdmaMemoryFree(void *ptr, size_t size) {
+    uint8_t *real_ptr;
+    size_t real_size, aligned_size;
+
+    if (!ptr) {
+        return;
+    }
+
+    if ((unsigned long)ptr & (page_size - 1)) {
+        serverPanic("unaligned memory in use for RDMA region");
+    }
+
+    aligned_size = (size + page_size - 1) & (~(page_size - 1));
+    real_size = aligned_size + 2 * page_size;
+    real_ptr = (uint8_t *)ptr - page_size;
+
+    if (munmap(real_ptr, real_size)) {
+        serverPanic("failed to free memory for RDMA region");
+    }
 }
 
 static void rdmaDestroyIoBuf(RdmaContext *ctx) {
@@ -224,7 +252,7 @@ static void rdmaDestroyIoBuf(RdmaContext *ctx) {
         ctx->rx.mr = NULL;
     }
 
-    zlibc_free(ctx->rx.addr);
+    rdmaMemoryFree(ctx->rx.addr, ctx->rx.length);
     ctx->rx.addr = NULL;
 
     if (ctx->tx.mr) {
@@ -232,7 +260,7 @@ static void rdmaDestroyIoBuf(RdmaContext *ctx) {
         ctx->tx.mr = NULL;
     }
 
-    zlibc_free(ctx->tx.addr);
+    rdmaMemoryFree(ctx->tx.addr, ctx->tx.length);
     ctx->tx.addr = NULL;
 
     if (ctx->cmd_mr) {
@@ -240,7 +268,7 @@ static void rdmaDestroyIoBuf(RdmaContext *ctx) {
         ctx->cmd_mr = NULL;
     }
 
-    zlibc_free(ctx->cmd_buf);
+    rdmaMemoryFree(ctx->cmd_buf, sizeof(ValkeyRdmaCmd) * VALKEY_RDMA_MAX_WQE * 2);
     ctx->cmd_buf = NULL;
 }
 
@@ -251,7 +279,7 @@ static int rdmaSetupIoBuf(RdmaContext *ctx, struct rdma_cm_id *cm_id) {
     int i;
 
     /* setup CMD buf & MR */
-    ctx->cmd_buf = page_aligned_zalloc(length);
+    ctx->cmd_buf = rdmaMemoryAlloc(length);
     ctx->cmd_mr = ibv_reg_mr(ctx->pd, ctx->cmd_buf, length, access);
     if (!ctx->cmd_mr) {
         serverLog(LL_WARNING, "RDMA: reg mr for CMD failed");
@@ -275,7 +303,7 @@ static int rdmaSetupIoBuf(RdmaContext *ctx, struct rdma_cm_id *cm_id) {
     /* setup recv buf & MR */
     access = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
     length = rdma_config->rx_size;
-    ctx->rx.addr = page_aligned_zalloc(length);
+    ctx->rx.addr = rdmaMemoryAlloc(length);
     ctx->rx.length = length;
     ctx->rx.mr = ibv_reg_mr(ctx->pd, ctx->rx.addr, length, access);
     if (!ctx->rx.mr) {
@@ -387,7 +415,7 @@ static int rdmaAdjustSendbuf(RdmaContext *ctx, unsigned int length) {
     }
 
     /* create a new buffer & MR */
-    ctx->tx.addr = page_aligned_zalloc(length);
+    ctx->tx.addr = rdmaMemoryAlloc(length);
     ctx->tx_length = length;
     ctx->tx.mr = ibv_reg_mr(ctx->pd, ctx->tx.addr, length, access);
     if (!ctx->tx.mr) {
@@ -1705,6 +1733,7 @@ error:
 
 static void rdmaInit(void) {
     pending_list = listCreate();
+    page_size = sysconf(_SC_PAGESIZE);
 
     VALKEY_BUILD_BUG_ON(sizeof(ValkeyRdmaFeature) != 32);
     VALKEY_BUILD_BUG_ON(sizeof(ValkeyRdmaKeepalive) != 32);

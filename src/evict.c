@@ -642,9 +642,9 @@ int performEvictions(void) {
                     kvs = db->expires;
                 }
                 int slot = kvstoreGetFairRandomHashtableIndex(kvs);
-                int found = kvstoreHashtableRandomEntry(kvs, slot, (void **)&valkey);
-                if (found) {
-                    bestkey = objectGetKey(valkey);
+                void *entry;
+                if (kvstoreHashtableRandomEntry(kvs, slot, &entry)) {
+                    bestkey = objectGetKey((robj *)entry);
                     bestdbid = j;
                     break;
                 }

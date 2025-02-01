@@ -1,6 +1,7 @@
 name: Clang Format Check
 
 on:
+  push:
   pull_request:
     paths:
       - 'src/**'

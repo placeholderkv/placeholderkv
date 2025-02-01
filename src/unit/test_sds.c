@@ -6,7 +6,7 @@
 #include "../sds.h"
 #include "../sdsalloc.h"
 
-static sds sdsTestTemplateCallback(sds varname, void *arg) {
+static sds sdsTestTemplateCallback(const_sds varname, void *arg) {
     UNUSED(arg);
     static const char *_var1 = "variable1";
     static const char *_var2 = "variable2";

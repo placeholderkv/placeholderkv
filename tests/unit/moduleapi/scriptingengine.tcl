@@ -51,6 +51,10 @@ start_server {tags {"modules"}} {
         assert_error {ERR Function already exists in the library} {r function load "#!hello name=mylib2\nFUNCTION foo\nARGS 0\nRETURN\nFUNCTION foo\nARGS 0\nRETURN"}
     }
 
+    test {Load script with syntax error} {
+        assert_error {ERR Failed to parse instruction: 'SEND'} {r function load replace "#!hello name=mylib3\nFUNCTION foo\nARGS 0\nSEND"}
+    }
+
     test {Call scripting engine function: calling foo works} {
         r fcall foo 0 134
     } {134}

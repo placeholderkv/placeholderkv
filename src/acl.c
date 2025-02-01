@@ -655,7 +655,7 @@ void ACLChangeSelectorPerm(aclSelector *selector, struct serverCommand *cmd, int
     ACLResetFirstArgsForCommand(selector, id);
     if (cmd->subcommands_ht) {
         hashtableIterator iter;
-        hashtableInitSafeIterator(&iter, cmd->subcommands_ht);
+        hashtableInitIterator(&iter, cmd->subcommands_ht, HASHTABLE_ITER_SAFE);
         void *next;
         while (hashtableNext(&iter, &next)) {
             struct serverCommand *sub = next;
@@ -673,7 +673,7 @@ void ACLChangeSelectorPerm(aclSelector *selector, struct serverCommand *cmd, int
  * found and the operation was performed. */
 void ACLSetSelectorCommandBitsForCategory(hashtable *commands, aclSelector *selector, uint64_t cflag, int value) {
     hashtableIterator iter;
-    hashtableInitIterator(&iter, commands);
+    hashtableInitIterator(&iter, commands, 0);
     void *next;
     while (hashtableNext(&iter, &next)) {
         struct serverCommand *cmd = next;
@@ -741,7 +741,7 @@ void ACLCountCategoryBitsForCommands(hashtable *commands,
                                      unsigned long *off,
                                      uint64_t cflag) {
     hashtableIterator iter;
-    hashtableInitIterator(&iter, commands);
+    hashtableInitIterator(&iter, commands, 0);
     void *next;
     while (hashtableNext(&iter, &next)) {
         struct serverCommand *cmd = next;
@@ -1960,7 +1960,7 @@ int ACLShouldKillPubsubClient(client *c, list *upcoming) {
 
     if (getClientType(c) == CLIENT_TYPE_PUBSUB) {
         /* Check for pattern violations. */
-        dictIterator *di = dictGetIterator(c->pubsub_patterns);
+        dictIterator *di = dictGetIterator(c->pubsub_data->pubsub_patterns);
         dictEntry *de;
         while (!kill && ((de = dictNext(di)) != NULL)) {
             o = dictGetKey(de);
@@ -1972,7 +1972,7 @@ int ACLShouldKillPubsubClient(client *c, list *upcoming) {
         /* Check for channel violations. */
         if (!kill) {
             /* Check for global channels violation. */
-            di = dictGetIterator(c->pubsub_channels);
+            di = dictGetIterator(c->pubsub_data->pubsub_channels);
 
             while (!kill && ((de = dictNext(di)) != NULL)) {
                 o = dictGetKey(de);
@@ -1983,7 +1983,7 @@ int ACLShouldKillPubsubClient(client *c, list *upcoming) {
         }
         if (!kill) {
             /* Check for shard channels violation. */
-            di = dictGetIterator(c->pubsubshard_channels);
+            di = dictGetIterator(c->pubsub_data->pubsubshard_channels);
             while (!kill && ((de = dictNext(di)) != NULL)) {
                 o = dictGetKey(de);
                 int res = ACLCheckChannelAgainstList(upcoming, o->ptr, sdslen(o->ptr), 0);
@@ -2765,7 +2765,7 @@ sds getAclErrorMessage(int acl_res, user *user, struct serverCommand *cmd, sds e
 /* ACL CAT category */
 void aclCatWithFlags(client *c, hashtable *commands, uint64_t cflag, int *arraylen) {
     hashtableIterator iter;
-    hashtableInitIterator(&iter, commands);
+    hashtableInitIterator(&iter, commands, 0);
     void *next;
     while (hashtableNext(&iter, &next)) {
         struct serverCommand *cmd = next;

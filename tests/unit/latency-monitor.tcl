@@ -143,7 +143,7 @@ tags {"needs:debug"} {
 } ;# tag
 
     test {LATENCY of expire events are correctly collected} {
-        r config set latency-monitor-threshold 20
+        r config set latency-monitor-threshold 1
         r config set lazyfree-lazy-expire no
         r flushdb
         if {$::valgrind} {set count 100000} else {set count 1000000}
@@ -187,5 +187,17 @@ tags {"needs:debug"} {
     test {LATENCY HELP should not have unexpected options} {
         catch {r LATENCY help xxx} e
         assert_match "*wrong number of arguments for 'latency|help' command" $e
+    }
+}
+
+start_cluster 1 1 {tags {"latency-monitor cluster external:skip needs:latency"} overrides {latency-monitor-threshold 1}} {
+    test "Cluster config file latency" {
+        # This test just a sanity test so that we can make sure the code path is cover.
+        # We don't assert anything since we can't be sure whether it will be counted.
+        R 0 cluster saveconfig
+        R 1 cluster saveconfig
+        R 1 cluster failover force
+        R 0 latency latest
+        R 1 latency latest
     }
 }

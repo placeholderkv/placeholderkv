@@ -99,6 +99,5 @@ int snprintf_async_signal_safe(char *to, size_t n, const char *fmt, ...);
 #endif
 size_t valkey_strlcpy(char *dst, const char *src, size_t dsize);
 size_t valkey_strlcat(char *dst, const char *src, size_t dsize);
-char *valkey_asprintf(char const *fmt, ...);
 
 #endif

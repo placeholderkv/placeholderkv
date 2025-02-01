@@ -37,8 +37,26 @@
 #include "server.h"
 
 /* The current RDB version. When the format changes in a way that is no longer
- * backward compatible this number gets incremented. */
+ * backward compatible this number gets incremented.
+ *
+ * RDB 11 is the last open-source Redis RDB version, used by Valkey 7.x and 8.x.
+ *
+ * RDB 12+ are non-open-source Redis formats.
+ *
+ * Next time we bump the Valkey RDB version, use much higher version to avoid
+ * collisions with non-OSS Redis RDB versions. For example, we could use RDB
+ * version 90 for Valkey 9.0.
+ *
+ * In an RDB file/stream, we also check the magic string REDIS or VALKEY but in
+ * the DUMP/RESTORE format, there is only the RDB version number and no magic
+ * string. */
 #define RDB_VERSION 11
+
+/* Reserved range for foreign (unsupported, non-OSS) RDB format. */
+#define RDB_FOREIGN_VERSION_MIN 12
+#define RDB_FOREIGN_VERSION_MAX 79
+static_assert(RDB_VERSION < RDB_FOREIGN_VERSION_MIN || RDB_VERSION > RDB_FOREIGN_VERSION_MAX,
+              "RDB version in foreign version range");
 
 /* Defines related to the dump file format. To store 32 bits lengths for short
  * keys requires a lot of space, so we check the most significant 2 bits of

@@ -1289,6 +1289,7 @@ commandHistory CLIENT_KILL_History[] = {
 {"6.2.0","`LADDR` option."},
 {"8.0.0","`MAXAGE` option."},
 {"8.0.0","Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."},
+{"8.1.0","`ID` option accepts multiple IDs."},
 };
 #endif
 
@@ -1320,7 +1321,7 @@ struct COMMAND_ARG CLIENT_KILL_filter_new_format_skipme_Subargs[] = {
 
 /* CLIENT KILL filter new_format argument table */
 struct COMMAND_ARG CLIENT_KILL_filter_new_format_Subargs[] = {
-{MAKE_ARG("client-id",ARG_TYPE_INTEGER,-1,"ID",NULL,"2.8.12",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("client-id",ARG_TYPE_INTEGER,-1,"ID",NULL,"2.8.12",CMD_ARG_OPTIONAL|CMD_ARG_MULTIPLE,0,NULL)},
 {MAKE_ARG("client-type",ARG_TYPE_ONEOF,-1,"TYPE",NULL,"2.8.12",CMD_ARG_OPTIONAL,6,NULL),.subargs=CLIENT_KILL_filter_new_format_client_type_Subargs},
 {MAKE_ARG("username",ARG_TYPE_STRING,-1,"USER",NULL,NULL,CMD_ARG_OPTIONAL,0,NULL)},
 {MAKE_ARG("addr",ARG_TYPE_STRING,-1,"ADDR",NULL,NULL,CMD_ARG_OPTIONAL,0,NULL),.display_text="ip:port"},
@@ -1352,6 +1353,7 @@ commandHistory CLIENT_LIST_History[] = {
 {"7.0.0","Added `resp`, `multi-mem`, `rbs` and `rbp` fields."},
 {"7.0.3","Added `ssub` field."},
 {"8.0.0","Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."},
+{"8.1.0","Added filters USER, ADDR, LADDR, SKIPME, and MAXAGE"},
 };
 #endif
 
@@ -1375,10 +1377,21 @@ struct COMMAND_ARG CLIENT_LIST_client_type_Subargs[] = {
 {MAKE_ARG("pubsub",ARG_TYPE_PURE_TOKEN,-1,"PUBSUB",NULL,NULL,CMD_ARG_NONE,0,NULL)},
 };
 
+/* CLIENT LIST skipme argument table */
+struct COMMAND_ARG CLIENT_LIST_skipme_Subargs[] = {
+{MAKE_ARG("yes",ARG_TYPE_PURE_TOKEN,-1,"YES",NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("no",ARG_TYPE_PURE_TOKEN,-1,"NO",NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
 /* CLIENT LIST argument table */
 struct COMMAND_ARG CLIENT_LIST_Args[] = {
 {MAKE_ARG("client-type",ARG_TYPE_ONEOF,-1,"TYPE",NULL,"5.0.0",CMD_ARG_OPTIONAL,4,NULL),.subargs=CLIENT_LIST_client_type_Subargs},
 {MAKE_ARG("client-id",ARG_TYPE_INTEGER,-1,"ID",NULL,"6.2.0",CMD_ARG_OPTIONAL|CMD_ARG_MULTIPLE,0,NULL)},
+{MAKE_ARG("username",ARG_TYPE_STRING,-1,"USER",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("addr",ARG_TYPE_STRING,-1,"ADDR",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL),.display_text="ip:port"},
+{MAKE_ARG("laddr",ARG_TYPE_STRING,-1,"LADDR",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL),.display_text="ip:port"},
+{MAKE_ARG("skipme",ARG_TYPE_ONEOF,-1,"SKIPME",NULL,"8.1.0",CMD_ARG_OPTIONAL,2,NULL),.subargs=CLIENT_LIST_skipme_Subargs},
+{MAKE_ARG("maxage",ARG_TYPE_INTEGER,-1,"MAXAGE",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
 };
 
 /********** CLIENT NO_EVICT ********************/
@@ -1652,26 +1665,26 @@ struct COMMAND_ARG CLIENT_UNBLOCK_Args[] = {
 
 /* CLIENT command table */
 struct COMMAND_STRUCT CLIENT_Subcommands[] = {
-{MAKE_CMD("caching","Instructs the server whether to track the keys in the next request.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_CACHING_History,0,CLIENT_CACHING_Tips,0,clientCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_CACHING_Keyspecs,0,NULL,1),.args=CLIENT_CACHING_Args},
-{MAKE_CMD("capa","A client claims its capability.","O(1)","8.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_CAPA_History,0,CLIENT_CAPA_Tips,0,clientCommand,-3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_CAPA_Keyspecs,0,NULL,1),.args=CLIENT_CAPA_Args},
-{MAKE_CMD("getname","Returns the name of the connection.","O(1)","2.6.9",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_GETNAME_History,0,CLIENT_GETNAME_Tips,0,clientCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_GETNAME_Keyspecs,0,NULL,0)},
-{MAKE_CMD("getredir","Returns the client ID to which the connection's tracking notifications are redirected.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_GETREDIR_History,0,CLIENT_GETREDIR_Tips,0,clientCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_GETREDIR_Keyspecs,0,NULL,0)},
-{MAKE_CMD("help","Returns helpful text about the different subcommands.","O(1)","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_HELP_History,0,CLIENT_HELP_Tips,0,clientCommand,2,CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_HELP_Keyspecs,0,NULL,0)},
-{MAKE_CMD("id","Returns the unique client ID of the connection.","O(1)","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_ID_History,0,CLIENT_ID_Tips,0,clientCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_ID_Keyspecs,0,NULL,0)},
-{MAKE_CMD("import-source","Mark this client as an import source when server is in import mode.","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_IMPORT_SOURCE_History,0,CLIENT_IMPORT_SOURCE_Tips,0,clientCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_IMPORT_SOURCE_Keyspecs,0,NULL,1),.args=CLIENT_IMPORT_SOURCE_Args},
-{MAKE_CMD("info","Returns information about the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_INFO_History,0,CLIENT_INFO_Tips,1,clientCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_INFO_Keyspecs,0,NULL,0)},
-{MAKE_CMD("kill","Terminates open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_KILL_History,7,CLIENT_KILL_Tips,0,clientCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_KILL_Keyspecs,0,NULL,1),.args=CLIENT_KILL_Args},
-{MAKE_CMD("list","Lists open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_LIST_History,7,CLIENT_LIST_Tips,1,clientCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_LIST_Keyspecs,0,NULL,2),.args=CLIENT_LIST_Args},
-{MAKE_CMD("no-evict","Sets the client eviction mode of the connection.","O(1)","7.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_EVICT_History,0,CLIENT_NO_EVICT_Tips,0,clientCommand,3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_NO_EVICT_Keyspecs,0,NULL,1),.args=CLIENT_NO_EVICT_Args},
-{MAKE_CMD("no-touch","Controls whether commands sent by the client affect the LRU/LFU of accessed keys.","O(1)","7.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_TOUCH_History,0,CLIENT_NO_TOUCH_Tips,0,clientCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_NO_TOUCH_Keyspecs,0,NULL,1),.args=CLIENT_NO_TOUCH_Args},
-{MAKE_CMD("pause","Suspends commands processing.","O(1)","3.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_PAUSE_History,1,CLIENT_PAUSE_Tips,0,clientCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_PAUSE_Keyspecs,0,NULL,2),.args=CLIENT_PAUSE_Args},
-{MAKE_CMD("reply","Instructs the server whether to reply to commands.","O(1)","3.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_REPLY_History,0,CLIENT_REPLY_Tips,0,clientCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_REPLY_Keyspecs,0,NULL,1),.args=CLIENT_REPLY_Args},
+{MAKE_CMD("caching","Instructs the server whether to track the keys in the next request.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_CACHING_History,0,CLIENT_CACHING_Tips,0,clientCachingCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_CACHING_Keyspecs,0,NULL,1),.args=CLIENT_CACHING_Args},
+{MAKE_CMD("capa","A client claims its capability.","O(1)","8.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_CAPA_History,0,CLIENT_CAPA_Tips,0,clientCapaCommand,-3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_CAPA_Keyspecs,0,NULL,1),.args=CLIENT_CAPA_Args},
+{MAKE_CMD("getname","Returns the name of the connection.","O(1)","2.6.9",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_GETNAME_History,0,CLIENT_GETNAME_Tips,0,clientGetNameCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_GETNAME_Keyspecs,0,NULL,0)},
+{MAKE_CMD("getredir","Returns the client ID to which the connection's tracking notifications are redirected.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_GETREDIR_History,0,CLIENT_GETREDIR_Tips,0,clientGetredirCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_GETREDIR_Keyspecs,0,NULL,0)},
+{MAKE_CMD("help","Returns helpful text about the different subcommands.","O(1)","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_HELP_History,0,CLIENT_HELP_Tips,0,clientHelpCommand,2,CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_HELP_Keyspecs,0,NULL,0)},
+{MAKE_CMD("id","Returns the unique client ID of the connection.","O(1)","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_ID_History,0,CLIENT_ID_Tips,0,clientIDCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_ID_Keyspecs,0,NULL,0)},
+{MAKE_CMD("import-source","Mark this client as an import source when server is in import mode.","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_IMPORT_SOURCE_History,0,CLIENT_IMPORT_SOURCE_Tips,0,clientImportSourceCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_IMPORT_SOURCE_Keyspecs,0,NULL,1),.args=CLIENT_IMPORT_SOURCE_Args},
+{MAKE_CMD("info","Returns information about the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_INFO_History,0,CLIENT_INFO_Tips,1,clientInfoCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_INFO_Keyspecs,0,NULL,0)},
+{MAKE_CMD("kill","Terminates open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_KILL_History,8,CLIENT_KILL_Tips,0,clientKillCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_KILL_Keyspecs,0,NULL,1),.args=CLIENT_KILL_Args},
+{MAKE_CMD("list","Lists open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_LIST_History,8,CLIENT_LIST_Tips,1,clientListCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_LIST_Keyspecs,0,NULL,7),.args=CLIENT_LIST_Args},
+{MAKE_CMD("no-evict","Sets the client eviction mode of the connection.","O(1)","7.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_EVICT_History,0,CLIENT_NO_EVICT_Tips,0,clientNoEvictCommand,3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_NO_EVICT_Keyspecs,0,NULL,1),.args=CLIENT_NO_EVICT_Args},
+{MAKE_CMD("no-touch","Controls whether commands sent by the client affect the LRU/LFU of accessed keys.","O(1)","7.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_TOUCH_History,0,CLIENT_NO_TOUCH_Tips,0,clientNoTouchCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_NO_TOUCH_Keyspecs,0,NULL,1),.args=CLIENT_NO_TOUCH_Args},
+{MAKE_CMD("pause","Suspends commands processing.","O(1)","3.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_PAUSE_History,1,CLIENT_PAUSE_Tips,0,clientPauseCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_PAUSE_Keyspecs,0,NULL,2),.args=CLIENT_PAUSE_Args},
+{MAKE_CMD("reply","Instructs the server whether to reply to commands.","O(1)","3.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_REPLY_History,0,CLIENT_REPLY_Tips,0,clientReplyCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_REPLY_Keyspecs,0,NULL,1),.args=CLIENT_REPLY_Args},
 {MAKE_CMD("setinfo","Sets information specific to the client or connection.","O(1)","7.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_SETINFO_History,0,CLIENT_SETINFO_Tips,2,clientSetinfoCommand,4,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_SETINFO_Keyspecs,0,NULL,1),.args=CLIENT_SETINFO_Args},
-{MAKE_CMD("setname","Sets the connection name.","O(1)","2.6.9",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_SETNAME_History,0,CLIENT_SETNAME_Tips,2,clientCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_SETNAME_Keyspecs,0,NULL,1),.args=CLIENT_SETNAME_Args},
-{MAKE_CMD("tracking","Controls server-assisted client-side caching for the connection.","O(1). Some options may introduce additional complexity.","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_TRACKING_History,0,CLIENT_TRACKING_Tips,0,clientCommand,-3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_TRACKING_Keyspecs,0,NULL,7),.args=CLIENT_TRACKING_Args},
-{MAKE_CMD("trackinginfo","Returns information about server-assisted client-side caching for the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_TRACKINGINFO_History,0,CLIENT_TRACKINGINFO_Tips,0,clientCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_TRACKINGINFO_Keyspecs,0,NULL,0)},
-{MAKE_CMD("unblock","Unblocks a client blocked by a blocking command from a different connection.","O(log N) where N is the number of client connections","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_UNBLOCK_History,0,CLIENT_UNBLOCK_Tips,0,clientCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_UNBLOCK_Keyspecs,0,NULL,2),.args=CLIENT_UNBLOCK_Args},
-{MAKE_CMD("unpause","Resumes processing commands from paused clients.","O(N) Where N is the number of paused clients","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_UNPAUSE_History,0,CLIENT_UNPAUSE_Tips,0,clientCommand,2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_UNPAUSE_Keyspecs,0,NULL,0)},
+{MAKE_CMD("setname","Sets the connection name.","O(1)","2.6.9",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_SETNAME_History,0,CLIENT_SETNAME_Tips,2,clientSetNameCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_SETNAME_Keyspecs,0,NULL,1),.args=CLIENT_SETNAME_Args},
+{MAKE_CMD("tracking","Controls server-assisted client-side caching for the connection.","O(1). Some options may introduce additional complexity.","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_TRACKING_History,0,CLIENT_TRACKING_Tips,0,clientTrackingCommand,-3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_TRACKING_Keyspecs,0,NULL,7),.args=CLIENT_TRACKING_Args},
+{MAKE_CMD("trackinginfo","Returns information about server-assisted client-side caching for the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_TRACKINGINFO_History,0,CLIENT_TRACKINGINFO_Tips,0,clientTrackingInfoCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_TRACKINGINFO_Keyspecs,0,NULL,0)},
+{MAKE_CMD("unblock","Unblocks a client blocked by a blocking command from a different connection.","O(log N) where N is the number of client connections","5.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_UNBLOCK_History,0,CLIENT_UNBLOCK_Tips,0,clientUnblockCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_UNBLOCK_Keyspecs,0,NULL,2),.args=CLIENT_UNBLOCK_Args},
+{MAKE_CMD("unpause","Resumes processing commands from paused clients.","O(N) Where N is the number of paused clients","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_UNPAUSE_History,0,CLIENT_UNPAUSE_Tips,0,clientUnpauseCommand,2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_UNPAUSE_Keyspecs,0,NULL,0)},
 {0}
 };
 
@@ -1719,6 +1732,7 @@ struct COMMAND_ARG ECHO_Args[] = {
 #ifndef SKIP_CMD_HISTORY_TABLE
 /* HELLO history */
 commandHistory HELLO_History[] = {
+{"8.1.0","A new `availability_zone` field is added to the response if the `availability-zone` config is set."},
 {"6.2.0","`protover` made optional; when called without arguments the command reports the current connection's context."},
 };
 #endif
@@ -6654,6 +6668,147 @@ const char *COMMAND_Tips[] = {
 #define COMMAND_Keyspecs NULL
 #endif
 
+/********** COMMANDLOG GET ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG GET history */
+#define COMMANDLOG_GET_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG GET tips */
+const char *COMMANDLOG_GET_Tips[] = {
+"request_policy:all_nodes",
+"nondeterministic_output",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG GET key specs */
+#define COMMANDLOG_GET_Keyspecs NULL
+#endif
+
+/* COMMANDLOG GET type argument table */
+struct COMMAND_ARG COMMANDLOG_GET_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG GET argument table */
+struct COMMAND_ARG COMMANDLOG_GET_Args[] = {
+{MAKE_ARG("count",ARG_TYPE_INTEGER,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_GET_type_Subargs},
+};
+
+/********** COMMANDLOG HELP ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG HELP history */
+#define COMMANDLOG_HELP_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG HELP tips */
+#define COMMANDLOG_HELP_Tips NULL
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG HELP key specs */
+#define COMMANDLOG_HELP_Keyspecs NULL
+#endif
+
+/********** COMMANDLOG LEN ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG LEN history */
+#define COMMANDLOG_LEN_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG LEN tips */
+const char *COMMANDLOG_LEN_Tips[] = {
+"request_policy:all_nodes",
+"response_policy:agg_sum",
+"nondeterministic_output",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG LEN key specs */
+#define COMMANDLOG_LEN_Keyspecs NULL
+#endif
+
+/* COMMANDLOG LEN type argument table */
+struct COMMAND_ARG COMMANDLOG_LEN_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG LEN argument table */
+struct COMMAND_ARG COMMANDLOG_LEN_Args[] = {
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_LEN_type_Subargs},
+};
+
+/********** COMMANDLOG RESET ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG RESET history */
+#define COMMANDLOG_RESET_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG RESET tips */
+const char *COMMANDLOG_RESET_Tips[] = {
+"request_policy:all_nodes",
+"response_policy:all_succeeded",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG RESET key specs */
+#define COMMANDLOG_RESET_Keyspecs NULL
+#endif
+
+/* COMMANDLOG RESET type argument table */
+struct COMMAND_ARG COMMANDLOG_RESET_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG RESET argument table */
+struct COMMAND_ARG COMMANDLOG_RESET_Args[] = {
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_RESET_type_Subargs},
+};
+
+/* COMMANDLOG command table */
+struct COMMAND_STRUCT COMMANDLOG_Subcommands[] = {
+{MAKE_CMD("get","Returns the specified command log's entries.","O(N) where N is the number of entries returned","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_GET_History,0,COMMANDLOG_GET_Tips,2,commandlogCommand,4,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_GET_Keyspecs,0,NULL,2),.args=COMMANDLOG_GET_Args},
+{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_HELP_History,0,COMMANDLOG_HELP_Tips,0,commandlogCommand,2,CMD_LOADING|CMD_STALE,0,COMMANDLOG_HELP_Keyspecs,0,NULL,0)},
+{MAKE_CMD("len","Returns the number of entries in the specified type of command log.","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_LEN_History,0,COMMANDLOG_LEN_Tips,3,commandlogCommand,3,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_LEN_Keyspecs,0,NULL,1),.args=COMMANDLOG_LEN_Args},
+{MAKE_CMD("reset","Clears all entries from the specified type of command log.","O(N) where N is the number of entries in the commandlog","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_RESET_History,0,COMMANDLOG_RESET_Tips,2,commandlogCommand,3,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_RESET_Keyspecs,0,NULL,1),.args=COMMANDLOG_RESET_Args},
+{0}
+};
+
+/********** COMMANDLOG ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG history */
+#define COMMANDLOG_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG tips */
+#define COMMANDLOG_Tips NULL
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG key specs */
+#define COMMANDLOG_Keyspecs NULL
+#endif
+
 /********** CONFIG GET ********************/
 
 #ifndef SKIP_CMD_HISTORY_TABLE
@@ -7817,10 +7972,10 @@ const char *SLOWLOG_RESET_Tips[] = {
 
 /* SLOWLOG command table */
 struct COMMAND_STRUCT SLOWLOG_Subcommands[] = {
-{MAKE_CMD("get","Returns the slow log's entries.","O(N) where N is the number of entries returned","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_GET_History,1,SLOWLOG_GET_Tips,2,slowlogCommand,-2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_GET_Keyspecs,0,NULL,1),.args=SLOWLOG_GET_Args},
-{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_HELP_History,0,SLOWLOG_HELP_Tips,0,slowlogCommand,2,CMD_LOADING|CMD_STALE,0,SLOWLOG_HELP_Keyspecs,0,NULL,0)},
-{MAKE_CMD("len","Returns the number of entries in the slow log.","O(1)","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_LEN_History,0,SLOWLOG_LEN_Tips,3,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_LEN_Keyspecs,0,NULL,0)},
-{MAKE_CMD("reset","Clears all entries from the slow log.","O(N) where N is the number of entries in the slowlog","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_RESET_History,0,SLOWLOG_RESET_Tips,2,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_RESET_Keyspecs,0,NULL,0)},
+{MAKE_CMD("get","Returns the slow log's entries.","O(N) where N is the number of entries returned","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG GET <count> SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_GET_History,1,SLOWLOG_GET_Tips,2,slowlogCommand,-2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_GET_Keyspecs,0,NULL,1),.args=SLOWLOG_GET_Args},
+{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","6.2.0",CMD_DOC_DEPRECATED,"`COMMANDLOG HELP`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_HELP_History,0,SLOWLOG_HELP_Tips,0,slowlogCommand,2,CMD_LOADING|CMD_STALE,0,SLOWLOG_HELP_Keyspecs,0,NULL,0)},
+{MAKE_CMD("len","Returns the number of entries in the slow log.","O(1)","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG LEN SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_LEN_History,0,SLOWLOG_LEN_Tips,3,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_LEN_Keyspecs,0,NULL,0)},
+{MAKE_CMD("reset","Clears all entries from the slow log.","O(N) where N is the number of entries in the slowlog","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG RESET SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_RESET_History,0,SLOWLOG_RESET_Tips,2,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_RESET_Keyspecs,0,NULL,0)},
 {0}
 };
 
@@ -10909,9 +11064,9 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("readwrite","Enables read-write queries for a connection to a Valkey replica node.","O(1)","3.0.0",CMD_DOC_NONE,NULL,NULL,"cluster",COMMAND_GROUP_CLUSTER,READWRITE_History,0,READWRITE_Tips,0,readwriteCommand,1,CMD_FAST|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,READWRITE_Keyspecs,0,NULL,0)},
 /* connection */
 {MAKE_CMD("auth","Authenticates the connection.","O(N) where N is the number of passwords defined for the user","1.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,AUTH_History,1,AUTH_Tips,0,authCommand,-2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_AUTH|CMD_SENTINEL|CMD_ALLOW_BUSY,ACL_CATEGORY_CONNECTION,AUTH_Keyspecs,0,NULL,2),.args=AUTH_Args},
-{MAKE_CMD("client","A container for client connection commands.","Depends on subcommand.","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_History,0,CLIENT_Tips,0,NULL,-2,CMD_SENTINEL,0,CLIENT_Keyspecs,0,NULL,0),.subcommands=CLIENT_Subcommands},
+{MAKE_CMD("client","A container for client connection commands.","Depends on subcommand.","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_History,0,CLIENT_Tips,0,clientCommand,-2,CMD_SENTINEL,0,CLIENT_Keyspecs,0,NULL,0),.subcommands=CLIENT_Subcommands},
 {MAKE_CMD("echo","Returns the given string.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,ECHO_History,0,ECHO_Tips,0,echoCommand,2,CMD_LOADING|CMD_STALE|CMD_FAST,ACL_CATEGORY_CONNECTION,ECHO_Keyspecs,0,NULL,1),.args=ECHO_Args},
-{MAKE_CMD("hello","Handshakes with the server.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,HELLO_History,1,HELLO_Tips,0,helloCommand,-1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_AUTH|CMD_SENTINEL|CMD_ALLOW_BUSY,ACL_CATEGORY_CONNECTION,HELLO_Keyspecs,0,NULL,1),.args=HELLO_Args},
+{MAKE_CMD("hello","Handshakes with the server.","O(1)","6.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,HELLO_History,2,HELLO_Tips,0,helloCommand,-1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_AUTH|CMD_SENTINEL|CMD_ALLOW_BUSY,ACL_CATEGORY_CONNECTION,HELLO_Keyspecs,0,NULL,1),.args=HELLO_Args},
 {MAKE_CMD("ping","Returns the server's liveliness response.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,PING_History,0,PING_Tips,2,pingCommand,-1,CMD_FAST|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,PING_Keyspecs,0,NULL,1),.args=PING_Args},
 {MAKE_CMD("quit","Closes the connection.","O(1)","1.0.0",CMD_DOC_DEPRECATED,"just closing the connection","7.2.0","connection",COMMAND_GROUP_CONNECTION,QUIT_History,0,QUIT_Tips,0,quitCommand,-1,CMD_ALLOW_BUSY|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_AUTH,ACL_CATEGORY_CONNECTION,QUIT_Keyspecs,0,NULL,0)},
 {MAKE_CMD("reset","Resets the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,RESET_History,0,RESET_Tips,0,resetCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_AUTH|CMD_ALLOW_BUSY,ACL_CATEGORY_CONNECTION,RESET_Keyspecs,0,NULL,0)},
@@ -11029,6 +11184,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("bgrewriteaof","Asynchronously rewrites the append-only file to disk.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,BGREWRITEAOF_History,0,BGREWRITEAOF_Tips,0,bgrewriteaofCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT,0,BGREWRITEAOF_Keyspecs,0,NULL,0)},
 {MAKE_CMD("bgsave","Asynchronously saves the database(s) to disk.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,BGSAVE_History,2,BGSAVE_Tips,0,bgsaveCommand,-1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT,0,BGSAVE_Keyspecs,0,NULL,1),.args=BGSAVE_Args},
 {MAKE_CMD("command","Returns detailed information about all commands.","O(N) where N is the total number of commands","2.8.13",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMAND_History,0,COMMAND_Tips,1,commandCommand,-1,CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,COMMAND_Keyspecs,0,NULL,0),.subcommands=COMMAND_Subcommands},
+{MAKE_CMD("commandlog","A container for command log commands.","Depends on subcommand.","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_History,0,COMMANDLOG_Tips,0,NULL,-2,0,0,COMMANDLOG_Keyspecs,0,NULL,0),.subcommands=COMMANDLOG_Subcommands},
 {MAKE_CMD("config","A container for server configuration commands.","Depends on subcommand.","2.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,CONFIG_History,0,CONFIG_Tips,0,NULL,-2,0,0,CONFIG_Keyspecs,0,NULL,0),.subcommands=CONFIG_Subcommands},
 {MAKE_CMD("dbsize","Returns the number of keys in the database.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,DBSIZE_History,0,DBSIZE_Tips,2,dbsizeCommand,1,CMD_READONLY|CMD_FAST,ACL_CATEGORY_KEYSPACE,DBSIZE_Keyspecs,0,NULL,0)},
 {MAKE_CMD("debug","A container for debugging commands.","Depends on subcommand.","1.0.0",CMD_DOC_SYSCMD,NULL,NULL,"server",COMMAND_GROUP_SERVER,DEBUG_History,0,DEBUG_Tips,0,debugCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_PROTECTED,0,DEBUG_Keyspecs,0,NULL,0)},
@@ -11050,7 +11206,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("save","Synchronously saves the database(s) to disk.","O(N) where N is the total number of keys in all databases","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SAVE_History,0,SAVE_Tips,0,saveCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT|CMD_NO_MULTI,0,SAVE_Keyspecs,0,NULL,0)},
 {MAKE_CMD("shutdown","Synchronously saves the database(s) to disk and shuts down the server.","O(N) when saving, where N is the total number of keys in all databases when saving data, otherwise O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SHUTDOWN_History,1,SHUTDOWN_Tips,0,shutdownCommand,-1,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_NO_MULTI|CMD_SENTINEL|CMD_ALLOW_BUSY,0,SHUTDOWN_Keyspecs,0,NULL,1),.args=SHUTDOWN_Args},
 {MAKE_CMD("slaveof","Sets a server as a replica of another, or promotes it to being a primary.","O(1)","1.0.0",CMD_DOC_DEPRECATED,"`REPLICAOF`","5.0.0","server",COMMAND_GROUP_SERVER,SLAVEOF_History,0,SLAVEOF_Tips,0,replicaofCommand,3,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT|CMD_STALE,0,SLAVEOF_Keyspecs,0,NULL,1),.args=SLAVEOF_Args},
-{MAKE_CMD("slowlog","A container for slow log commands.","Depends on subcommand.","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_History,0,SLOWLOG_Tips,0,NULL,-2,0,0,SLOWLOG_Keyspecs,0,NULL,0),.subcommands=SLOWLOG_Subcommands},
+{MAKE_CMD("slowlog","A container for slow log commands.","Depends on subcommand.","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_History,0,SLOWLOG_Tips,0,NULL,-2,0,0,SLOWLOG_Keyspecs,0,NULL,0),.subcommands=SLOWLOG_Subcommands},
 {MAKE_CMD("swapdb","Swaps two databases.","O(N) where N is the count of clients watching or blocking on keys from both databases.","4.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SWAPDB_History,0,SWAPDB_Tips,0,swapdbCommand,3,CMD_WRITE|CMD_FAST,ACL_CATEGORY_KEYSPACE|ACL_CATEGORY_DANGEROUS,SWAPDB_Keyspecs,0,NULL,2),.args=SWAPDB_Args},
 {MAKE_CMD("sync","An internal command used in replication.",NULL,"1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SYNC_History,0,SYNC_Tips,0,syncCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NO_MULTI|CMD_NOSCRIPT,0,SYNC_Keyspecs,0,NULL,0)},
 {MAKE_CMD("time","Returns the server time.","O(1)","2.6.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,TIME_History,0,TIME_Tips,1,timeCommand,1,CMD_LOADING|CMD_STALE|CMD_FAST,0,TIME_Keyspecs,0,NULL,0)},
@@ -11149,7 +11305,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("substr","Returns a substring from a string value.","O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.","1.0.0",CMD_DOC_DEPRECATED,"`GETRANGE`","2.0.0","string",COMMAND_GROUP_STRING,SUBSTR_History,0,SUBSTR_Tips,0,getrangeCommand,4,CMD_READONLY,ACL_CATEGORY_STRING,SUBSTR_Keyspecs,1,NULL,3),.args=SUBSTR_Args},
 /* transactions */
 {MAKE_CMD("discard","Discards a transaction.","O(N), when N is the number of queued commands","2.0.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,DISCARD_History,0,DISCARD_Tips,0,discardCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,DISCARD_Keyspecs,0,NULL,0)},
-{MAKE_CMD("exec","Executes all commands in a transaction.","Depends on commands in the transaction","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,EXEC_History,0,EXEC_Tips,0,execCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SKIP_SLOWLOG,ACL_CATEGORY_TRANSACTION,EXEC_Keyspecs,0,NULL,0)},
+{MAKE_CMD("exec","Executes all commands in a transaction.","Depends on commands in the transaction","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,EXEC_History,0,EXEC_Tips,0,execCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SKIP_COMMANDLOG,ACL_CATEGORY_TRANSACTION,EXEC_Keyspecs,0,NULL,0)},
 {MAKE_CMD("multi","Starts a transaction.","O(1)","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,MULTI_History,0,MULTI_Tips,0,multiCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_MULTI|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,MULTI_Keyspecs,0,NULL,0)},
 {MAKE_CMD("unwatch","Forgets about watched keys of a transaction.","O(1)","2.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,UNWATCH_History,0,UNWATCH_Tips,0,unwatchCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,UNWATCH_Keyspecs,0,NULL,0)},
 {MAKE_CMD("watch","Monitors changes to keys to determine the execution of a transaction.","O(1) for every key.","2.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,WATCH_History,0,WATCH_Tips,0,watchCommand,-2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_MULTI|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,WATCH_Keyspecs,1,NULL,1),.args=WATCH_Args},

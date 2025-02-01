@@ -49,65 +49,11 @@
  */
 
 #include "server.h"
+#include "scripting_engine.h"
 #include "script.h"
 #include "valkeymodule.h"
 
 typedef struct functionLibInfo functionLibInfo;
-
-/* ValkeyModule type aliases for scripting engine structs and types. */
-typedef struct ValkeyModule ValkeyModule;
-typedef ValkeyModuleScriptingEngineCtx engineCtx;
-typedef ValkeyModuleScriptingEngineFunctionCtx functionCtx;
-typedef ValkeyModuleScriptingEngineCompiledFunction compiledFunction;
-typedef ValkeyModuleScriptingEngineMemoryInfo engineMemoryInfo;
-typedef ValkeyModuleScriptingEngineMethods engineMethods;
-
-typedef struct engine {
-    /* engine specific context */
-    engineCtx *engine_ctx;
-
-    /* Compiles the script code and returns an array of compiled functions
-     * registered in the script./
-     *
-     * Returns NULL on error and set err to be the error message */
-    compiledFunction **(*create)(
-        ValkeyModuleCtx *module_ctx,
-        engineCtx *engine_ctx,
-        const char *code,
-        size_t timeout,
-        size_t *out_num_compiled_functions,
-        char **err);
-
-    /* Invoking a function, func_ctx is an opaque object (from engine POV).
-     * The func_ctx should be used by the engine to interaction with the server,
-     * such interaction could be running commands, set resp, or set
-     * replication mode
-     */
-    void (*call)(ValkeyModuleCtx *module_ctx,
-                 engineCtx *engine_ctx,
-                 functionCtx *func_ctx,
-                 void *compiled_function,
-                 robj **keys,
-                 size_t nkeys,
-                 robj **args,
-                 size_t nargs);
-
-    /* free the given function */
-    void (*free_function)(ValkeyModuleCtx *module_ctx,
-                          engineCtx *engine_ctx,
-                          void *compiled_function);
-
-    /* Return memory overhead for a given function,
-     * such memory is not counted as engine memory but as general
-     * structs memory that hold different information */
-    size_t (*get_function_memory_overhead)(ValkeyModuleCtx *module_ctx,
-                                           void *compiled_function);
-
-    /* Get the current used memory by the engine */
-    engineMemoryInfo (*get_memory_info)(ValkeyModuleCtx *module_ctx,
-                                        engineCtx *engine_ctx);
-
-} engine;
 
 /* Hold information about an engine.
  * Used on rdb.c so it must be declared here. */
@@ -115,7 +61,7 @@ typedef struct engineInfo {
     sds name;                    /* Name of the engine */
     ValkeyModule *engineModule;  /* the module that implements the scripting engine */
     ValkeyModuleCtx *module_ctx; /* Scripting engine module context */
-    engine *engine;              /* engine callbacks that allows to interact with the engine */
+    scriptingEngine *engine;     /* engine callbacks that allows to interact with the engine */
     client *c;                   /* Client that is used to run commands */
 } engineInfo;
 
@@ -133,17 +79,11 @@ typedef struct functionInfo {
 /* Hold information about the specific library.
  * Used on rdb.c so it must be declared here. */
 struct functionLibInfo {
-    sds name;        /* Library name */
-    dict *functions; /* Functions dictionary */
-    engineInfo *ei;  /* Pointer to the function engine */
-    sds code;        /* Library code */
+    sds name;                /* Library name */
+    dict *functions;         /* Functions dictionary */
+    scriptingEngine *engine; /* Pointer to the scripting engine */
+    sds code;                /* Library code */
 };
-
-int functionsRegisterEngine(const char *engine_name,
-                            ValkeyModule *engine_module,
-                            void *engine_ctx,
-                            engineMethods *engine_methods);
-int functionsUnregisterEngine(const char *engine_name);
 
 sds functionsCreateWithLibraryCtx(sds code, int replace, sds *err, functionsLibCtx *lib_ctx, size_t timeout);
 unsigned long functionsMemory(void);
@@ -158,6 +98,8 @@ void functionsLibCtxClearCurrent(int async, void(callback)(dict *));
 void functionsLibCtxFree(functionsLibCtx *functions_lib_ctx);
 void functionsLibCtxClear(functionsLibCtx *lib_ctx, void(callback)(dict *));
 void functionsLibCtxSwapWithCurrent(functionsLibCtx *new_lib_ctx, int async);
+
+void functionsRemoveLibFromEngine(scriptingEngine *engine);
 
 int luaEngineInitEngine(void);
 int functionsInit(void);

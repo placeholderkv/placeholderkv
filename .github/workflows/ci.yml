@@ -18,10 +18,15 @@ jobs:
         # Fail build if there are warnings
         # build with TLS just for compilation coverage
         run: make -j4 all-with-unit-tests SERVER_CFLAGS='-Werror' BUILD_TLS=yes USE_FAST_FLOAT=yes
+      - name: install old server for compatibility testing
+        run: |
+          cd tests/tmp
+          wget https://download.valkey.io/releases/valkey-7.2.7-noble-x86_64.tar.gz
+          tar -xvf valkey-7.2.7-noble-x86_64.tar.gz
       - name: test
         run: |
           sudo apt-get install tcl8.6 tclx
-          ./runtest --verbose --tags -slow --dump-logs
+          ./runtest --verbose --tags -slow --dump-logs --other-server-path tests/tmp/valkey-7.2.7-noble-x86_64/bin/valkey-server
       - name: module api test
         run: CFLAGS='-Werror' ./runtest-moduleapi --verbose --dump-logs
       - name: validate commands.def up to date

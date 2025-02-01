@@ -382,13 +382,14 @@ struct clusterState {
     clusterNode *importing_slots_from[CLUSTER_SLOTS];
     clusterNode *slots[CLUSTER_SLOTS];
     /* The following fields are used to take the replica state on elections. */
-    mstime_t failover_auth_time;  /* Time of previous or next election. */
-    int failover_auth_count;      /* Number of votes received so far. */
-    int failover_auth_sent;       /* True if we already asked for votes. */
-    int failover_auth_rank;       /* This replica rank for current auth request. */
-    uint64_t failover_auth_epoch; /* Epoch of the current election. */
-    int cant_failover_reason;     /* Why a replica is currently not able to
-                                     failover. See the CANT_FAILOVER_* macros. */
+    mstime_t failover_auth_time;      /* Time of previous or next election. */
+    int failover_auth_count;          /* Number of votes received so far. */
+    int failover_auth_sent;           /* True if we already asked for votes. */
+    int failover_auth_rank;           /* This replica rank for current auth request. */
+    int failover_failed_primary_rank; /* The rank of this instance in the context of all failed primary list. */
+    uint64_t failover_auth_epoch;     /* Epoch of the current election. */
+    int cant_failover_reason;         /* Why a replica is currently not able to
+                                       * failover. See the CANT_FAILOVER_* macros. */
     /* Manual failover state in common. */
     mstime_t mf_end; /* Manual failover time limit (ms unixtime).
                         It is zero if there is no MF in progress. */

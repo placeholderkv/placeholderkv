@@ -39,7 +39,14 @@ extern const char *SDS_NOINIT;
 #include <stdarg.h>
 #include <stdint.h>
 
+/* Constness:
+ *
+ * - 'const sds' means 'char * const'. It is a const-pointer to non-const content.
+ * - 'const_sds' means 'const char *'. It is a non-const pointer to const content.
+ * - 'const const_sds' means 'const char * const', const pointer and content. */
+
 typedef char *sds;
+typedef const char *const_sds;
 
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
@@ -83,7 +90,7 @@ struct __attribute__((__packed__)) sdshdr64 {
 #define SDS_HDR(T, s) ((struct sdshdr##T *)((s) - (sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f) >> SDS_TYPE_BITS)
 
-static inline size_t sdslen(const sds s) {
+static inline size_t sdslen(const_sds s) {
     unsigned char flags = s[-1];
     switch (flags & SDS_TYPE_MASK) {
     case SDS_TYPE_5: return SDS_TYPE_5_LEN(flags);
@@ -95,7 +102,7 @@ static inline size_t sdslen(const sds s) {
     return 0;
 }
 
-static inline size_t sdsavail(const sds s) {
+static inline size_t sdsavail(const_sds s) {
     unsigned char flags = s[-1];
     switch (flags & SDS_TYPE_MASK) {
     case SDS_TYPE_5: {
@@ -151,7 +158,7 @@ static inline void sdsinclen(sds s, size_t inc) {
 }
 
 /* sdsalloc() = sdsavail() + sdslen() */
-static inline size_t sdsalloc(const sds s) {
+static inline size_t sdsalloc(const_sds s) {
     unsigned char flags = s[-1];
     switch (flags & SDS_TYPE_MASK) {
     case SDS_TYPE_5: return SDS_TYPE_5_LEN(flags);
@@ -180,14 +187,14 @@ sds sdsnewlen(const void *init, size_t initlen);
 sds sdstrynewlen(const void *init, size_t initlen);
 sds sdsnew(const char *init);
 sds sdsempty(void);
-sds sdsdup(const sds s);
-size_t sdscopytobuffer(unsigned char *buf, size_t buf_len, sds s, uint8_t *hdr_size);
+sds sdsdup(const_sds s);
+size_t sdscopytobuffer(unsigned char *buf, size_t buf_len, const_sds s, uint8_t *hdr_size);
 void sdsfree(sds s);
 void sdsfreeVoid(void *s);
 sds sdsgrowzero(sds s, size_t len);
 sds sdscatlen(sds s, const void *t, size_t len);
 sds sdscat(sds s, const char *t);
-sds sdscatsds(sds s, const sds t);
+sds sdscatsds(sds s, const_sds t);
 sds sdscpylen(sds s, const char *t, size_t len);
 sds sdscpy(sds s, const char *t);
 
@@ -204,7 +211,7 @@ void sdssubstr(sds s, size_t start, size_t len);
 void sdsrange(sds s, ssize_t start, ssize_t end);
 void sdsupdatelen(sds s);
 void sdsclear(sds s);
-int sdscmp(const sds s1, const sds s2);
+int sdscmp(const_sds s1, const_sds s2);
 sds *sdssplitlen(const char *s, ssize_t len, const char *sep, int seplen, int *count);
 void sdsfreesplitres(sds *tokens, int count);
 void sdstolower(sds s);
@@ -215,14 +222,14 @@ sds *sdssplitargs(const char *line, int *argc);
 sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen);
 sds sdsjoin(char **argv, int argc, char *sep);
 sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen);
-int sdsneedsrepr(const sds s);
+int sdsneedsrepr(const_sds s);
 
 /* Callback for sdstemplate. The function gets called by sdstemplate
  * every time a variable needs to be expanded. The variable name is
  * provided as variable, and the callback is expected to return a
  * substitution value. Returning a NULL indicates an error.
  */
-typedef sds (*sdstemplate_callback_t)(const sds variable, void *arg);
+typedef sds (*sdstemplate_callback_t)(const_sds variable, void *arg);
 sds sdstemplate(const char *template, sdstemplate_callback_t cb_func, void *cb_arg);
 
 /* Low level functions exposed to the user API */
@@ -231,8 +238,8 @@ sds sdsMakeRoomForNonGreedy(sds s, size_t addlen);
 void sdsIncrLen(sds s, ssize_t incr);
 sds sdsRemoveFreeSpace(sds s, int would_regrow);
 sds sdsResize(sds s, size_t size, int would_regrow);
-size_t sdsAllocSize(sds s);
-void *sdsAllocPtr(sds s);
+size_t sdsAllocSize(const_sds s);
+void *sdsAllocPtr(const_sds s);
 
 /* Export the allocator used by SDS to the program using SDS.
  * Sometimes the program SDS is linked to, may use a different set of

@@ -228,6 +228,7 @@ int scriptPrepareForRun(scriptRunCtx *run_ctx,
     /* If we are in MULTI context, flag Lua client as CLIENT_MULTI. */
     if (curr_client->flag.multi) {
         script_client->flag.multi = 1;
+        initClientMultiState(script_client);
     }
 
     run_ctx->start_time = getMonotonicUs();

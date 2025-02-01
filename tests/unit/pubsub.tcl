@@ -425,6 +425,17 @@ start_server {tags {"pubsub network"}} {
         $rd1 close
     }
 
+    test "Keyspace notification: expired event (Expiration time is already expired)" {
+        r config set notify-keyspace-events Ex
+        r del foo
+        set rd1 [valkey_deferring_client]
+        assert_equal {1} [psubscribe $rd1 *]
+        r set foo 1
+        r expire foo -1
+        assert_equal "pmessage * __keyevent@${db}__:expired foo" [$rd1 read]
+        $rd1 close
+    }
+
     test "Keyspace notifications: evicted events" {
         r config set notify-keyspace-events Ee
         r config set maxmemory-policy allkeys-lru

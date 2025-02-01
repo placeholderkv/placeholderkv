@@ -666,7 +666,8 @@ int clusterLoadConfig(char *filename) {
             } else if (!strcasecmp(s, "handshake")) {
                 n->flags |= CLUSTER_NODE_HANDSHAKE;
             } else if (!strcasecmp(s, "noaddr")) {
-                n->flags |= CLUSTER_NODE_NOADDR;
+                n->flags |= (CLUSTER_NODE_NOADDR | CLUSTER_NODE_FAIL);
+                n->fail_time = mstime();
             } else if (!strcasecmp(s, "nofailover")) {
                 n->flags |= CLUSTER_NODE_NOFAILOVER;
             } else if (!strcasecmp(s, "noflags")) {
@@ -816,6 +817,7 @@ int clusterSaveConfig(int do_fsync) {
     ssize_t written_bytes;
     int fd = -1;
     int retval = C_ERR;
+    mstime_t latency;
 
     server.cluster->todo_before_sleep &= ~CLUSTER_TODO_SAVE_CONFIG;
 
@@ -829,11 +831,15 @@ int clusterSaveConfig(int do_fsync) {
 
     /* Create a temp file with the new content. */
     tmpfilename = sdscatfmt(sdsempty(), "%s.tmp-%i-%I", server.cluster_configfile, (int)getpid(), mstime());
+    latencyStartMonitor(latency);
     if ((fd = open(tmpfilename, O_WRONLY | O_CREAT, 0644)) == -1) {
         serverLog(LL_WARNING, "Could not open temp cluster config file: %s", strerror(errno));
         goto cleanup;
     }
+    latencyEndMonitor(latency);
+    latencyAddSampleIfNeeded("cluster-config-open", latency);
 
+    latencyStartMonitor(latency);
     while (offset < content_size) {
         written_bytes = write(fd, ci + offset, content_size - offset);
         if (written_bytes <= 0) {
@@ -844,31 +850,52 @@ int clusterSaveConfig(int do_fsync) {
         }
         offset += written_bytes;
     }
+    latencyEndMonitor(latency);
+    latencyAddSampleIfNeeded("cluster-config-write", latency);
 
     if (do_fsync) {
+        latencyStartMonitor(latency);
         server.cluster->todo_before_sleep &= ~CLUSTER_TODO_FSYNC_CONFIG;
         if (valkey_fsync(fd) == -1) {
             serverLog(LL_WARNING, "Could not sync tmp cluster config file: %s", strerror(errno));
             goto cleanup;
         }
+        latencyEndMonitor(latency);
+        latencyAddSampleIfNeeded("cluster-config-fsync", latency);
     }
 
+    latencyStartMonitor(latency);
     if (rename(tmpfilename, server.cluster_configfile) == -1) {
         serverLog(LL_WARNING, "Could not rename tmp cluster config file: %s", strerror(errno));
         goto cleanup;
     }
+    latencyEndMonitor(latency);
+    latencyAddSampleIfNeeded("cluster-config-rename", latency);
 
     if (do_fsync) {
+        latencyStartMonitor(latency);
         if (fsyncFileDir(server.cluster_configfile) == -1) {
             serverLog(LL_WARNING, "Could not sync cluster config file dir: %s", strerror(errno));
             goto cleanup;
         }
+        latencyEndMonitor(latency);
+        latencyAddSampleIfNeeded("cluster-config-dir-fsync", latency);
     }
     retval = C_OK; /* If we reached this point, everything is fine. */
 
 cleanup:
-    if (fd != -1) close(fd);
-    if (retval == C_ERR) unlink(tmpfilename);
+    if (fd != -1) {
+        latencyStartMonitor(latency);
+        close(fd);
+        latencyEndMonitor(latency);
+        latencyAddSampleIfNeeded("cluster-config-close", latency);
+    }
+    if (retval == C_ERR) {
+        latencyStartMonitor(latency);
+        unlink(tmpfilename);
+        latencyEndMonitor(latency);
+        latencyAddSampleIfNeeded("cluster-config-unlink", latency);
+    }
     sdsfree(tmpfilename);
     sdsfree(ci);
     return retval;
@@ -1103,6 +1130,8 @@ void clusterInit(void) {
     server.cluster->failover_auth_time = 0;
     server.cluster->failover_auth_count = 0;
     server.cluster->failover_auth_rank = 0;
+    server.cluster->failover_auth_sent = 0;
+    server.cluster->failover_failed_primary_rank = 0;
     server.cluster->failover_auth_epoch = 0;
     server.cluster->cant_failover_reason = CLUSTER_CANT_FAILOVER_NONE;
     server.cluster->lastVoteEpoch = 0;
@@ -1692,14 +1721,16 @@ void freeClusterNode(clusterNode *n) {
     nodename = sdsnewlen(n->name, CLUSTER_NAMELEN);
     serverAssert(dictDelete(server.cluster->nodes, nodename) == DICT_OK);
     sdsfree(nodename);
-    sdsfree(n->hostname);
-    sdsfree(n->human_nodename);
-    sdsfree(n->announce_client_ipv4);
-    sdsfree(n->announce_client_ipv6);
 
     /* Release links and associated data structures. */
     if (n->link) freeClusterLink(n->link);
     if (n->inbound_link) freeClusterLink(n->inbound_link);
+
+    /* Free these members after links are freed, as freeClusterLink may access them. */
+    sdsfree(n->hostname);
+    sdsfree(n->human_nodename);
+    sdsfree(n->announce_client_ipv4);
+    sdsfree(n->announce_client_ipv6);
     listRelease(n->fail_reports);
     zfree(n->replicas);
     zfree(n);
@@ -2908,6 +2939,10 @@ void clusterProcessPingExtensions(clusterMsg *hdr, clusterLink *link) {
             if (n && n != myself && !(nodeIsReplica(myself) && myself->replicaof == n)) {
                 sds id = sdsnewlen(forgotten_node_ext->name, CLUSTER_NAMELEN);
                 dictEntry *de = dictAddOrFind(server.cluster->nodes_black_list, id);
+                if (dictGetKey(de) != id) {
+                    /* The dict did not take ownership of the id string, so we need to free it. */
+                    sdsfree(id);
+                }
                 uint64_t expire = server.unixtime + ntohu64(forgotten_node_ext->ttl);
                 dictSetUnsignedIntegerVal(de, expire);
                 clusterDelNode(n);
@@ -3245,6 +3280,17 @@ int clusterProcessPacket(clusterLink *link) {
         if (type == CLUSTERMSG_TYPE_MEET) {
             if (!sender) {
                 if (!link->node) {
+                    char ip[NET_IP_STR_LEN] = {0};
+                    if (nodeIp2String(ip, link, hdr->myip) != C_OK) {
+                        /* Unable to retrieve the node's IP address from the connection. Without a
+                         * valid IP, the node becomes unusable in the cluster. This failure might be
+                         * due to the connection being closed. */
+                        serverLog(LL_NOTICE, "Closing cluster link due to failure to retrieve IP from the connection, "
+                                             "possibly caused by a closed connection.");
+                        freeClusterLink(link);
+                        return 0;
+                    }
+
                     /* Add this node if it is new for us and the msg type is MEET.
                      * In this stage we don't try to add the node with the right
                      * flags, replicaof pointer, and so forth, as this details will be
@@ -3253,14 +3299,7 @@ int clusterProcessPacket(clusterLink *link) {
                      * we want to send extensions right away in the return PONG in order
                      * to reduce the amount of time needed to stabilize the shard ID. */
                     clusterNode *node = createClusterNode(NULL, CLUSTER_NODE_HANDSHAKE);
-                    if (nodeIp2String(node->ip, link, hdr->myip) != C_OK) {
-                        /* We cannot get the IP info from the link, it probably means the connection is closed. */
-                        serverLog(LL_NOTICE, "Closing link even though we received a MEET packet on it, "
-                                             "because the connection has an error");
-                        freeClusterLink(link);
-                        freeClusterNode(node);
-                        return 0;
-                    }
+                    memcpy(node->ip, ip, sizeof(ip));
                     getClientPortFromClusterMsg(hdr, &node->tls_port, &node->tcp_port);
                     node->cport = ntohs(hdr->cport);
                     if (hdr->mflags[0] & CLUSTERMSG_FLAG0_EXT_DATA) {
@@ -3270,14 +3309,14 @@ int clusterProcessPacket(clusterLink *link) {
                     clusterAddNode(node);
                     clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG);
                 } else {
-                    /* A second MEET packet was received on an existing link during the handshake process.
-                     * This happens when the other node detects no inbound link, and re-sends a MEET packet
-                     * before this node can respond with a PING. This MEET is a no-op.
+                    /* A second MEET packet was received on an existing link during the handshake
+                     * process. This happens when the other node detects no inbound link, and
+                     * re-sends a MEET packet before this node can respond with a PING.
+                     * This MEET is a no-op.
                      *
-                     * Note: Nodes in HANDSHAKE state are not fully "known" (random names), so the sender
-                     * remains unidentified at this point. The MEET packet might be re-sent if the inbound
-                     * connection is still unestablished by the next cron cycle.
-                     */
+                     * Note: Nodes in HANDSHAKE state are not fully "known" (random names), so the
+                     * sender remains unidentified at this point. The MEET packet might be re-sent
+                     * if the inbound connection is still unestablished by the next cron cycle. */
                     debugServerAssert(link->inbound && nodeInHandshake(link->node));
                 }
 
@@ -3286,16 +3325,19 @@ int clusterProcessPacket(clusterLink *link) {
                  * of the message type. */
                 clusterProcessGossipSection(hdr, link);
             } else if (sender->link && nodeExceedsHandshakeTimeout(sender, now)) {
-                /* The MEET packet is from a known node, after the handshake timeout, so the sender thinks that I do not
-                 * know it.
-                 * Free my outbound link to that node, triggering a reconnect and a PING over the new link.
-                 * Once that node receives our PING, it should recognize the new connection as an inbound link from me.
-                 * We should only free the outbound link if the node is known for more time than the handshake timeout,
-                 * since during this time, the other side might still be trying to complete the handshake. */
+                /* The MEET packet is from a known node, after the handshake timeout, so the sender
+                 * thinks that I do not know it.
+                 * Free my outbound link to that node, triggering a reconnect and a PING over the
+                 * new link.
+                 * Once that node receives our PING, it should recognize the new connection as an
+                 * inbound link from me. We should only free the outbound link if the node is known
+                 * for more time than the handshake timeout, since during this time, the other side
+                 * might still be trying to complete the handshake. */
 
                 /* We should always receive a MEET packet on an inbound link. */
                 serverAssert(link != sender->link);
-                serverLog(LL_NOTICE, "Freeing outbound link to node %.40s (%s) after receiving a MEET packet from this known node",
+                serverLog(LL_NOTICE, "Freeing outbound link to node %.40s (%s) after receiving a MEET packet "
+                                     "from this known node",
                           sender->name, sender->human_nodename);
                 freeClusterLink(sender->link);
             }
@@ -3344,7 +3386,9 @@ int clusterProcessPacket(clusterLink *link) {
             } else if (memcmp(link->node->name, hdr->sender, CLUSTER_NAMELEN) != 0) {
                 /* If the reply has a non matching node ID we
                  * disconnect this node and set it as not having an associated
-                 * address. */
+                 * address. This can happen if the node did CLUSTER RESET and changed
+                 * its node ID. In this case, the old node ID will not come back. */
+                clusterNode *noaddr_node = link->node;
                 serverLog(LL_NOTICE,
                           "PONG contains mismatching sender ID. About node %.40s (%s) in shard %.40s added %d ms ago, "
                           "having flags %d",
@@ -3356,7 +3400,19 @@ int clusterProcessPacket(clusterLink *link) {
                 link->node->tls_port = 0;
                 link->node->cport = 0;
                 freeClusterLink(link);
-                clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG);
+                /* We will also mark the node as fail because we have disconnected from it,
+                 * and will not reconnect, and obviously we will not gossip NOADDR nodes.
+                 * Marking it as FAIL can help us advance the state, such as the cluster
+                 * state becomes FAIL or the replica can do the failover. Otherwise, the
+                 * NOADDR node will provide an invalid address in redirection and confuse
+                 * the clients, and the replica will never initiate a failover since the
+                 * node is not actually in FAIL state. */
+                if (!nodeFailed(noaddr_node)) {
+                    noaddr_node->flags |= CLUSTER_NODE_FAIL;
+                    noaddr_node->fail_time = now;
+                    clusterSendFail(noaddr_node->name);
+                }
+                clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG | CLUSTER_TODO_UPDATE_STATE);
                 return 0;
             }
         }
@@ -3874,7 +3930,7 @@ void clusterSendMessage(clusterLink *link, clusterMsgSendBlock *msgblock) {
     server.stat_cluster_links_memory += sizeof(listNode);
 
     /* Populate sent messages stats. */
-    uint16_t type = ntohs(getMessageFromSendBlock(msgblock)->type);
+    uint16_t type = ntohs(getMessageFromSendBlock(msgblock)->type) & ~CLUSTERMSG_MODIFIER_MASK;
     if (type < CLUSTERMSG_TYPE_COUNT) server.cluster->stats_bus_messages_sent[type]++;
 }
 
@@ -4510,6 +4566,45 @@ int clusterGetReplicaRank(void) {
     return rank;
 }
 
+/* This function returns the "rank" of this instance's primary, in the context
+ * of all failed primary list. The primary node will be ignored if failed time
+ * exceeds cluster-node-timeout * cluster-replica-validity-factor.
+ *
+ * If multiple primary nodes go down at the same time, there is a certain
+ * probability that their replicas will initiate the elections at the same time,
+ * and lead to insufficient votes.
+ *
+ * The failed primary rank is used to add a delay to start an election in order
+ * to avoid simultaneous elections of replicas. */
+int clusterGetFailedPrimaryRank(void) {
+    serverAssert(nodeIsReplica(myself));
+    serverAssert(myself->replicaof);
+
+    int rank = 0;
+    mstime_t now = mstime();
+    dictIterator *di;
+    dictEntry *de;
+
+    di = dictGetSafeIterator(server.cluster->nodes);
+    while ((de = dictNext(di)) != NULL) {
+        clusterNode *node = dictGetVal(de);
+
+        /* Skip nodes that do not need to participate in the rank. */
+        if (!nodeFailed(node) || !clusterNodeIsVotingPrimary(node) || node->num_replicas == 0) continue;
+
+        /* If cluster-replica-validity-factor is enabled, skip the invalid nodes. */
+        if (server.cluster_replica_validity_factor) {
+            if ((now - node->fail_time) > (server.cluster_node_timeout * server.cluster_replica_validity_factor))
+                continue;
+        }
+
+        if (memcmp(node->shard_id, myself->shard_id, CLUSTER_NAMELEN) < 0) rank++;
+    }
+    dictReleaseIterator(di);
+
+    return rank;
+}
+
 /* This function is called by clusterHandleReplicaFailover() in order to
  * let the replica log why it is not able to failover. Sometimes there are
  * not the conditions, but since the failover function is called again and
@@ -4691,6 +4786,11 @@ void clusterHandleReplicaFailover(void) {
          * Specifically 1 second * rank. This way replicas that have a probably
          * less updated replication offset, are penalized. */
         server.cluster->failover_auth_time += server.cluster->failover_auth_rank * 1000;
+        /* We add another delay that is proportional to the failed primary rank.
+         * Specifically 0.5 second * rank. This way those failed primaries will be
+         * elected in rank to avoid the vote conflicts. */
+        server.cluster->failover_failed_primary_rank = clusterGetFailedPrimaryRank();
+        server.cluster->failover_auth_time += server.cluster->failover_failed_primary_rank * 500;
         /* However if this is a manual failover, no delay is needed. */
         if (server.cluster->mf_end) {
             server.cluster->failover_auth_time = now;
@@ -4701,9 +4801,9 @@ void clusterHandleReplicaFailover(void) {
         }
         serverLog(LL_NOTICE,
                   "Start of election delayed for %lld milliseconds "
-                  "(rank #%d, offset %lld).",
+                  "(rank #%d, primary rank #%d, offset %lld).",
                   server.cluster->failover_auth_time - now, server.cluster->failover_auth_rank,
-                  replicationGetReplicaOffset());
+                  server.cluster->failover_failed_primary_rank, replicationGetReplicaOffset());
         /* Now that we have a scheduled election, broadcast our offset
          * to all the other replicas so that they'll updated their offsets
          * if our offset is better. */
@@ -4719,6 +4819,9 @@ void clusterHandleReplicaFailover(void) {
      * replicas for the same primary since we computed our election delay.
      * Update the delay if our rank changed.
      *
+     * It is also possible that we received the message that telling a
+     * shard is up. Update the delay if our failed_primary_rank changed.
+     *
      * Not performed if this is a manual failover. */
     if (server.cluster->failover_auth_sent == 0 && server.cluster->mf_end == 0) {
         int newrank = clusterGetReplicaRank();
@@ -4728,6 +4831,15 @@ void clusterHandleReplicaFailover(void) {
             server.cluster->failover_auth_rank = newrank;
             serverLog(LL_NOTICE, "Replica rank updated to #%d, added %lld milliseconds of delay.", newrank,
                       added_delay);
+        }
+
+        int new_failed_primary_rank = clusterGetFailedPrimaryRank();
+        if (new_failed_primary_rank != server.cluster->failover_failed_primary_rank) {
+            long long added_delay = (new_failed_primary_rank - server.cluster->failover_failed_primary_rank) * 500;
+            server.cluster->failover_auth_time += added_delay;
+            server.cluster->failover_failed_primary_rank = new_failed_primary_rank;
+            serverLog(LL_NOTICE, "Failed primary rank updated to #%d, added %lld milliseconds of delay.",
+                      new_failed_primary_rank, added_delay);
         }
     }
 
@@ -6238,7 +6350,7 @@ unsigned int delKeysInSlot(unsigned int hashslot) {
 
     kvstoreHashtableIterator *kvs_di = NULL;
     void *next;
-    kvs_di = kvstoreGetHashtableSafeIterator(server.db->keys, hashslot);
+    kvs_di = kvstoreGetHashtableIterator(server.db->keys, hashslot, HASHTABLE_ITER_SAFE);
     while (kvstoreHashtableIteratorNext(kvs_di, &next)) {
         robj *valkey = next;
         enterExecutionUnit(1, 0);
@@ -6574,7 +6686,7 @@ void clusterCommandSetSlot(client *c) {
              * replication, it would also unlikely win the election.
              *
              * And 0x702ff is 7.2.255, we only support new versions in this case. */
-            if (r->repl_state == REPLICA_STATE_ONLINE && r->replica_version > 0x702ff) {
+            if (r->repl_data->repl_state == REPLICA_STATE_ONLINE && r->repl_data->replica_version > 0x702ff) {
                 num_eligible_replicas++;
             }
         }

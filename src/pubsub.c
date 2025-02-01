@@ -219,20 +219,20 @@ int serverPubsubShardSubscriptionCount(void) {
 
 /* Return the number of channels + patterns a client is subscribed to. */
 int clientSubscriptionsCount(client *c) {
-    return dictSize(c->pubsub_channels) + dictSize(c->pubsub_patterns);
+    return dictSize(c->pubsub_data->pubsub_channels) + dictSize(c->pubsub_data->pubsub_patterns);
 }
 
 /* Return the number of shard level channels a client is subscribed to. */
 int clientShardSubscriptionsCount(client *c) {
-    return dictSize(c->pubsubshard_channels);
+    return dictSize(c->pubsub_data->pubsubshard_channels);
 }
 
 dict *getClientPubSubChannels(client *c) {
-    return c->pubsub_channels;
+    return c->pubsub_data->pubsub_channels;
 }
 
 dict *getClientPubSubShardChannels(client *c) {
-    return c->pubsubshard_channels;
+    return c->pubsub_data->pubsubshard_channels;
 }
 
 /* Return the number of pubsub + pubsub shard level channels
@@ -255,12 +255,44 @@ void unmarkClientAsPubSub(client *c) {
     }
 }
 
+void initClientPubSubData(client *c) {
+    if (c->pubsub_data) return;
+    c->pubsub_data = zmalloc(sizeof(ClientPubSubData));
+    c->pubsub_data->pubsub_channels = dictCreate(&objectKeyPointerValueDictType);
+    c->pubsub_data->pubsub_patterns = dictCreate(&objectKeyPointerValueDictType);
+    c->pubsub_data->pubsubshard_channels = dictCreate(&objectKeyPointerValueDictType);
+    c->pubsub_data->client_tracking_redirection = 0;
+    c->pubsub_data->client_tracking_prefixes = NULL;
+}
+
+void freeClientPubSubData(client *c) {
+    if (!c->pubsub_data) return;
+    /* Unsubscribe from all the pubsub channels */
+    pubsubUnsubscribeAllChannels(c, 0);
+    pubsubUnsubscribeShardAllChannels(c, 0);
+    pubsubUnsubscribeAllPatterns(c, 0);
+    unmarkClientAsPubSub(c);
+    dictRelease(c->pubsub_data->pubsub_channels);
+    c->pubsub_data->pubsub_channels = NULL;
+    dictRelease(c->pubsub_data->pubsub_patterns);
+    c->pubsub_data->pubsub_patterns = NULL;
+    dictRelease(c->pubsub_data->pubsubshard_channels);
+    c->pubsub_data->pubsubshard_channels = NULL;
+    if (c->pubsub_data->client_tracking_prefixes) {
+        disableTracking(c);
+    }
+    zfree(c->pubsub_data);
+    c->pubsub_data = NULL;
+}
+
 /* Subscribe a client to a channel. Returns 1 if the operation succeeded, or
  * 0 if the client was already subscribed to that channel. */
 int pubsubSubscribeChannel(client *c, robj *channel, pubsubtype type) {
     dict *clients = NULL;
     int retval = 0;
     unsigned int slot = 0;
+
+    if (!c->pubsub_data) initClientPubSubData(c);
 
     /* Add the channel to the client -> channels hash table */
     void *position = dictFindPositionForInsert(type.clientPubSubChannels(c), channel, NULL);
@@ -334,7 +366,7 @@ int pubsubUnsubscribeChannel(client *c, robj *channel, int notify, pubsubtype ty
 void pubsubShardUnsubscribeAllChannelsInSlot(unsigned int slot) {
     if (!kvstoreHashtableSize(server.pubsubshard_channels, slot)) return;
 
-    kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableSafeIterator(server.pubsubshard_channels, slot);
+    kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(server.pubsubshard_channels, slot, HASHTABLE_ITER_SAFE);
     void *element;
     while (kvstoreHashtableIteratorNext(kvs_di, &element)) {
         dict *clients = element;
@@ -344,7 +376,7 @@ void pubsubShardUnsubscribeAllChannelsInSlot(unsigned int slot) {
         dictEntry *entry;
         while ((entry = dictNext(iter)) != NULL) {
             client *c = dictGetKey(entry);
-            int retval = dictDelete(c->pubsubshard_channels, channel);
+            int retval = dictDelete(c->pubsub_data->pubsubshard_channels, channel);
             serverAssertWithInfo(c, channel, retval == DICT_OK);
             addReplyPubsubUnsubscribed(c, channel, pubSubShardType);
             /* If the client has no other pubsub subscription,
@@ -366,7 +398,9 @@ int pubsubSubscribePattern(client *c, robj *pattern) {
     dict *clients;
     int retval = 0;
 
-    if (dictAdd(c->pubsub_patterns, pattern, NULL) == DICT_OK) {
+    if (!c->pubsub_data) initClientPubSubData(c);
+
+    if (dictAdd(c->pubsub_data->pubsub_patterns, pattern, NULL) == DICT_OK) {
         retval = 1;
         incrRefCount(pattern);
         /* Add the client to the pattern -> list of clients hash table */
@@ -392,8 +426,10 @@ int pubsubUnsubscribePattern(client *c, robj *pattern, int notify) {
     dict *clients;
     int retval = 0;
 
+    if (!c->pubsub_data) initClientPubSubData(c);
+
     incrRefCount(pattern); /* Protect the object. May be the same we remove */
-    if (dictDelete(c->pubsub_patterns, pattern) == DICT_OK) {
+    if (dictDelete(c->pubsub_data->pubsub_patterns, pattern) == DICT_OK) {
         retval = 1;
         /* Remove the client from the pattern -> clients list hash table */
         de = dictFind(server.pubsub_patterns, pattern);
@@ -454,9 +490,10 @@ int pubsubUnsubscribeShardAllChannels(client *c, int notify) {
  * client was subscribed from. */
 int pubsubUnsubscribeAllPatterns(client *c, int notify) {
     int count = 0;
+    if (!c->pubsub_data) initClientPubSubData(c);
 
-    if (dictSize(c->pubsub_patterns) > 0) {
-        dictIterator *di = dictGetSafeIterator(c->pubsub_patterns);
+    if (dictSize(c->pubsub_data->pubsub_patterns) > 0) {
+        dictIterator *di = dictGetSafeIterator(c->pubsub_data->pubsub_patterns);
         dictEntry *de;
 
         while ((de = dictNext(di)) != NULL) {
@@ -560,6 +597,8 @@ void subscribeCommand(client *c) {
 
 /* UNSUBSCRIBE [channel ...] */
 void unsubscribeCommand(client *c) {
+    if (!c->pubsub_data) initClientPubSubData(c);
+
     if (c->argc == 1) {
         pubsubUnsubscribeAllChannels(c, 1);
     } else {
@@ -691,7 +730,7 @@ void channelList(client *c, sds pat, kvstore *pubsub_channels) {
     replylen = addReplyDeferredLen(c);
     for (unsigned int i = 0; i < slot_cnt; i++) {
         if (!kvstoreHashtableSize(pubsub_channels, i)) continue;
-        kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(pubsub_channels, i);
+        kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(pubsub_channels, i, 0);
         void *next;
         while (kvstoreHashtableIteratorNext(kvs_di, &next)) {
             dict *clients = next;
@@ -732,6 +771,8 @@ void ssubscribeCommand(client *c) {
 
 /* SUNSUBSCRIBE [shardchannel [shardchannel ...]] */
 void sunsubscribeCommand(client *c) {
+    if (!c->pubsub_data) initClientPubSubData(c);
+
     if (c->argc == 1) {
         pubsubUnsubscribeShardAllChannels(c, 1);
     } else {
@@ -745,12 +786,13 @@ void sunsubscribeCommand(client *c) {
 }
 
 size_t pubsubMemOverhead(client *c) {
+    if (!c->pubsub_data) return 0;
     /* PubSub patterns */
-    size_t mem = dictMemUsage(c->pubsub_patterns);
+    size_t mem = dictMemUsage(c->pubsub_data->pubsub_patterns);
     /* Global PubSub channels */
-    mem += dictMemUsage(c->pubsub_channels);
+    mem += dictMemUsage(c->pubsub_data->pubsub_channels);
     /* Sharded PubSub channels */
-    mem += dictMemUsage(c->pubsubshard_channels);
+    mem += dictMemUsage(c->pubsub_data->pubsubshard_channels);
     return mem;
 }
 

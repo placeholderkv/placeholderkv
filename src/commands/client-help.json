@@ -6,7 +6,7 @@
         "since": "5.0.0",
         "arity": 2,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientHelpCommand",
         "command_flags": [
             "LOADING",
             "STALE",

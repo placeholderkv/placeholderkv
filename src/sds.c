@@ -187,19 +187,19 @@ sds sdsnew(const char *init) {
 }
 
 /* Duplicate an sds string. */
-sds sdsdup(const sds s) {
+sds sdsdup(const_sds s) {
     return sdsnewlen(s, sdslen(s));
 }
 
 /*
  * This method returns the minimum amount of bytes required to store the sds (header + data + NULL terminator).
  */
-static inline size_t sdsminlen(const sds s) {
+static inline size_t sdsminlen(const_sds s) {
     return sdslen(s) + sdsHdrSize(s[-1]) + 1;
 }
 
 /* This method copies the sds `s` into `buf` which is the target character buffer. */
-size_t sdscopytobuffer(unsigned char *buf, size_t buf_len, const sds s, uint8_t *hdr_size) {
+size_t sdscopytobuffer(unsigned char *buf, size_t buf_len, const_sds s, uint8_t *hdr_size) {
     size_t required_keylen = sdsminlen(s);
     if (buf == NULL) {
         return required_keylen;
@@ -432,7 +432,7 @@ sds sdsResize(sds s, size_t size, int would_regrow) {
  * 3) The free buffer at the end if any.
  * 4) The implicit null term.
  */
-size_t sdsAllocSize(sds s) {
+size_t sdsAllocSize(const_sds s) {
     char type = s[-1] & SDS_TYPE_MASK;
     /* SDS_TYPE_5 header doesn't contain the size of the allocation */
     if (type == SDS_TYPE_5) {
@@ -444,7 +444,7 @@ size_t sdsAllocSize(sds s) {
 
 /* Return the pointer of the actual SDS allocation (normally SDS strings
  * are referenced by the start of the string buffer). */
-void *sdsAllocPtr(sds s) {
+void *sdsAllocPtr(const_sds s) {
     return (void *)(s - sdsHdrSize(s[-1]));
 }
 
@@ -559,7 +559,7 @@ sds sdscat(sds s, const char *t) {
  *
  * After the call, the modified sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
-sds sdscatsds(sds s, const sds t) {
+sds sdscatsds(sds s, const_sds t) {
     return sdscatlen(s, t, sdslen(t));
 }
 
@@ -870,7 +870,7 @@ void sdstoupper(sds s) {
  * If two strings share exactly the same prefix, but one of the two has
  * additional characters, the longer string is considered to be greater than
  * the smaller one. */
-int sdscmp(const sds s1, const sds s2) {
+int sdscmp(const_sds s1, const_sds s2) {
     size_t l1, l2, minlen;
     int cmp;
 
@@ -996,7 +996,7 @@ sds sdscatrepr(sds s, const char *p, size_t len) {
  * that is compatible with sdssplitargs(). For this reason, also spaces will be
  * treated as needing an escape.
  */
-int sdsneedsrepr(const sds s) {
+int sdsneedsrepr(const_sds s) {
     size_t len = sdslen(s);
     const char *p = s;
 

@@ -317,7 +317,7 @@ setTypeIterator *setTypeInitIterator(robj *subject) {
     si->subject = subject;
     si->encoding = subject->encoding;
     if (si->encoding == OBJ_ENCODING_HASHTABLE) {
-        si->hashtable_iterator = hashtableCreateIterator(subject->ptr);
+        si->hashtable_iterator = hashtableCreateIterator(subject->ptr, 0);
     } else if (si->encoding == OBJ_ENCODING_INTSET) {
         si->ii = 0;
     } else if (si->encoding == OBJ_ENCODING_LISTPACK) {
@@ -1179,7 +1179,7 @@ void srandmemberWithCountCommand(client *c) {
     /* CASE 3 & 4: send the result to the user. */
     {
         hashtableIterator iter;
-        hashtableInitIterator(&iter, ht);
+        hashtableInitIterator(&iter, ht, 0);
 
         addReplyArrayLen(c, count);
         serverAssert(count == hashtableSize(ht));

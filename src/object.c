@@ -461,7 +461,7 @@ robj *createZsetObject(void) {
     zset *zs = zmalloc(sizeof(*zs));
     robj *o;
 
-    zs->dict = dictCreate(&zsetDictType);
+    zs->ht = hashtableCreate(&zsetHashtableType);
     zs->zsl = zslCreate();
     o = createObject(OBJ_ZSET, zs);
     o->encoding = OBJ_ENCODING_SKIPLIST;
@@ -519,7 +519,7 @@ void freeZsetObject(robj *o) {
     switch (o->encoding) {
     case OBJ_ENCODING_SKIPLIST:
         zs = o->ptr;
-        dictRelease(zs->dict);
+        hashtableRelease(zs->ht);
         zslFree(zs->zsl);
         zfree(zs);
         break;
@@ -530,7 +530,7 @@ void freeZsetObject(robj *o) {
 
 void freeHashObject(robj *o) {
     switch (o->encoding) {
-    case OBJ_ENCODING_HT: dictRelease((dict *)o->ptr); break;
+    case OBJ_ENCODING_HASHTABLE: hashtableRelease((hashtable *)o->ptr); break;
     case OBJ_ENCODING_LISTPACK: lpFree(o->ptr); break;
     default: serverPanic("Unknown hash encoding type"); break;
     }
@@ -630,7 +630,7 @@ void dismissSetObject(robj *o, size_t size_hint) {
          * page size, and there's a high chance we'll actually dismiss something. */
         if (size_hint / hashtableSize(ht) >= server.page_size) {
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 sds item = next;
@@ -665,10 +665,7 @@ void dismissZsetObject(robj *o, size_t size_hint) {
             }
         }
 
-        /* Dismiss hash table memory. */
-        dict *d = zs->dict;
-        dismissMemory(d->ht_table[0], DICTHT_SIZE(d->ht_size_exp[0]) * sizeof(dictEntry *));
-        dismissMemory(d->ht_table[1], DICTHT_SIZE(d->ht_size_exp[1]) * sizeof(dictEntry *));
+        dismissHashtable(zs->ht);
     } else if (o->encoding == OBJ_ENCODING_LISTPACK) {
         dismissMemory(o->ptr, lpBytes((unsigned char *)o->ptr));
     } else {
@@ -678,25 +675,22 @@ void dismissZsetObject(robj *o, size_t size_hint) {
 
 /* See dismissObject() */
 void dismissHashObject(robj *o, size_t size_hint) {
-    if (o->encoding == OBJ_ENCODING_HT) {
-        dict *d = o->ptr;
-        serverAssert(dictSize(d) != 0);
+    if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+        hashtable *ht = o->ptr;
+        serverAssert(hashtableSize(ht) != 0);
         /* We iterate all fields only when average field/value size is bigger than
          * a page size, and there's a high chance we'll actually dismiss something. */
-        if (size_hint / dictSize(d) >= server.page_size) {
-            dictEntry *de;
-            dictIterator *di = dictGetIterator(d);
-            while ((de = dictNext(di)) != NULL) {
-                /* Only dismiss values memory since the field size
-                 * usually is small. */
-                dismissSds(dictGetVal(de));
+        if (size_hint / hashtableSize(ht) >= server.page_size) {
+            hashtableIterator iter;
+            hashtableInitIterator(&iter, ht, 0);
+            void *next;
+            while (hashtableNext(&iter, &next)) {
+                dismissHashTypeEntry(next);
             }
-            dictReleaseIterator(di);
+            hashtableResetIterator(&iter);
         }
 
-        /* Dismiss hash table memory. */
-        dismissMemory(d->ht_table[0], DICTHT_SIZE(d->ht_size_exp[0]) * sizeof(dictEntry *));
-        dismissMemory(d->ht_table[1], DICTHT_SIZE(d->ht_size_exp[1]) * sizeof(dictEntry *));
+        dismissHashtable(ht);
     } else if (o->encoding == OBJ_ENCODING_LISTPACK) {
         dismissMemory(o->ptr, lpBytes((unsigned char *)o->ptr));
     } else {
@@ -1109,7 +1103,6 @@ char *strEncoding(int encoding) {
     switch (encoding) {
     case OBJ_ENCODING_RAW: return "raw";
     case OBJ_ENCODING_INT: return "int";
-    case OBJ_ENCODING_HT: return "hashtable";
     case OBJ_ENCODING_HASHTABLE: return "hashtable";
     case OBJ_ENCODING_QUICKLIST: return "quicklist";
     case OBJ_ENCODING_LISTPACK: return "listpack";
@@ -1130,10 +1123,6 @@ char *strEncoding(int encoding) {
  * are checked and averaged to estimate the total size. */
 #define OBJ_COMPUTE_SIZE_DEF_SAMPLES 5 /* Default sample size. */
 size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
-    sds ele, ele2;
-    dict *d;
-    dictIterator *di;
-    struct dictEntry *de;
     size_t asize = 0, elesize = 0, samples = 0;
 
     if (o->type == OBJ_STRING) {
@@ -1167,7 +1156,7 @@ size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
             asize = sizeof(*o) + hashtableMemUsage(ht);
 
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next) && samples < sample_size) {
                 sds element = next;
@@ -1187,37 +1176,37 @@ size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
         if (o->encoding == OBJ_ENCODING_LISTPACK) {
             asize = sizeof(*o) + zmalloc_size(o->ptr);
         } else if (o->encoding == OBJ_ENCODING_SKIPLIST) {
-            d = ((zset *)o->ptr)->dict;
+            hashtable *ht = ((zset *)o->ptr)->ht;
             zskiplist *zsl = ((zset *)o->ptr)->zsl;
             zskiplistNode *znode = zsl->header->level[0].forward;
-            asize = sizeof(*o) + sizeof(zset) + sizeof(zskiplist) + sizeof(dict) +
-                    (sizeof(struct dictEntry *) * dictBuckets(d)) + zmalloc_size(zsl->header);
+            asize = sizeof(*o) + sizeof(zset) + sizeof(zskiplist) +
+                    hashtableMemUsage(ht) + zmalloc_size(zsl->header);
             while (znode != NULL && samples < sample_size) {
                 elesize += sdsAllocSize(znode->ele);
-                elesize += dictEntryMemUsage(NULL) + zmalloc_size(znode);
+                elesize += zmalloc_size(znode);
                 samples++;
                 znode = znode->level[0].forward;
             }
-            if (samples) asize += (double)elesize / samples * dictSize(d);
+            if (samples) asize += (double)elesize / samples * hashtableSize(ht);
         } else {
             serverPanic("Unknown sorted set encoding");
         }
     } else if (o->type == OBJ_HASH) {
         if (o->encoding == OBJ_ENCODING_LISTPACK) {
             asize = sizeof(*o) + zmalloc_size(o->ptr);
-        } else if (o->encoding == OBJ_ENCODING_HT) {
-            d = o->ptr;
-            di = dictGetIterator(d);
-            asize = sizeof(*o) + sizeof(dict) + (sizeof(struct dictEntry *) * dictBuckets(d));
-            while ((de = dictNext(di)) != NULL && samples < sample_size) {
-                ele = dictGetKey(de);
-                ele2 = dictGetVal(de);
-                elesize += sdsAllocSize(ele) + sdsAllocSize(ele2);
-                elesize += dictEntryMemUsage(de);
+        } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+            hashtable *ht = o->ptr;
+            hashtableIterator iter;
+            hashtableInitIterator(&iter, ht, 0);
+            void *next;
+
+            asize = sizeof(*o) + hashtableMemUsage(ht);
+            while (hashtableNext(&iter, &next) && samples < sample_size) {
+                elesize += hashTypeEntryAllocSize(next);
                 samples++;
             }
-            dictReleaseIterator(di);
-            if (samples) asize += (double)elesize / samples * dictSize(d);
+            hashtableResetIterator(&iter);
+            if (samples) asize += (double)elesize / samples * hashtableSize(ht);
         } else {
             serverPanic("Unknown hash encoding");
         }

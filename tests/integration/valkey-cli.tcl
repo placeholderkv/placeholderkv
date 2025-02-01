@@ -6,7 +6,7 @@ if {$::singledb} {
     set ::dbnum 9
 }
 
-start_server {tags {"cli"}} {
+start_server {tags {"cli logreqres:skip"}} {
     proc open_cli {{opts ""} {infile ""}} {
         if { $opts == "" } {
             set opts "-n $::dbnum"
@@ -606,6 +606,231 @@ if {!$::tls} { ;# fake_redis_node doesn't support TLS
 
         assert_equal 3 [exec {*}$cmdline ZCARD new_zset]
         assert_equal "a\n1\nb\n2\nc\n3" [exec {*}$cmdline ZRANGE new_zset 0 -1 WITHSCORES]
+    }
+
+    test "valkey-cli pubsub mode with single standard channel subscription" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+        
+        write_cli $fd "SUBSCRIBE ch1"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "UNSUBSCRIBE ch1"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with multiple standard channel subscriptions" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        write_cli $fd "SUBSCRIBE ch1 ch2 ch3"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "UNSUBSCRIBE"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with single shard channel subscription" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        write_cli $fd "SSUBSCRIBE schannel1"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "SUNSUBSCRIBE schannel1"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with multiple shard channel subscriptions" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        write_cli $fd "SSUBSCRIBE {schannel}1 {schannel}2 {schannel}3"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "SUNSUBSCRIBE"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with single pattern channel subscription" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        write_cli $fd "PSUBSCRIBE pattern1*"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "PUNSUBSCRIBE pattern1*"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with multiple pattern channel subscriptions" {
+        set fd [open_cli]
+
+        write_cli $fd "PSUBSCRIBE pattern1* pattern2* pattern3*"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "PUNSUBSCRIBE"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode when subscribing to the same channel" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        write_cli $fd "SUBSCRIBE ch1 ch1"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "UNSUBSCRIBE"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+        
+        close_cli $fd
+    }
+
+    test "valkey-cli pubsub mode with multiple subscription types" {
+        set fd [open_cli]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+    
+        write_cli $fd "SUBSCRIBE ch1 ch2 ch3"
+        set response [read_cli $fd]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "PSUBSCRIBE pattern*"
+        set response [read_cli $fd]
+        set lines [split $response "\n"]
+        assert_equal "psubscribe" [lindex $lines 0]
+        assert_equal "pattern*" [lindex $lines 1]
+        assert_equal "4" [lindex $lines 2]
+
+        write_cli $fd "SSUBSCRIBE schannel"
+        set response [read_cli $fd]
+        set lines [split $response "\n"]
+        assert_equal "ssubscribe" [lindex $lines 0]
+        assert_equal "schannel" [lindex $lines 1]
+        assert_equal "1" [lindex $lines 2]
+
+        write_cli $fd "PUNSUBSCRIBE pattern*"
+        set response [read_cli $fd]
+        set lines [split $response "\n"]
+        assert_equal "punsubscribe" [lindex $lines 0]
+        assert_equal "pattern*" [lindex $lines 1]
+        assert_equal "3" [lindex $lines 2]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "SUNSUBSCRIBE schannel"
+        set response [read_cli $fd]
+        set lines [split $response "\n"]
+        assert_equal "sunsubscribe" [lindex $lines 0]
+        assert_equal "schannel" [lindex $lines 1]
+        assert_equal "0" [lindex $lines 2]
+
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "1" $pubsub_status
+
+        write_cli $fd "UNSUBSCRIBE"
+        set response [read_cli $fd]
+
+        # Verify pubsub mode is no longer active
+        write_cli $fd ":get pubsub"
+        set pubsub_status [string trim [read_cli $fd]]
+        assert_equal "0" $pubsub_status
+
+        close_cli $fd
     }
 
     test "Valid Connection Scheme: redis://" {

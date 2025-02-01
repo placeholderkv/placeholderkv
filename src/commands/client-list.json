@@ -6,7 +6,7 @@
         "since": "2.4.0",
         "arity": -2,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientListCommand",
         "history": [
             [
                 "2.8.12",
@@ -35,6 +35,10 @@
             [
                 "8.0.0",
                 "Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."
+            ],
+            [
+                "8.1.0",
+                "Added filters USER, ADDR, LADDR, SKIPME, and MAXAGE"
             ]
         ],
         "command_flags": [
@@ -91,6 +95,55 @@
                 "optional": true,
                 "multiple": true,
                 "since": "6.2.0"
+            },
+            {
+                "token": "USER",
+                "name": "username",
+                "type": "string",
+                "optional": true,
+                "since": "8.1.0"
+            },
+            {
+                "token": "ADDR",
+                "name": "addr",
+                "display": "ip:port",
+                "type": "string",
+                "optional": true,
+                "since": "8.1.0"
+            },
+            {
+                "token": "LADDR",
+                "name": "laddr",
+                "display": "ip:port",
+                "type": "string",
+                "optional": true,
+                "since": "8.1.0"
+            },
+            {
+                "token": "SKIPME",
+                "name": "skipme",
+                "type": "oneof",
+                "optional": true,
+                "since": "8.1.0",
+                "arguments": [
+                    {
+                        "name": "yes",
+                        "type": "pure-token",
+                        "token": "YES"
+                    },
+                    {
+                        "name": "no",
+                        "type": "pure-token",
+                        "token": "NO"
+                    }
+                ]
+            },
+            {
+                "token": "MAXAGE",
+                "name": "maxage",
+                "type": "integer",
+                "optional": true,
+                "since": "8.1.0"
             }
         ]
     }

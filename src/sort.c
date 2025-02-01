@@ -330,7 +330,7 @@ void sortCommandGeneric(client *c, int readonly) {
     switch (sortval->type) {
     case OBJ_LIST: vectorlen = listTypeLength(sortval); break;
     case OBJ_SET: vectorlen = setTypeSize(sortval); break;
-    case OBJ_ZSET: vectorlen = dictSize(((zset *)sortval->ptr)->dict); break;
+    case OBJ_ZSET: vectorlen = hashtableSize(((zset *)sortval->ptr)->ht); break;
     default: vectorlen = 0; serverPanic("Bad SORT type"); /* Avoid GCC warning */
     }
 
@@ -423,7 +423,7 @@ void sortCommandGeneric(client *c, int readonly) {
 
         /* Check if starting point is trivial, before doing log(N) lookup. */
         if (desc) {
-            long zsetlen = dictSize(((zset *)sortval->ptr)->dict);
+            long zsetlen = hashtableSize(((zset *)sortval->ptr)->ht);
 
             ln = zsl->tail;
             if (start > 0) ln = zslGetElementByRank(zsl, zsetlen - start);
@@ -445,19 +445,18 @@ void sortCommandGeneric(client *c, int readonly) {
         end -= start;
         start = 0;
     } else if (sortval->type == OBJ_ZSET) {
-        dict *set = ((zset *)sortval->ptr)->dict;
-        dictIterator *di;
-        dictEntry *setele;
-        sds sdsele;
-        di = dictGetIterator(set);
-        while ((setele = dictNext(di)) != NULL) {
-            sdsele = dictGetKey(setele);
-            vector[j].obj = createStringObject(sdsele, sdslen(sdsele));
+        hashtable *ht = ((zset *)sortval->ptr)->ht;
+        hashtableIterator iter;
+        hashtableInitIterator(&iter, ht, 0);
+        void *next;
+        while (hashtableNext(&iter, &next)) {
+            zskiplistNode *node = next;
+            vector[j].obj = createStringObject(node->ele, sdslen(node->ele));
             vector[j].u.score = 0;
             vector[j].u.cmpobj = NULL;
             j++;
         }
-        dictReleaseIterator(di);
+        hashtableResetIterator(&iter);
     } else {
         serverPanic("Unknown type");
     }

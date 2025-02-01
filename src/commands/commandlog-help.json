@@ -1,0 +1,22 @@
+{
+    "HELP": {
+        "summary": "Show helpful text about the different subcommands",
+        "complexity": "O(1)",
+        "group": "server",
+        "since": "8.1.0",
+        "arity": 2,
+        "container": "COMMANDLOG",
+        "function": "commandlogCommand",
+        "command_flags": [
+            "LOADING",
+            "STALE"
+        ],
+        "reply_schema": {
+            "type": "array",
+            "description": "Helpful text about subcommands.",
+            "items": {
+                "type": "string"
+            }
+        }
+    }
+}

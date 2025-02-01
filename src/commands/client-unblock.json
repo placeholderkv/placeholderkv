@@ -6,7 +6,7 @@
         "since": "5.0.0",
         "arity": -3,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientUnblockCommand",
         "command_flags": [
             "ADMIN",
             "NOSCRIPT",

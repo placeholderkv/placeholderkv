@@ -19,6 +19,126 @@ start_server {tags {"introspection"}} {
         r client info
     } {id=* addr=*:* laddr=*:* fd=* name=* age=* idle=* flags=N db=* sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=* argv-mem=* multi-mem=0 rbs=* rbp=* obl=0 oll=0 omem=0 tot-mem=* events=r cmd=client|info user=* redir=-1 resp=* lib-name=* lib-ver=* tot-net-in=* tot-net-out=* tot-cmds=*}
 
+    test {CLIENT LIST with ADDR filter} {
+        set client_info [r client info]
+        regexp {addr=([^ ]+)} $client_info match myaddr
+        set cl [split [r client list addr $myaddr] "\r\n"]
+        regexp {addr=([^ ]+) .* cmd=([^ ]+)} [lindex $cl 0] _ actual_addr actual_cmd
+        assert_equal $myaddr $actual_addr
+        assert_equal "client|list" $actual_cmd
+    }
+
+    test {CLIENT LIST with LADDR filter} {
+        set client_info [r client info]
+        regexp {laddr=([^ ]+)} $client_info match myladdr
+        set cl [split [r client list laddr $myladdr] "\r\n"]
+
+        regexp {laddr=([^ ]+)} [lindex $cl 0] _ actual_laddr
+
+        assert_equal $myladdr $actual_laddr
+    }
+
+    test {CLIENT LIST with MAXAGE filter} {
+        set cl [split [r client list maxage 1000000] "\r\n"]
+
+        foreach line $cl {
+            regexp {age=([0-9]+)} $line _ age
+            assert {[expr {$age <= 1000000}]}
+        }
+    }
+
+    test {CLIENT LIST with TYPE filter} {
+        set cl [split [r client list type normal] "\r\n"]
+
+        foreach line $cl {
+            regexp {flags=([^ ]+)} $line _ flags
+            assert [regexp {.*N.*} $flags]
+        }
+    }
+
+    test {CLIENT LIST with USER filter} {
+        set client_info [r client info]
+        regexp {user=([^ ]+)} $client_info match myuser
+        set cl [split [r client list user $myuser] "\r\n"]
+
+        foreach line $cl {
+            regexp {user=([^ ]+)} $line _ actual_user
+            assert_equal $myuser $actual_user
+        }
+    }
+
+    test {CLIENT LIST with SKIPME filter} {
+        set cl [split [r client list skipme no] "\r\n"]
+
+        set found_self 0
+        foreach line $cl {
+            regexp {id=([0-9]+)} $line _ client_id
+            if {[expr {$client_id == [r client id]}]} {
+                set found_self 1
+            }
+        }
+
+        assert_equal $found_self 1
+    }
+
+    test {CLIENT LIST with multiple IDs and TYPE filter} {
+        # Create multiple clients
+        set c1 [valkey_client]
+        set c2 [valkey_client]
+        set c3 [valkey_client]
+
+        # Fetch their IDs
+        set id1 [$c1 client id]
+        set id2 [$c2 client id]
+        set id3 [$c3 client id]
+
+        # Filter by multiple IDs and TYPE
+        set cl [split [r client list id $id1 $id2 type normal] "\r\n"]
+
+        # Assert only c1 and c2 are present and match TYPE=N (NORMAL)
+        foreach line $cl {
+            regexp {id=([0-9]+).*flags=([^ ]+)} $line _ client_id flags
+            assert {[lsearch -exact "$id1 $id2" $client_id] != -1}
+            assert {[string match *N* $flags]}
+        }
+
+        # Close clients
+        $c1 close
+        $c2 close
+        $c3 close
+    }
+
+    test {CLIENT LIST with filters matching no clients} {
+        # Create multiple clients
+        set c1 [valkey_client]
+        set c2 [valkey_client]
+
+        # Use a filter that doesn't match any client (e.g., invalid user)
+        assert_error "ERR No such user 'invalid_user'" {r client list user invalid_user}
+
+        # Close clients
+        $c1 close
+        $c2 close
+    }
+
+    test {CLIENT LIST with illegal arguments} {
+        assert_error "ERR syntax error" {r client list id 10 wrong_arg}
+
+        assert_error "ERR syntax error" {r client list id str}
+        assert_error "ERR *greater than 0*" {r client list id -1}
+        assert_error "ERR *greater than 0*" {r client list id 0}
+
+        assert_error "ERR Unknown client type*" {r client list type wrong_type}
+
+        assert_error "ERR No such user*" {r client list user wrong_user}
+
+        assert_error "ERR syntax error*" {r client list skipme yes_or_no}
+
+        assert_error "ERR *not an integer or out of range*" {r client list maxage str}
+        assert_error "ERR *not an integer or out of range*" {r client list maxage 9999999999999999999}
+        assert_error "ERR *greater than 0*" {r client list maxage -1}
+    }
+
     proc get_field_in_client_info {info field} {
         set info [string trim $info]
         foreach item [split $info " "] {
@@ -108,7 +228,7 @@ start_server {tags {"introspection"}} {
         assert_error "ERR wrong number of arguments for 'client|kill' command" {r client kill}
         assert_error "ERR syntax error*" {r client kill id 10 wrong_arg}
 
-        assert_error "ERR *greater than 0*" {r client kill id str}
+        assert_error "ERR syntax error*" {r client kill id str}
         assert_error "ERR *greater than 0*" {r client kill id -1}
         assert_error "ERR *greater than 0*" {r client kill id 0}
 

@@ -31,6 +31,80 @@
 #include <math.h>
 
 /*-----------------------------------------------------------------------------
+ * Hash Entry API
+ *----------------------------------------------------------------------------*/
+
+struct hashTypeEntry {
+    sds value;
+    unsigned char field_offset;
+    unsigned char field_data[];
+};
+
+/* takes ownership of value, does not take ownership of field */
+hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
+    size_t field_size = sdscopytobuffer(NULL, 0, field, NULL);
+
+    size_t total_size = sizeof(hashTypeEntry) + field_size;
+    hashTypeEntry *entry = zmalloc(total_size);
+
+    entry->value = value;
+    sdscopytobuffer(entry->field_data, field_size, field, &entry->field_offset);
+    return entry;
+}
+
+sds hashTypeEntryGetField(const hashTypeEntry *entry) {
+    const unsigned char *field = entry->field_data + entry->field_offset;
+    return (sds)field;
+}
+
+sds hashTypeEntryGetValue(const hashTypeEntry *entry) {
+    return entry->value;
+}
+
+/* frees previous value, takes ownership of new value */
+static void hashTypeEntryReplaceValue(hashTypeEntry *entry, sds value) {
+    sdsfree(entry->value);
+    entry->value = value;
+}
+
+/* Returns allocation size of hashTypeEntry and data owned by hashTypeEntry,
+ * even if not embedded in the same allocation. */
+size_t hashTypeEntryAllocSize(hashTypeEntry *entry) {
+    size_t size = zmalloc_usable_size(entry);
+    size += sdsAllocSize(entry->value);
+    return size;
+}
+
+/* Defragments a hashtable entry (field-value pair) if needed, using the
+ * provided defrag functions. The defrag functions return NULL if the allocation
+ * was not moved, otherwise they return a pointer to the new memory location.
+ * A separate sds defrag function is needed because of the unique memory layout
+ * of sds strings.
+ * If the location of the hashTypeEntry changed we return the new location,
+ * otherwise we return NULL. */
+hashTypeEntry *hashTypeEntryDefrag(hashTypeEntry *entry, void *(*defragfn)(void *), sds (*sdsdefragfn)(sds)) {
+    hashTypeEntry *new_entry = defragfn(entry);
+    if (new_entry) entry = new_entry;
+
+    sds new_value = sdsdefragfn(entry->value);
+    if (new_value) entry->value = new_value;
+
+    return new_entry;
+}
+
+/* Used for releasing memory to OS to avoid unnecessary CoW. Called when we've
+ * forked and memory won't be used again. See zmadvise_dontneed() */
+void dismissHashTypeEntry(hashTypeEntry *entry) {
+    /* Only dismiss values memory since the field size usually is small. */
+    dismissSds(entry->value);
+}
+
+void freeHashTypeEntry(hashTypeEntry *entry) {
+    sdsfree(entry->value);
+    zfree(entry);
+}
+
+/*-----------------------------------------------------------------------------
  * Hash type API
  *----------------------------------------------------------------------------*/
 
@@ -48,8 +122,8 @@ void hashTypeTryConversion(robj *o, robj **argv, int start, int end) {
      * might over allocate memory if there are duplicates. */
     size_t new_fields = (end - start + 1) / 2;
     if (new_fields > server.hash_max_listpack_entries) {
-        hashTypeConvert(o, OBJ_ENCODING_HT);
-        dictExpand(o->ptr, new_fields);
+        hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
+        hashtableExpand(o->ptr, new_fields);
         return;
     }
 
@@ -57,12 +131,12 @@ void hashTypeTryConversion(robj *o, robj **argv, int start, int end) {
         if (!sdsEncodedObject(argv[i])) continue;
         size_t len = sdslen(argv[i]->ptr);
         if (len > server.hash_max_listpack_value) {
-            hashTypeConvert(o, OBJ_ENCODING_HT);
+            hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
             return;
         }
         sum += len;
     }
-    if (!lpSafeToAdd(o->ptr, sum)) hashTypeConvert(o, OBJ_ENCODING_HT);
+    if (!lpSafeToAdd(o->ptr, sum)) hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
 }
 
 /* Get the value from a listpack encoded hash, identified by field.
@@ -95,13 +169,10 @@ int hashTypeGetFromListpack(robj *o, sds field, unsigned char **vstr, unsigned i
  * Returns NULL when the field cannot be found, otherwise the SDS value
  * is returned. */
 sds hashTypeGetFromHashTable(robj *o, sds field) {
-    dictEntry *de;
-
-    serverAssert(o->encoding == OBJ_ENCODING_HT);
-
-    de = dictFind(o->ptr, field);
-    if (de == NULL) return NULL;
-    return dictGetVal(de);
+    serverAssert(o->encoding == OBJ_ENCODING_HASHTABLE);
+    void *found_element;
+    if (!hashtableFind(o->ptr, field, &found_element)) return NULL;
+    return hashTypeEntryGetValue(found_element);
 }
 
 /* Higher level function of hashTypeGet*() that returns the hash value
@@ -117,9 +188,9 @@ int hashTypeGetValue(robj *o, sds field, unsigned char **vstr, unsigned int *vle
     if (o->encoding == OBJ_ENCODING_LISTPACK) {
         *vstr = NULL;
         if (hashTypeGetFromListpack(o, field, vstr, vlen, vll) == 0) return C_OK;
-    } else if (o->encoding == OBJ_ENCODING_HT) {
-        sds value;
-        if ((value = hashTypeGetFromHashTable(o, field)) != NULL) {
+    } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+        sds value = hashTypeGetFromHashTable(o, field);
+        if (value != NULL) {
             *vstr = (unsigned char *)value;
             *vlen = sdslen(value);
             return C_OK;
@@ -173,7 +244,7 @@ int hashTypeExists(robj *o, sds field) {
 /* Add a new field, overwrite the old with the new value if it already exists.
  * Return 0 on insert and 1 on update.
  *
- * By default, the key and value SDS strings are copied if needed, so the
+ * By default, the field and value SDS strings are copied if needed, so the
  * caller retains ownership of the strings passed. However this behavior
  * can be effected by passing appropriate flags (possibly bitwise OR-ed):
  *
@@ -199,7 +270,7 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
      * hashTypeTryConversion, so this check will be a NOP. */
     if (o->encoding == OBJ_ENCODING_LISTPACK) {
         if (sdslen(field) > server.hash_max_listpack_value || sdslen(value) > server.hash_max_listpack_value)
-            hashTypeConvert(o, OBJ_ENCODING_HT);
+            hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
     }
 
     if (o->encoding == OBJ_ENCODING_LISTPACK) {
@@ -228,10 +299,10 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
         o->ptr = zl;
 
         /* Check if the listpack needs to be converted to a hash table */
-        if (hashTypeLength(o) > server.hash_max_listpack_entries) hashTypeConvert(o, OBJ_ENCODING_HT);
-    } else if (o->encoding == OBJ_ENCODING_HT) {
-        dict *ht = o->ptr;
-        dictEntry *de, *existing;
+        if (hashTypeLength(o) > server.hash_max_listpack_entries) hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
+    } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+        hashtable *ht = o->ptr;
+
         sds v;
         if (flags & HASH_SET_TAKE_VALUE) {
             v = value;
@@ -239,17 +310,16 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
         } else {
             v = sdsdup(value);
         }
-        de = dictAddRaw(ht, field, &existing);
-        if (de) {
-            dictSetVal(ht, de, v);
-            if (flags & HASH_SET_TAKE_FIELD) {
-                field = NULL;
-            } else {
-                dictSetKey(ht, de, sdsdup(field));
-            }
+
+        hashtablePosition position;
+        void *existing;
+        if (hashtableFindPositionForInsert(ht, field, &position, &existing)) {
+            /* does not exist yet */
+            hashTypeEntry *entry = hashTypeCreateEntry(field, v);
+            hashtableInsertAtPosition(ht, entry, &position);
         } else {
-            sdsfree(dictGetVal(existing));
-            dictSetVal(ht, existing, v);
+            /* exists: replace value */
+            hashTypeEntryReplaceValue(existing, v);
             update = 1;
         }
     } else {
@@ -276,17 +346,15 @@ int hashTypeDelete(robj *o, sds field) {
         if (fptr != NULL) {
             fptr = lpFind(zl, fptr, (unsigned char *)field, sdslen(field), 1);
             if (fptr != NULL) {
-                /* Delete both of the key and the value. */
+                /* Delete both field and value. */
                 zl = lpDeleteRangeWithEntry(zl, &fptr, 2);
                 o->ptr = zl;
                 deleted = 1;
             }
         }
-    } else if (o->encoding == OBJ_ENCODING_HT) {
-        if (dictDelete((dict *)o->ptr, field) == C_OK) {
-            deleted = 1;
-        }
-
+    } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+        hashtable *ht = o->ptr;
+        deleted = hashtableDelete(ht, field);
     } else {
         serverPanic("Unknown hash encoding");
     }
@@ -295,16 +363,15 @@ int hashTypeDelete(robj *o, sds field) {
 
 /* Return the number of elements in a hash. */
 unsigned long hashTypeLength(const robj *o) {
-    unsigned long length = ULONG_MAX;
-
-    if (o->encoding == OBJ_ENCODING_LISTPACK) {
-        length = lpLength(o->ptr) / 2;
-    } else if (o->encoding == OBJ_ENCODING_HT) {
-        length = dictSize((const dict *)o->ptr);
-    } else {
+    switch (o->encoding) {
+    case OBJ_ENCODING_LISTPACK:
+        return lpLength(o->ptr) / 2;
+    case OBJ_ENCODING_HASHTABLE:
+        return hashtableSize((const hashtable *)o->ptr);
+    default:
         serverPanic("Unknown hash encoding");
+        return ULONG_MAX;
     }
-    return length;
 }
 
 void hashTypeInitIterator(robj *subject, hashTypeIterator *hi) {
@@ -314,15 +381,15 @@ void hashTypeInitIterator(robj *subject, hashTypeIterator *hi) {
     if (hi->encoding == OBJ_ENCODING_LISTPACK) {
         hi->fptr = NULL;
         hi->vptr = NULL;
-    } else if (hi->encoding == OBJ_ENCODING_HT) {
-        dictInitIterator(&hi->di, subject->ptr);
+    } else if (hi->encoding == OBJ_ENCODING_HASHTABLE) {
+        hashtableInitIterator(&hi->iter, subject->ptr, 0);
     } else {
         serverPanic("Unknown hash encoding");
     }
 }
 
 void hashTypeResetIterator(hashTypeIterator *hi) {
-    if (hi->encoding == OBJ_ENCODING_HT) dictResetIterator(&hi->di);
+    if (hi->encoding == OBJ_ENCODING_HASHTABLE) hashtableResetIterator(&hi->iter);
 }
 
 /* Move to the next entry in the hash. Return C_OK when the next entry
@@ -354,8 +421,8 @@ int hashTypeNext(hashTypeIterator *hi) {
         /* fptr, vptr now point to the first or next pair */
         hi->fptr = fptr;
         hi->vptr = vptr;
-    } else if (hi->encoding == OBJ_ENCODING_HT) {
-        if ((hi->de = dictNext(&hi->di)) == NULL) return C_ERR;
+    } else if (hi->encoding == OBJ_ENCODING_HASHTABLE) {
+        if (!hashtableNext(&hi->iter, &hi->next)) return C_ERR;
     } else {
         serverPanic("Unknown hash encoding");
     }
@@ -371,7 +438,7 @@ void hashTypeCurrentFromListpack(hashTypeIterator *hi,
                                  long long *vll) {
     serverAssert(hi->encoding == OBJ_ENCODING_LISTPACK);
 
-    if (what & OBJ_HASH_KEY) {
+    if (what & OBJ_HASH_FIELD) {
         *vstr = lpGetValue(hi->fptr, vlen, vll);
     } else {
         *vstr = lpGetValue(hi->vptr, vlen, vll);
@@ -382,12 +449,12 @@ void hashTypeCurrentFromListpack(hashTypeIterator *hi,
  * encoded as a hash table. Prototype is similar to
  * `hashTypeGetFromHashTable`. */
 sds hashTypeCurrentFromHashTable(hashTypeIterator *hi, int what) {
-    serverAssert(hi->encoding == OBJ_ENCODING_HT);
+    serverAssert(hi->encoding == OBJ_ENCODING_HASHTABLE);
 
-    if (what & OBJ_HASH_KEY) {
-        return dictGetKey(hi->de);
+    if (what & OBJ_HASH_FIELD) {
+        return hashTypeEntryGetField(hi->next);
     } else {
-        return dictGetVal(hi->de);
+        return hashTypeEntryGetValue(hi->next);
     }
 }
 
@@ -401,11 +468,11 @@ sds hashTypeCurrentFromHashTable(hashTypeIterator *hi, int what) {
  * If *vll is populated *vstr is set to NULL, so the caller
  * can always check the function return by checking the return value
  * type checking if vstr == NULL. */
-void hashTypeCurrentObject(hashTypeIterator *hi, int what, unsigned char **vstr, unsigned int *vlen, long long *vll) {
+static void hashTypeCurrentObject(hashTypeIterator *hi, int what, unsigned char **vstr, unsigned int *vlen, long long *vll) {
     if (hi->encoding == OBJ_ENCODING_LISTPACK) {
         *vstr = NULL;
         hashTypeCurrentFromListpack(hi, what, vstr, vlen, vll);
-    } else if (hi->encoding == OBJ_ENCODING_HT) {
+    } else if (hi->encoding == OBJ_ENCODING_HASHTABLE) {
         sds ele = hashTypeCurrentFromHashTable(hi, what);
         *vstr = (unsigned char *)ele;
         *vlen = sdslen(ele);
@@ -414,7 +481,7 @@ void hashTypeCurrentObject(hashTypeIterator *hi, int what, unsigned char **vstr,
     }
 }
 
-/* Return the key or value at the current iterator position as a new
+/* Return the field or value at the current iterator position as a new
  * SDS string. */
 sds hashTypeCurrentObjectNewSds(hashTypeIterator *hi, int what) {
     unsigned char *vstr;
@@ -444,26 +511,22 @@ void hashTypeConvertListpack(robj *o, int enc) {
     if (enc == OBJ_ENCODING_LISTPACK) {
         /* Nothing to do... */
 
-    } else if (enc == OBJ_ENCODING_HT) {
+    } else if (enc == OBJ_ENCODING_HASHTABLE) {
         hashTypeIterator hi;
-        dict *dict;
-        int ret;
+
+        hashtable *ht = hashtableCreate(&hashHashtableType);
+
+        /* Presize the hashtable to avoid rehashing */
+        hashtableExpand(ht, hashTypeLength(o));
 
         hashTypeInitIterator(o, &hi);
-        dict = dictCreate(&hashDictType);
-
-        /* Presize the dict to avoid rehashing */
-        dictExpand(dict, hashTypeLength(o));
-
         while (hashTypeNext(&hi) != C_ERR) {
-            sds key, value;
-
-            key = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_KEY);
-            value = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_VALUE);
-            ret = dictAdd(dict, key, value);
-            if (ret != DICT_OK) {
-                sdsfree(key);
-                sdsfree(value);             /* Needed for gcc ASAN */
+            sds field = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_FIELD);
+            sds value = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_VALUE);
+            hashTypeEntry *entry = hashTypeCreateEntry(field, value);
+            sdsfree(field);
+            if (!hashtableAdd(ht, entry)) {
+                freeHashTypeEntry(entry);
                 hashTypeResetIterator(&hi); /* Needed for gcc ASAN */
                 serverLogHexDump(LL_WARNING, "listpack with dup elements dump", o->ptr, lpBytes(o->ptr));
                 serverPanic("Listpack corruption detected");
@@ -471,8 +534,8 @@ void hashTypeConvertListpack(robj *o, int enc) {
         }
         hashTypeResetIterator(&hi);
         zfree(o->ptr);
-        o->encoding = OBJ_ENCODING_HT;
-        o->ptr = dict;
+        o->encoding = OBJ_ENCODING_HASHTABLE;
+        o->ptr = ht;
     } else {
         serverPanic("Unknown hash encoding");
     }
@@ -481,7 +544,7 @@ void hashTypeConvertListpack(robj *o, int enc) {
 void hashTypeConvert(robj *o, int enc) {
     if (o->encoding == OBJ_ENCODING_LISTPACK) {
         hashTypeConvertListpack(o, enc);
-    } else if (o->encoding == OBJ_ENCODING_HT) {
+    } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
         serverPanic("Not implemented");
     } else {
         serverPanic("Unknown hash encoding");
@@ -506,27 +569,24 @@ robj *hashTypeDup(robj *o) {
         memcpy(new_zl, zl, sz);
         hobj = createObject(OBJ_HASH, new_zl);
         hobj->encoding = OBJ_ENCODING_LISTPACK;
-    } else if (o->encoding == OBJ_ENCODING_HT) {
-        dict *d = dictCreate(&hashDictType);
-        dictExpand(d, dictSize((const dict *)o->ptr));
+    } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
+        hashtable *ht = hashtableCreate(&hashHashtableType);
+        hashtableExpand(ht, hashtableSize((const hashtable *)o->ptr));
 
         hashTypeInitIterator(o, &hi);
         while (hashTypeNext(&hi) != C_ERR) {
-            sds field, value;
-            sds newfield, newvalue;
             /* Extract a field-value pair from an original hash object.*/
-            field = hashTypeCurrentFromHashTable(&hi, OBJ_HASH_KEY);
-            value = hashTypeCurrentFromHashTable(&hi, OBJ_HASH_VALUE);
-            newfield = sdsdup(field);
-            newvalue = sdsdup(value);
+            sds field = hashTypeCurrentFromHashTable(&hi, OBJ_HASH_FIELD);
+            sds value = hashTypeCurrentFromHashTable(&hi, OBJ_HASH_VALUE);
 
             /* Add a field-value pair to a new hash object. */
-            dictAdd(d, newfield, newvalue);
+            hashTypeEntry *entry = hashTypeCreateEntry(field, sdsdup(value));
+            hashtableAdd(ht, entry);
         }
         hashTypeResetIterator(&hi);
 
-        hobj = createObject(OBJ_HASH, d);
-        hobj->encoding = OBJ_ENCODING_HT;
+        hobj = createObject(OBJ_HASH, ht);
+        hobj->encoding = OBJ_ENCODING_HASHTABLE;
     } else {
         serverPanic("Unknown hash encoding");
     }
@@ -547,22 +607,23 @@ void hashReplyFromListpackEntry(client *c, listpackEntry *e) {
 }
 
 /* Return random element from a non empty hash.
- * 'key' and 'val' will be set to hold the element.
+ * 'field' and 'val' will be set to hold the element.
  * The memory in them is not to be freed or modified by the caller.
  * 'val' can be NULL in which case it's not extracted. */
-void hashTypeRandomElement(robj *hashobj, unsigned long hashsize, listpackEntry *key, listpackEntry *val) {
-    if (hashobj->encoding == OBJ_ENCODING_HT) {
-        dictEntry *de = dictGetFairRandomKey(hashobj->ptr);
-        sds s = dictGetKey(de);
-        key->sval = (unsigned char *)s;
-        key->slen = sdslen(s);
+static void hashTypeRandomElement(robj *hashobj, unsigned long hashsize, listpackEntry *field, listpackEntry *val) {
+    if (hashobj->encoding == OBJ_ENCODING_HASHTABLE) {
+        void *entry;
+        hashtableFairRandomEntry(hashobj->ptr, &entry);
+        sds sds_field = hashTypeEntryGetField(entry);
+        field->sval = (unsigned char *)sds_field;
+        field->slen = sdslen(sds_field);
         if (val) {
-            sds s = dictGetVal(de);
-            val->sval = (unsigned char *)s;
-            val->slen = sdslen(s);
+            sds sds_val = hashTypeEntryGetValue(entry);
+            val->sval = (unsigned char *)sds_val;
+            val->slen = sdslen(sds_val);
         }
     } else if (hashobj->encoding == OBJ_ENCODING_LISTPACK) {
-        lpRandomPair(hashobj->ptr, hashsize, key, val);
+        lpRandomPair(hashobj->ptr, hashsize, field, val);
     } else {
         serverPanic("Unknown hash encoding");
     }
@@ -799,7 +860,7 @@ static void addHashIteratorCursorToReply(writePreparedClient *wpc, hashTypeItera
             addWritePreparedReplyBulkCBuffer(wpc, vstr, vlen);
         else
             addWritePreparedReplyBulkLongLong(wpc, vll);
-    } else if (hi->encoding == OBJ_ENCODING_HT) {
+    } else if (hi->encoding == OBJ_ENCODING_HASHTABLE) {
         sds value = hashTypeCurrentFromHashTable(hi, what);
         addWritePreparedReplyBulkCBuffer(wpc, value, sdslen(value));
     } else {
@@ -812,15 +873,15 @@ void genericHgetallCommand(client *c, int flags) {
     hashTypeIterator hi;
     int length, count = 0;
 
-    robj *emptyResp = (flags & OBJ_HASH_KEY && flags & OBJ_HASH_VALUE) ? shared.emptymap[c->resp] : shared.emptyarray;
+    robj *emptyResp = (flags & OBJ_HASH_FIELD && flags & OBJ_HASH_VALUE) ? shared.emptymap[c->resp] : shared.emptyarray;
     if ((o = lookupKeyReadOrReply(c, c->argv[1], emptyResp)) == NULL || checkType(c, o, OBJ_HASH)) return;
 
     writePreparedClient *wpc = prepareClientForFutureWrites(c);
     if (!wpc) return;
-    /* We return a map if the user requested keys and values, like in the
+    /* We return a map if the user requested fields and values, like in the
      * HGETALL case. Otherwise to use a flat array makes more sense. */
     length = hashTypeLength(o);
-    if (flags & OBJ_HASH_KEY && flags & OBJ_HASH_VALUE) {
+    if (flags & OBJ_HASH_FIELD && flags & OBJ_HASH_VALUE) {
         addWritePreparedReplyMapLen(wpc, length);
     } else {
         addWritePreparedReplyArrayLen(wpc, length);
@@ -828,8 +889,8 @@ void genericHgetallCommand(client *c, int flags) {
 
     hashTypeInitIterator(o, &hi);
     while (hashTypeNext(&hi) != C_ERR) {
-        if (flags & OBJ_HASH_KEY) {
-            addHashIteratorCursorToReply(wpc, &hi, OBJ_HASH_KEY);
+        if (flags & OBJ_HASH_FIELD) {
+            addHashIteratorCursorToReply(wpc, &hi, OBJ_HASH_FIELD);
             count++;
         }
         if (flags & OBJ_HASH_VALUE) {
@@ -841,12 +902,12 @@ void genericHgetallCommand(client *c, int flags) {
     hashTypeResetIterator(&hi);
 
     /* Make sure we returned the right number of elements. */
-    if (flags & OBJ_HASH_KEY && flags & OBJ_HASH_VALUE) count /= 2;
+    if (flags & OBJ_HASH_FIELD && flags & OBJ_HASH_VALUE) count /= 2;
     serverAssert(count == length);
 }
 
 void hkeysCommand(client *c) {
-    genericHgetallCommand(c, OBJ_HASH_KEY);
+    genericHgetallCommand(c, OBJ_HASH_FIELD);
 }
 
 void hvalsCommand(client *c) {
@@ -854,7 +915,7 @@ void hvalsCommand(client *c) {
 }
 
 void hgetallCommand(client *c) {
-    genericHgetallCommand(c, OBJ_HASH_KEY | OBJ_HASH_VALUE);
+    genericHgetallCommand(c, OBJ_HASH_FIELD | OBJ_HASH_VALUE);
 }
 
 void hexistsCommand(client *c) {
@@ -873,14 +934,14 @@ void hscanCommand(client *c) {
     scanGenericCommand(c, o, cursor);
 }
 
-static void hrandfieldReplyWithListpack(writePreparedClient *wpc, unsigned int count, listpackEntry *keys, listpackEntry *vals) {
+static void hrandfieldReplyWithListpack(writePreparedClient *wpc, unsigned int count, listpackEntry *fields, listpackEntry *vals) {
     client *c = (client *)wpc;
     for (unsigned long i = 0; i < count; i++) {
         if (vals && c->resp > 2) addWritePreparedReplyArrayLen(wpc, 2);
-        if (keys[i].sval)
-            addWritePreparedReplyBulkCBuffer(wpc, keys[i].sval, keys[i].slen);
+        if (fields[i].sval)
+            addWritePreparedReplyBulkCBuffer(wpc, fields[i].sval, fields[i].slen);
         else
-            addWritePreparedReplyBulkLongLong(wpc, keys[i].lval);
+            addWritePreparedReplyBulkLongLong(wpc, fields[i].lval);
         if (vals) {
             if (vals[i].sval)
                 addWritePreparedReplyBulkCBuffer(wpc, vals[i].sval, vals[i].slen);
@@ -933,32 +994,32 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
             addWritePreparedReplyArrayLen(wpc, count * 2);
         else
             addWritePreparedReplyArrayLen(wpc, count);
-        if (hash->encoding == OBJ_ENCODING_HT) {
-            sds key, value;
+        if (hash->encoding == OBJ_ENCODING_HASHTABLE) {
             while (count--) {
-                dictEntry *de = dictGetFairRandomKey(hash->ptr);
-                key = dictGetKey(de);
-                value = dictGetVal(de);
+                void *entry;
+                hashtableFairRandomEntry(hash->ptr, &entry);
+                sds field = hashTypeEntryGetField(entry);
+                sds value = hashTypeEntryGetValue(entry);
                 if (withvalues && c->resp > 2) addWritePreparedReplyArrayLen(wpc, 2);
-                addWritePreparedReplyBulkCBuffer(wpc, key, sdslen(key));
+                addWritePreparedReplyBulkCBuffer(wpc, field, sdslen(field));
                 if (withvalues) addWritePreparedReplyBulkCBuffer(wpc, value, sdslen(value));
                 if (c->flag.close_asap) break;
             }
         } else if (hash->encoding == OBJ_ENCODING_LISTPACK) {
-            listpackEntry *keys, *vals = NULL;
+            listpackEntry *fields, *vals = NULL;
             unsigned long limit, sample_count;
 
             limit = count > HRANDFIELD_RANDOM_SAMPLE_LIMIT ? HRANDFIELD_RANDOM_SAMPLE_LIMIT : count;
-            keys = zmalloc(sizeof(listpackEntry) * limit);
+            fields = zmalloc(sizeof(listpackEntry) * limit);
             if (withvalues) vals = zmalloc(sizeof(listpackEntry) * limit);
             while (count) {
                 sample_count = count > limit ? limit : count;
                 count -= sample_count;
-                lpRandomPairs(hash->ptr, sample_count, keys, vals);
-                hrandfieldReplyWithListpack(wpc, sample_count, keys, vals);
+                lpRandomPairs(hash->ptr, sample_count, fields, vals);
+                hrandfieldReplyWithListpack(wpc, sample_count, fields, vals);
                 if (c->flag.close_asap) break;
             }
-            zfree(keys);
+            zfree(fields);
             zfree(vals);
         }
         return;
@@ -979,7 +1040,7 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
         hashTypeInitIterator(hash, &hi);
         while (hashTypeNext(&hi) != C_ERR) {
             if (withvalues && c->resp > 2) addWritePreparedReplyArrayLen(wpc, 2);
-            addHashIteratorCursorToReply(wpc, &hi, OBJ_HASH_KEY);
+            addHashIteratorCursorToReply(wpc, &hi, OBJ_HASH_FIELD);
             if (withvalues) addHashIteratorCursorToReply(wpc, &hi, OBJ_HASH_VALUE);
         }
         hashTypeResetIterator(&hi);
@@ -995,12 +1056,12 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
      * And it is inefficient to repeatedly pick one random element from a
      * listpack in CASE 4. So we use this instead. */
     if (hash->encoding == OBJ_ENCODING_LISTPACK) {
-        listpackEntry *keys, *vals = NULL;
-        keys = zmalloc(sizeof(listpackEntry) * count);
+        listpackEntry *fields, *vals = NULL;
+        fields = zmalloc(sizeof(listpackEntry) * count);
         if (withvalues) vals = zmalloc(sizeof(listpackEntry) * count);
-        serverAssert(lpRandomPairsUnique(hash->ptr, count, keys, vals) == count);
-        hrandfieldReplyWithListpack(wpc, count, keys, vals);
-        zfree(keys);
+        serverAssert(lpRandomPairsUnique(hash->ptr, count, fields, vals) == count);
+        hrandfieldReplyWithListpack(wpc, count, fields, vals);
+        zfree(fields);
         zfree(vals);
         return;
     }
@@ -1024,11 +1085,11 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
         /* Add all the elements into the temporary dictionary. */
         while ((hashTypeNext(&hi)) != C_ERR) {
             int ret = DICT_ERR;
-            sds key, value = NULL;
+            sds field, value = NULL;
 
-            key = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_KEY);
+            field = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_FIELD);
             if (withvalues) value = hashTypeCurrentObjectNewSds(&hi, OBJ_HASH_VALUE);
-            ret = dictAdd(d, key, value);
+            ret = dictAdd(d, field, value);
 
             serverAssert(ret == DICT_OK);
         }
@@ -1051,10 +1112,10 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
         dictEntry *de;
         di = dictGetIterator(d);
         while ((de = dictNext(di)) != NULL) {
-            sds key = dictGetKey(de);
+            sds field = dictGetKey(de);
             sds value = dictGetVal(de);
             if (withvalues && c->resp > 2) addWritePreparedReplyArrayLen(wpc, 2);
-            addWritePreparedReplyBulkSds(wpc, key);
+            addWritePreparedReplyBulkSds(wpc, field);
             if (withvalues) addWritePreparedReplyBulkSds(wpc, value);
         }
 
@@ -1069,25 +1130,25 @@ void hrandfieldWithCountCommand(client *c, long l, int withvalues) {
     else {
         /* Hashtable encoding (generic implementation) */
         unsigned long added = 0;
-        listpackEntry key, value;
+        listpackEntry field, value;
         dict *d = dictCreate(&hashDictType);
         dictExpand(d, count);
         while (added < count) {
-            hashTypeRandomElement(hash, size, &key, withvalues ? &value : NULL);
+            hashTypeRandomElement(hash, size, &field, withvalues ? &value : NULL);
 
             /* Try to add the object to the dictionary. If it already exists
              * free it, otherwise increment the number of objects we have
              * in the result dictionary. */
-            sds skey = hashSdsFromListpackEntry(&key);
-            if (dictAdd(d, skey, NULL) != DICT_OK) {
-                sdsfree(skey);
+            sds sfield = hashSdsFromListpackEntry(&field);
+            if (dictAdd(d, sfield, NULL) != DICT_OK) {
+                sdsfree(sfield);
                 continue;
             }
             added++;
 
             /* We can reply right away, so that we don't need to store the value in the dict. */
             if (withvalues && c->resp > 2) addWritePreparedReplyArrayLen(wpc, 2);
-            hashReplyFromListpackEntry(c, &key);
+            hashReplyFromListpackEntry(c, &field);
             if (withvalues) hashReplyFromListpackEntry(c, &value);
         }
 

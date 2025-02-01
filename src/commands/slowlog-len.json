@@ -7,6 +7,11 @@
         "arity": 2,
         "container": "SLOWLOG",
         "function": "slowlogCommand",
+        "deprecated_since": "8.1.0",
+        "replaced_by": "`COMMANDLOG LEN SLOW`",
+        "doc_flags": [
+            "DEPRECATED"
+        ],
         "command_flags": [
             "ADMIN",
             "LOADING",

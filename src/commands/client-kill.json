@@ -6,7 +6,7 @@
         "since": "2.4.0",
         "arity": -3,
         "container": "CLIENT",
-        "function": "clientCommand",
+        "function": "clientKillCommand",
         "history": [
             [
                 "2.8.12",
@@ -35,6 +35,10 @@
             [
                 "8.0.0",
                 "Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."
+            ],
+            [
+                "8.1.0",
+                "`ID` option accepts multiple IDs."
             ]
         ],
         "command_flags": [
@@ -68,6 +72,7 @@
                                 "name": "client-id",
                                 "type": "integer",
                                 "optional": true,
+                                "multiple": true,
                                 "since": "2.8.12"
                             },
                             {
