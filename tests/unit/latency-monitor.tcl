@@ -115,14 +115,13 @@ tags {"needs:debug"} {
 
         # See the previous "Test latency events logging" test for each call.
         foreach event $res {
-            lassign $event eventname time latency max min sum cnt
+            lassign $event eventname time latency max sum cnt
             assert {$eventname eq "command"}
             if {!$::no_latency} {
                 # To avoid timing issues, each event decreases by 50 and
                 # increases by 150 to increase the range.
                 assert_equal $time $last_time
                 assert_range $max 450 650 ;# debug sleep 0.5
-                assert_range $min 250 450 ;# debug sleep 0.3
                 assert_range $sum 1050 1650 ;# debug sleep 0.3 + 0.4 + 0.5
                 assert_equal $cnt 3
             }

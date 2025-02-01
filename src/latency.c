@@ -86,7 +86,6 @@ void latencyAddSample(const char *event, mstime_t latency) {
         ts = zmalloc(sizeof(*ts));
         ts->idx = 0;
         ts->max = 0;
-        ts->min = 0;
         ts->sum = 0;
         ts->cnt = 0;
         memset(ts->samples, 0, sizeof(ts->samples));
@@ -94,7 +93,6 @@ void latencyAddSample(const char *event, mstime_t latency) {
     }
 
     if (latency > ts->max) ts->max = latency;
-    if (latency < ts->min || ts->min == 0) ts->min = latency;
     ts->sum += latency;
     ts->cnt++;
 
@@ -618,12 +616,11 @@ void latencyCommandReplyWithLatestEvents(client *c) {
         struct latencyTimeSeries *ts = dictGetVal(de);
         int last = (ts->idx + LATENCY_TS_LEN - 1) % LATENCY_TS_LEN;
 
-        addReplyArrayLen(c, 7);
+        addReplyArrayLen(c, 6);
         addReplyBulkCString(c, event);
         addReplyLongLong(c, ts->samples[last].time);
         addReplyLongLong(c, ts->samples[last].latency);
         addReplyLongLong(c, ts->max);
-        addReplyLongLong(c, ts->min);
         addReplyLongLong(c, ts->sum);
         addReplyLongLong(c, ts->cnt);
     }
