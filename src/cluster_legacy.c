@@ -4400,8 +4400,7 @@ static clusterMsgSendBlock *createModuleMsgBlock(int64_t module_id, uint8_t type
  *
  * If link is NULL, then the message is broadcasted to the whole cluster. */
 void clusterSendModule(clusterLink *link, uint64_t module_id, uint8_t type, const char *payload, uint32_t len) {
-    clusterMsgSendBlock *msgblock[CLUSTERMSG_HDR_NUM];
-    memset(msgblock, 0, sizeof(msgblock));
+    clusterMsgSendBlock *msgblock[CLUSTERMSG_HDR_NUM] = {0};
     ClusterNodeIterator iter;
 
     if (link) {
