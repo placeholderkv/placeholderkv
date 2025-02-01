@@ -406,9 +406,9 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int arg
             return VALKEYMODULE_ERR;
 
     if (ValkeyModule_CreateCommand(ctx,"propagate-test.obeyed",
-        propagateTestObeyed,
-        "",1,1,1) == VALKEYMODULE_ERR)
-    return VALKEYMODULE_ERR;
+                propagateTestObeyed,
+                "",1,1,1) == VALKEYMODULE_ERR)
+            return VALKEYMODULE_ERR;
 
     return VALKEYMODULE_OK;
 }
