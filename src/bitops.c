@@ -1058,12 +1058,12 @@ void bitfieldGeneric(client *c, int flags) {
     uint64_t highest_write_offset = 0;
 
     for (j = 2; j < c->argc; j++) {
-        int remargs = c->argc - j - 1;  /* Remaining args other than current. */
+        int remargs = c->argc - j - 1;           /* Remaining args other than current. */
         char *subcmd = objectGetVal(c->argv[j]); /* Current command name. */
-        int opcode;                     /* Current operation code. */
-        long long i64 = 0;              /* Signed SET value. */
-        int sign = 0;                   /* Signed or unsigned type? */
-        int bits = 0;                   /* Bitfield width in bits. */
+        int opcode;                              /* Current operation code. */
+        long long i64 = 0;                       /* Signed SET value. */
+        int sign = 0;                            /* Signed or unsigned type? */
+        int bits = 0;                            /* Bitfield width in bits. */
 
         if (!strcasecmp(subcmd, "get") && remargs >= 2)
             opcode = BITFIELDOP_GET;
