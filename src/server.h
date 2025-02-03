@@ -1991,6 +1991,7 @@ struct valkeyServer {
     /* Limits */
     unsigned int maxclients;                    /* Max number of simultaneous clients */
     unsigned long long maxmemory;               /* Max number of memory bytes to use */
+    unsigned long long maxmemory_reserved;      /* Memory bytes to be away from maxmemory*/
     unsigned long long key_eviction_memory;     /* Memory bytes to begin the key eviction process */
     ssize_t maxmemory_clients;                  /* Memory limit for total client buffers */
     int maxmemory_policy;                       /* Policy for key eviction */

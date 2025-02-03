@@ -66,7 +66,6 @@ run_solo {defrag} {
             r config set latency-monitor-threshold 5
             r latency reset
             r config set maxmemory 110mb ;# prevent further eviction (not to fail the digest test)
-	    r config set key-eviction-memory 110mb
             set digest [debug_digest]
             catch {r config set activedefrag yes} e
             if {[r config get activedefrag] eq "activedefrag yes"} {

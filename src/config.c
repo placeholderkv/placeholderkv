@@ -2496,36 +2496,24 @@ static int updateReplBacklogSize(const char **err) {
     return 1;
 }
 
-static int updateKeyEvictionMemory(const char **err) {
-    UNUSED(err);
+static int updateMaxmemoryReserved(const char **err) {
     if (server.maxmemory) {
-        if (!server.key_eviction_memory) {
-            serverLog(LL_WARNING,
-                      "WARNING: current maxmemory value is not 0, the new key-eviction-memory value set via CONFIG SET (%llu) is  "
-                      "0. The new key-eviction-memory value is set to equal to current maxmemory (%llu) ",
-                      server.key_eviction_memory, server.maxmemory);
-            server.key_eviction_memory = server.maxmemory;
-        } else if (server.key_eviction_memory > server.maxmemory) {
-            serverLog(LL_WARNING,
-                      "WARNING: the new key-eviction-memory value set via CONFIG SET (%llu) is greater than current maxmemory, "
-                      "The new key-eviction-memory value is set to equal to current maxmemory (%llu) ",
-                      server.key_eviction_memory, server.maxmemory);
-            server.key_eviction_memory = server.maxmemory;
+        if (server.maxmemory < server.maxmemory_reserved) {
+            *err = "The maxmemory value is smaller than the new reserved memory buffer set via CONFIG SET";
+            return 0;
         }
+	server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
         size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
         if (server.key_eviction_memory < used) {
             serverLog(LL_WARNING,
-                      "WARNING: the new key-eviction-memorym value set via CONFIG SET (%llu) is smaller than the current memory "
-                      "usage (%zu). This will result in key eviction and/or the inability to accept new write commands "
-                      "depending on the maxmemory-policy.",
-                      server.key_eviction_memory, used);
+                      "WARNING: the difference between memory usage and maxmemory is less than reserved memory. " 
+		      "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
         }
+        startEvictionTimeProc();
     } else {
-        if (server.key_eviction_memory) {
-            serverLog(LL_WARNING,
-                      "WARNING: current maxmemory value is 0, the new key-eviction-memory value set via CONFIG SET (%llu) is  "
-                      "greater than 0. The new key-eviction-memory value is invalid, and its value is set to 0 ",
-                      server.key_eviction_memory);
+        if (server.maxmemory_reserved) {
+            *err = "Current maxmemory value is 0, the new reserved memory buffer value is invalid";
+            return 0;
         }
         server.key_eviction_memory = 0;
     }
@@ -2533,8 +2521,11 @@ static int updateKeyEvictionMemory(const char **err) {
 }
 
 static int updateMaxmemory(const char **err) {
-    UNUSED(err);
     if (server.maxmemory) {
+	if (server.maxmemory < server.maxmemory_reserved) {
+            *err = "The new maxmemory value set via CONFIG SET is smaller than the existing reserved memory buffer";
+            return 0;
+	}
         size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
         if (server.maxmemory < used) {
             serverLog(LL_WARNING,
@@ -2543,12 +2534,11 @@ static int updateMaxmemory(const char **err) {
                       "depending on the maxmemory-policy.",
                       server.maxmemory, used);
         }
-        if (!server.key_eviction_memory || server.key_eviction_memory > server.maxmemory) {
-            server.key_eviction_memory = server.maxmemory;
-        }
+        server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
         startEvictionTimeProc();
     } else {
-        server.key_eviction_memory = 0;
+        server.maxmemory_reserved = 0;
+	server.key_eviction_memory = 0;
     }
     return 1;
 }
@@ -3370,7 +3360,7 @@ standardConfig static_configs[] = {
 
     /* Unsigned Long Long configs */
     createULongLongConfig("maxmemory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory, 0, MEMORY_CONFIG, NULL, updateMaxmemory),
-    createULongLongConfig("key-eviction-memory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.key_eviction_memory, 0, MEMORY_CONFIG, NULL, updateKeyEvictionMemory),
+    createULongLongConfig("maxmemory-reserved", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory_reserved, 0, MEMORY_CONFIG, NULL, updateMaxmemoryReserved),
     createULongLongConfig("cluster-link-sendbuf-limit", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.cluster_link_msg_queue_limit_bytes, 0, MEMORY_CONFIG, NULL, NULL),
 
     /* Size_t configs */
