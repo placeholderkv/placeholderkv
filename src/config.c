@@ -2505,9 +2505,8 @@ static int updateMaxmemoryReserved(const char **err) {
 	server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
         size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
         if (server.key_eviction_memory < used) {
-            serverLog(LL_WARNING,
-                      "WARNING: the difference between memory usage and maxmemory is less than reserved memory. " 
-		      "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
+            serverLog(LL_WARNING, "WARNING: the difference between memory usage and maxmemory is less than reserved memory. "
+                                  "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
         }
         startEvictionTimeProc();
     } else {
