@@ -280,6 +280,18 @@ error:
     return NULL;
 }
 
+/* Given a path to a file, return the last time it was accessed (in seconds) */
+static time_t getLastModifiedTime(const char* path){
+    struct stat path_stat;
+    stat(path, &path_stat);
+
+#ifdef __APPLE__
+    return path_stat.st_mtimespec.tv_sec;
+#else
+    return path_stat.st_mtime;
+#endif
+}
+
 /* Attempt to configure/reconfigure TLS. This operation is atomic and will
  * leave the SSL_CTX unchanged if fails.
  * @priv: config of serverTLSContextConfig.
@@ -312,6 +324,14 @@ static int tlsConfigure(void *priv, int reconfigure) {
                               "tls-replication or tls-auth-clients are enabled!");
         goto error;
     }
+
+    /* Update the last modified times for the TLS elements */
+    ctx_config->key_file_last_modified = getLastModifiedTime(ctx_config->key_file);
+    ctx_config->cert_file_last_modified = getLastModifiedTime(ctx_config->cert_file);
+    ctx_config->client_cert_file_last_modified = getLastModifiedTime(ctx_config->client_cert_file);
+    ctx_config->client_key_file_last_modified = getLastModifiedTime(ctx_config->client_key_file);
+    ctx_config->ca_cert_dir_last_modified = getLastModifiedTime(ctx_config->ca_cert_dir);
+    ctx_config->ca_cert_file_last_modified = getLastModifiedTime(ctx_config->ca_cert_file);
 
     int protocols = parseProtocolsConfig(ctx_config->protocols);
     if (protocols == -1) goto error;
