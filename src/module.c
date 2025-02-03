@@ -687,7 +687,7 @@ sds moduleLoadQueueEntryToLoadmoduleOptionStr(ValkeyModule *module,
     line = sdscatsds(line, module->loadmod->path);
     for (int i = 0; i < module->loadmod->argc; i++) {
         line = sdscatlen(line, " ", 1);
-        line = sdscatsds(line, module->loadmod->argv[i]->ptr);
+        line = sdscatsds(line, objectGetVal(module->loadmod->argv[i]));
     }
 
     return line;
@@ -2946,8 +2946,8 @@ const char *VM_StringPtrLen(const ValkeyModuleString *str, size_t *len) {
         if (len) *len = strlen(errmsg);
         return errmsg;
     }
-    if (len) *len = sdslen(str->ptr);
-    return str->ptr;
+    if (len) *len = sdslen(objectGetVal(str));
+    return objectGetVal(str);
 }
 
 /* --------------------------------------------------------------------------
@@ -2959,7 +2959,7 @@ const char *VM_StringPtrLen(const ValkeyModuleString *str, size_t *len) {
  * as a valid, strict `long long` (no spaces before/after), VALKEYMODULE_ERR
  * is returned. */
 int VM_StringToLongLong(const ValkeyModuleString *str, long long *ll) {
-    return string2ll(str->ptr, sdslen(str->ptr), ll) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
+    return string2ll(objectGetVal(str), sdslen(objectGetVal(str)), ll) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
 }
 
 /* Convert the string into a `unsigned long long` integer, storing it at `*ull`.
@@ -2967,7 +2967,7 @@ int VM_StringToLongLong(const ValkeyModuleString *str, long long *ll) {
  * as a valid, strict `unsigned long long` (no spaces before/after), VALKEYMODULE_ERR
  * is returned. */
 int VM_StringToULongLong(const ValkeyModuleString *str, unsigned long long *ull) {
-    return string2ull(str->ptr, ull) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
+    return string2ull(objectGetVal(str), ull) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
 }
 
 /* Convert the string into a double, storing it at `*d`.
@@ -2982,7 +2982,7 @@ int VM_StringToDouble(const ValkeyModuleString *str, double *d) {
  * Returns VALKEYMODULE_OK on success or VALKEYMODULE_ERR if the string is
  * not a valid string representation of a double value. */
 int VM_StringToLongDouble(const ValkeyModuleString *str, long double *ld) {
-    int retval = string2ld(str->ptr, sdslen(str->ptr), ld);
+    int retval = string2ld(objectGetVal(str), sdslen(objectGetVal(str)), ld);
     return retval ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
 }
 
@@ -3021,11 +3021,11 @@ ValkeyModuleString *moduleAssertUnsharedString(ValkeyModuleString *str) {
     if (str->encoding == OBJ_ENCODING_EMBSTR) {
         /* Note: here we "leak" the additional allocation that was
          * used in order to store the embedded string in the object. */
-        str->ptr = sdsnewlen(str->ptr, sdslen(str->ptr));
+        str->ptr = sdsnewlen(objectGetVal(str), sdslen(objectGetVal(str)));
         str->encoding = OBJ_ENCODING_RAW;
     } else if (str->encoding == OBJ_ENCODING_INT) {
         /* Convert the string from integer to raw encoding. */
-        str->ptr = sdsfromlonglong((long)str->ptr);
+        str->ptr = sdsfromlonglong((long)objectGetVal(str));
         str->encoding = OBJ_ENCODING_RAW;
     }
     return str;
@@ -3038,7 +3038,7 @@ int VM_StringAppendBuffer(ValkeyModuleCtx *ctx, ValkeyModuleString *str, const c
     UNUSED(ctx);
     str = moduleAssertUnsharedString(str);
     if (str == NULL) return VALKEYMODULE_ERR;
-    str->ptr = sdscatlen(str->ptr, buf, len);
+    str->ptr = sdscatlen(objectGetVal(str), buf, len);
     return VALKEYMODULE_OK;
 }
 
@@ -4411,8 +4411,8 @@ char *VM_StringDMA(ValkeyModuleKey *key, size_t *len, int mode) {
     if ((mode & VALKEYMODULE_WRITE) || key->value->encoding != OBJ_ENCODING_RAW)
         key->value = dbUnshareStringValue(key->db, key->key, key->value);
 
-    *len = sdslen(key->value->ptr);
-    return key->value->ptr;
+    *len = sdslen(objectGetVal(key->value));
+    return objectGetVal(key->value);
 }
 
 /* If the key is open for writing and is of string type, resize it, padding
@@ -4444,14 +4444,14 @@ int VM_StringTruncate(ValkeyModuleKey *key, size_t newlen) {
     } else {
         /* Unshare and resize. */
         key->value = dbUnshareStringValue(key->db, key->key, key->value);
-        size_t curlen = sdslen(key->value->ptr);
+        size_t curlen = sdslen(objectGetVal(key->value));
         if (newlen > curlen) {
-            key->value->ptr = sdsgrowzero(key->value->ptr, newlen);
+            key->value->ptr = sdsgrowzero(objectGetVal(key->value), newlen);
         } else if (newlen < curlen) {
-            sdssubstr(key->value->ptr, 0, newlen);
+            sdssubstr(objectGetVal(key->value), 0, newlen);
             /* If the string is too wasteful, reallocate it. */
-            if (sdslen(key->value->ptr) < sdsavail(key->value->ptr))
-                key->value->ptr = sdsRemoveFreeSpace(key->value->ptr, 0);
+            if (sdslen(objectGetVal(key->value)) < sdsavail(objectGetVal(key->value)))
+                key->value->ptr = sdsRemoveFreeSpace(objectGetVal(key->value), 0);
         }
     }
     return VALKEYMODULE_OK;
@@ -4813,7 +4813,7 @@ int VM_ZsetAdd(ValkeyModuleKey *key, double score, ValkeyModuleString *ele, int 
     if (key->value && key->value->type != OBJ_ZSET) return VALKEYMODULE_ERR;
     if (key->value == NULL) moduleCreateEmptyKey(key, VALKEYMODULE_KEYTYPE_ZSET);
     if (flagsptr) in_flags = moduleZsetAddFlagsToCoreFlags(*flagsptr);
-    if (zsetAdd(key->value, score, ele->ptr, in_flags, &out_flags, NULL) == 0) {
+    if (zsetAdd(key->value, score, objectGetVal(ele), in_flags, &out_flags, NULL) == 0) {
         if (flagsptr) *flagsptr = 0;
         moduleDelKeyIfEmpty(key);
         return VALKEYMODULE_ERR;
@@ -4842,7 +4842,7 @@ int VM_ZsetIncrby(ValkeyModuleKey *key, double score, ValkeyModuleString *ele, i
     if (key->value == NULL) moduleCreateEmptyKey(key, VALKEYMODULE_KEYTYPE_ZSET);
     if (flagsptr) in_flags = moduleZsetAddFlagsToCoreFlags(*flagsptr);
     in_flags |= ZADD_IN_INCR;
-    if (zsetAdd(key->value, score, ele->ptr, in_flags, &out_flags, newscore) == 0) {
+    if (zsetAdd(key->value, score, objectGetVal(ele), in_flags, &out_flags, newscore) == 0) {
         if (flagsptr) *flagsptr = 0;
         moduleDelKeyIfEmpty(key);
         return VALKEYMODULE_ERR;
@@ -4872,7 +4872,7 @@ int VM_ZsetIncrby(ValkeyModuleKey *key, double score, ValkeyModuleString *ele, i
 int VM_ZsetRem(ValkeyModuleKey *key, ValkeyModuleString *ele, int *deleted) {
     if (!(key->mode & VALKEYMODULE_WRITE)) return VALKEYMODULE_ERR;
     if (key->value && key->value->type != OBJ_ZSET) return VALKEYMODULE_ERR;
-    if (key->value != NULL && zsetDel(key->value, ele->ptr)) {
+    if (key->value != NULL && zsetDel(key->value, objectGetVal(ele))) {
         if (deleted) *deleted = 1;
         moduleDelKeyIfEmpty(key);
     } else {
@@ -4892,7 +4892,7 @@ int VM_ZsetRem(ValkeyModuleKey *key, ValkeyModuleString *ele, int *deleted) {
 int VM_ZsetScore(ValkeyModuleKey *key, ValkeyModuleString *ele, double *score) {
     if (key->value == NULL) return VALKEYMODULE_ERR;
     if (key->value->type != OBJ_ZSET) return VALKEYMODULE_ERR;
-    if (zsetScore(key->value, ele->ptr, score) == C_ERR) return VALKEYMODULE_ERR;
+    if (zsetScore(key->value, objectGetVal(ele), score) == C_ERR) return VALKEYMODULE_ERR;
     return VALKEYMODULE_OK;
 }
 
@@ -4945,9 +4945,9 @@ int zsetInitScoreRange(ValkeyModuleKey *key, double min, double max, int minex, 
     zrs->maxex = maxex;
 
     if (key->value->encoding == OBJ_ENCODING_LISTPACK) {
-        key->u.zset.current = first ? zzlFirstInRange(key->value->ptr, zrs) : zzlLastInRange(key->value->ptr, zrs);
+        key->u.zset.current = first ? zzlFirstInRange(objectGetVal(key->value), zrs) : zzlLastInRange(objectGetVal(key->value), zrs);
     } else if (key->value->encoding == OBJ_ENCODING_SKIPLIST) {
-        zset *zs = key->value->ptr;
+        zset *zs = objectGetVal(key->value);
         zskiplist *zsl = zs->zsl;
         key->u.zset.current = first ? zslNthInRange(zsl, zrs, 0) : zslNthInRange(zsl, zrs, -1);
     } else {
@@ -5008,9 +5008,9 @@ int zsetInitLexRange(ValkeyModuleKey *key, ValkeyModuleString *min, ValkeyModule
 
     if (key->value->encoding == OBJ_ENCODING_LISTPACK) {
         key->u.zset.current =
-            first ? zzlFirstInLexRange(key->value->ptr, zlrs) : zzlLastInLexRange(key->value->ptr, zlrs);
+            first ? zzlFirstInLexRange(objectGetVal(key->value), zlrs) : zzlLastInLexRange(objectGetVal(key->value), zlrs);
     } else if (key->value->encoding == OBJ_ENCODING_SKIPLIST) {
-        zset *zs = key->value->ptr;
+        zset *zs = objectGetVal(key->value);
         zskiplist *zsl = zs->zsl;
         key->u.zset.current = first ? zslNthInLexRange(zsl, zlrs, 0) : zslNthInLexRange(zsl, zlrs, -1);
     } else {
@@ -5056,7 +5056,7 @@ ValkeyModuleString *VM_ZsetRangeCurrentElement(ValkeyModuleKey *key, double *sco
         eptr = key->u.zset.current;
         sds ele = lpGetObject(eptr);
         if (score) {
-            sptr = lpNext(key->value->ptr, eptr);
+            sptr = lpNext(objectGetVal(key->value), eptr);
             *score = zzlGetScore(sptr);
         }
         str = createObject(OBJ_STRING, ele);
@@ -5079,7 +5079,7 @@ int VM_ZsetRangeNext(ValkeyModuleKey *key) {
     if (!key->u.zset.type || !key->u.zset.current) return 0; /* No active iterator. */
 
     if (key->value->encoding == OBJ_ENCODING_LISTPACK) {
-        unsigned char *zl = key->value->ptr;
+        unsigned char *zl = objectGetVal(key->value);
         unsigned char *eptr = key->u.zset.current;
         unsigned char *next;
         next = lpNext(zl, eptr);           /* Skip element. */
@@ -5141,7 +5141,7 @@ int VM_ZsetRangePrev(ValkeyModuleKey *key) {
     if (!key->u.zset.type || !key->u.zset.current) return 0; /* No active iterator. */
 
     if (key->value->encoding == OBJ_ENCODING_LISTPACK) {
-        unsigned char *zl = key->value->ptr;
+        unsigned char *zl = objectGetVal(key->value);
         unsigned char *eptr = key->u.zset.current;
         unsigned char *prev;
         prev = lpPrev(zl, eptr);           /* Go back to previous score. */
@@ -5300,7 +5300,7 @@ int VM_HashSet(ValkeyModuleKey *key, int flags, ...) {
 
         /* Handle XX and NX */
         if (flags & (VALKEYMODULE_HASH_XX | VALKEYMODULE_HASH_NX)) {
-            int exists = hashTypeExists(key->value, field->ptr);
+            int exists = hashTypeExists(key->value, objectGetVal(field));
             if (((flags & VALKEYMODULE_HASH_XX) && !exists) || ((flags & VALKEYMODULE_HASH_NX) && exists)) {
                 if (flags & VALKEYMODULE_HASH_CFIELDS) decrRefCount(field);
                 continue;
@@ -5309,7 +5309,7 @@ int VM_HashSet(ValkeyModuleKey *key, int flags, ...) {
 
         /* Handle deletion if value is VALKEYMODULE_HASH_DELETE. */
         if (value == VALKEYMODULE_HASH_DELETE) {
-            count += hashTypeDelete(key->value, field->ptr);
+            count += hashTypeDelete(key->value, objectGetVal(field));
             if (flags & VALKEYMODULE_HASH_CFIELDS) decrRefCount(field);
             continue;
         }
@@ -5322,7 +5322,7 @@ int VM_HashSet(ValkeyModuleKey *key, int flags, ...) {
 
         robj *argv[2] = {field, value};
         hashTypeTryConversion(key->value, argv, 0, 1);
-        int updated = hashTypeSet(key->value, field->ptr, value->ptr, low_flags);
+        int updated = hashTypeSet(key->value, objectGetVal(field), objectGetVal(value), low_flags);
         count += (flags & VALKEYMODULE_HASH_COUNT_ALL) ? 1 : updated;
 
         /* If CFIELDS is active, SDS string ownership is now of hashTypeSet(),
@@ -5401,13 +5401,13 @@ int VM_HashGet(ValkeyModuleKey *key, int flags, ...) {
         if (flags & VALKEYMODULE_HASH_EXISTS) {
             existsptr = va_arg(ap, int *);
             if (key->value)
-                *existsptr = hashTypeExists(key->value, field->ptr);
+                *existsptr = hashTypeExists(key->value, objectGetVal(field));
             else
                 *existsptr = 0;
         } else {
             valueptr = va_arg(ap, ValkeyModuleString **);
             if (key->value) {
-                *valueptr = hashTypeGetValueObject(key->value, field->ptr);
+                *valueptr = hashTypeGetValueObject(key->value, objectGetVal(field));
                 if (*valueptr) {
                     robj *decoded = getDecodedObject(*valueptr);
                     decrRefCount(*valueptr);
@@ -5492,7 +5492,7 @@ int VM_StreamAdd(ValkeyModuleKey *key, int flags, ValkeyModuleStreamID *id, Valk
         created = 1;
     }
 
-    stream *s = key->value->ptr;
+    stream *s = objectGetVal(key->value);
     if (s->last_id.ms == UINT64_MAX && s->last_id.seq == UINT64_MAX) {
         /* The stream has reached the last possible ID */
         errno = EFBIG;
@@ -5556,7 +5556,7 @@ int VM_StreamDelete(ValkeyModuleKey *key, ValkeyModuleStreamID *id) {
         errno = EBADF; /* key not opened for writing or iterator started */
         return VALKEYMODULE_ERR;
     }
-    stream *s = key->value->ptr;
+    stream *s = objectGetVal(key->value);
     streamID streamid = {id->ms, id->seq};
     if (streamDeleteItem(s, &streamid)) {
         return VALKEYMODULE_OK;
@@ -5640,7 +5640,7 @@ int VM_StreamIteratorStart(ValkeyModuleKey *key, int flags, ValkeyModuleStreamID
     }
 
     /* create iterator */
-    stream *s = key->value->ptr;
+    stream *s = objectGetVal(key->value);
     int rev = flags & VALKEYMODULE_STREAM_ITERATOR_REVERSE;
     streamIterator *si = zmalloc(sizeof(*si));
     streamIteratorStart(si, s, start ? &lower : NULL, end ? &upper : NULL, rev);
@@ -5853,7 +5853,7 @@ long long VM_StreamTrimByLength(ValkeyModuleKey *key, int flags, long long lengt
         return -1;
     }
     int approx = flags & VALKEYMODULE_STREAM_TRIM_APPROX ? 1 : 0;
-    return streamTrimByLength((stream *)key->value->ptr, length, approx);
+    return streamTrimByLength((stream *)objectGetVal(key->value), length, approx);
 }
 
 /* Trim a stream by ID, similar to XTRIM with MINID.
@@ -5884,7 +5884,7 @@ long long VM_StreamTrimByID(ValkeyModuleKey *key, int flags, ValkeyModuleStreamI
     }
     int approx = flags & VALKEYMODULE_STREAM_TRIM_APPROX ? 1 : 0;
     streamID minid = (streamID){id->ms, id->seq};
-    return streamTrimByID((stream *)key->value->ptr, minid, approx);
+    return streamTrimByID((stream *)objectGetVal(key->value), minid, approx);
 }
 
 /* --------------------------------------------------------------------------
@@ -6132,7 +6132,7 @@ robj **moduleCreateArgvFromUserFormat(const char *cmdname, const char *fmt, int 
         } else if (*p == 's') {
             robj *obj = va_arg(ap, void *);
             if (obj->refcount == OBJ_STATIC_REFCOUNT)
-                obj = createStringObject(obj->ptr, sdslen(obj->ptr));
+                obj = createStringObject(objectGetVal(obj), sdslen(objectGetVal(obj)));
             else
                 incrRefCount(obj);
             argv[argc++] = obj;
@@ -6411,7 +6411,7 @@ ValkeyModuleCallReply *VM_Call(ValkeyModuleCtx *ctx, const char *cmdname, const 
             if (oom_state) {
                 errno = ENOSPC;
                 if (error_as_call_replies) {
-                    sds msg = sdsdup(shared.oomerr->ptr);
+                    sds msg = sdsdup(objectGetVal(shared.oomerr));
                     reply = callReplyCreateError(msg, ctx);
                 }
                 goto cleanup;
@@ -6446,7 +6446,7 @@ ValkeyModuleCallReply *VM_Call(ValkeyModuleCtx *ctx, const char *cmdname, const 
             if (!checkGoodReplicasStatus()) {
                 errno = ESPIPE;
                 if (error_as_call_replies) {
-                    sds msg = sdsdup(shared.noreplicaserr->ptr);
+                    sds msg = sdsdup(objectGetVal(shared.noreplicaserr));
                     reply = callReplyCreateError(msg, ctx);
                 }
                 goto cleanup;
@@ -6467,7 +6467,7 @@ ValkeyModuleCallReply *VM_Call(ValkeyModuleCtx *ctx, const char *cmdname, const 
             if (server.primary_host && server.repl_replica_ro && !obey_client) {
                 errno = ESPIPE;
                 if (error_as_call_replies) {
-                    sds msg = sdsdup(shared.roreplicaerr->ptr);
+                    sds msg = sdsdup(objectGetVal(shared.roreplicaerr));
                     reply = callReplyCreateError(msg, ctx);
                 }
                 goto cleanup;
@@ -6478,7 +6478,7 @@ ValkeyModuleCallReply *VM_Call(ValkeyModuleCtx *ctx, const char *cmdname, const 
             !(cmd_flags & CMD_STALE)) {
             errno = ESPIPE;
             if (error_as_call_replies) {
-                sds msg = sdsdup(shared.primarydownerr->ptr);
+                sds msg = sdsdup(objectGetVal(shared.primarydownerr));
                 reply = callReplyCreateError(msg, ctx);
             }
             goto cleanup;
@@ -6497,11 +6497,11 @@ ValkeyModuleCallReply *VM_Call(ValkeyModuleCtx *ctx, const char *cmdname, const 
 
         acl_retval = ACLCheckAllUserCommandPerm(user, c->cmd, c->argv, c->argc, &acl_errpos);
         if (acl_retval != ACL_OK) {
-            sds object = (acl_retval == ACL_DENIED_CMD) ? sdsdup(c->cmd->fullname) : sdsdup(c->argv[acl_errpos]->ptr);
+            sds object = (acl_retval == ACL_DENIED_CMD) ? sdsdup(c->cmd->fullname) : sdsdup(objectGetVal(c->argv[acl_errpos]));
             addACLLogEntry(ctx->client, acl_retval, ACL_LOG_CTX_MODULE, -1, c->user->name, object);
             if (error_as_call_replies) {
                 /* verbosity should be same as processCommand() in server.c */
-                sds acl_msg = getAclErrorMessage(acl_retval, c->user, c->cmd, c->argv[acl_errpos]->ptr, 0);
+                sds acl_msg = getAclErrorMessage(acl_retval, c->user, c->cmd, objectGetVal(c->argv[acl_errpos]), 0);
                 sds msg = sdscatfmt(sdsempty(), "-NOPERM %S\r\n", acl_msg);
                 sdsfree(acl_msg);
                 reply = callReplyCreateError(msg, ctx);
@@ -6782,7 +6782,7 @@ const char *moduleNameFromCommand(struct serverCommand *cmd) {
  * or not supported, produce an error reply and return NULL.
  */
 robj *moduleTypeDupOrReply(client *c, robj *fromkey, robj *tokey, int todb, robj *value) {
-    moduleValue *mv = value->ptr;
+    moduleValue *mv = objectGetVal(value);
     moduleType *mt = mv->type;
     if (!mt->copy && !mt->copy2) {
         addReplyError(c, "not supported for this module key");
@@ -7017,7 +7017,7 @@ int VM_ModuleTypeSetValue(ValkeyModuleKey *key, moduleType *mt, void *value) {
  * then NULL is returned instead. */
 moduleType *VM_ModuleTypeGetType(ValkeyModuleKey *key) {
     if (key == NULL || key->value == NULL || VM_KeyType(key) != VALKEYMODULE_KEYTYPE_MODULE) return NULL;
-    moduleValue *mv = key->value->ptr;
+    moduleValue *mv = objectGetVal(key->value);
     return mv->type;
 }
 
@@ -7029,7 +7029,7 @@ moduleType *VM_ModuleTypeGetType(ValkeyModuleKey *key) {
  * then NULL is returned instead. */
 void *VM_ModuleTypeGetValue(ValkeyModuleKey *key) {
     if (key == NULL || key->value == NULL || VM_KeyType(key) != VALKEYMODULE_KEYTYPE_MODULE) return NULL;
-    moduleValue *mv = key->value->ptr;
+    moduleValue *mv = objectGetVal(key->value);
     return mv->value;
 }
 
@@ -7050,7 +7050,7 @@ void moduleRDBLoadError(ValkeyModuleIO *io) {
                 "after reading '%llu' bytes of a value "
                 "for key named: '%s'.",
                 io->type->module->name, io->type->name, (unsigned long long)io->bytes,
-                io->key ? (char *)io->key->ptr : "(null)");
+                io->key ? (char *)objectGetVal(io->key) : "(null)");
 }
 
 /* Returns 0 if there's at least one registered data type that did not declare
@@ -7451,7 +7451,7 @@ void *VM_LoadDataTypeFromStringEncver(const ValkeyModuleString *str, const modul
     ValkeyModuleIO io;
     void *ret;
 
-    rioInitWithBuffer(&payload, str->ptr);
+    rioInitWithBuffer(&payload, objectGetVal(str));
     moduleInitIOContext(&io, (moduleType *)mt, &payload, NULL, -1);
 
     /* All VM_Save*() calls always write a version 2 compatible format, so we
@@ -9165,7 +9165,7 @@ void VM_SetClusterFlags(ValkeyModuleCtx *ctx, uint64_t flags) {
 /* Returns the cluster slot of a key, similar to the `CLUSTER KEYSLOT` command.
  * This function works even if cluster mode is not enabled. */
 unsigned int VM_ClusterKeySlot(ValkeyModuleString *key) {
-    return keyHashSlot(key->ptr, sdslen(key->ptr));
+    return keyHashSlot(objectGetVal(key), sdslen(objectGetVal(key)));
 }
 
 /* Returns a short string that can be used as a key or as a hash tag in a key,
@@ -9741,7 +9741,7 @@ ValkeyModuleString *VM_GetCurrentUserName(ValkeyModuleCtx *ctx) {
  * The caller should later free the user using the function VM_FreeModuleUser().*/
 ValkeyModuleUser *VM_GetModuleUserFromUserName(ValkeyModuleString *name) {
     /* First, verify that the user exist */
-    user *acl_user = ACLGetUserByName(name->ptr, sdslen(name->ptr));
+    user *acl_user = ACLGetUserByName(objectGetVal(name), sdslen(objectGetVal(name)));
     if (acl_user == NULL) {
         return NULL;
     }
@@ -9803,7 +9803,7 @@ int VM_ACLCheckKeyPermissions(ValkeyModuleUser *user, ValkeyModuleString *key, i
     }
 
     int keyspec_flags = moduleConvertKeySpecsFlags(flags, 0);
-    if (ACLUserCheckKeyPerm(user->user, key->ptr, sdslen(key->ptr), keyspec_flags) != ACL_OK) {
+    if (ACLUserCheckKeyPerm(user->user, objectGetVal(key), sdslen(objectGetVal(key)), keyspec_flags) != ACL_OK) {
         errno = EACCES;
         return VALKEYMODULE_ERR;
     }
@@ -9836,7 +9836,7 @@ int VM_ACLCheckChannelPermissions(ValkeyModuleUser *user, ValkeyModuleString *ch
     }
 
     int is_pattern = flags & VALKEYMODULE_CMD_CHANNEL_PATTERN;
-    if (ACLUserCheckChannelPerm(user->user, ch->ptr, is_pattern) != ACL_OK) return VALKEYMODULE_ERR;
+    if (ACLUserCheckChannelPerm(user->user, objectGetVal(ch), is_pattern) != ACL_OK) return VALKEYMODULE_ERR;
 
     return VALKEYMODULE_OK;
 }
@@ -9864,7 +9864,7 @@ int VM_ACLAddLogEntry(ValkeyModuleCtx *ctx,
                       ValkeyModuleACLLogEntryReason reason) {
     int acl_reason = moduleGetACLLogEntryReason(reason);
     if (!acl_reason) return VALKEYMODULE_ERR;
-    addACLLogEntry(ctx->client, acl_reason, ACL_LOG_CTX_MODULE, -1, user->user->name, sdsdup(object->ptr));
+    addACLLogEntry(ctx->client, acl_reason, ACL_LOG_CTX_MODULE, -1, user->user->name, sdsdup(objectGetVal(object)));
     return VALKEYMODULE_OK;
 }
 
@@ -9878,7 +9878,7 @@ int VM_ACLAddLogEntryByUserName(ValkeyModuleCtx *ctx,
                                 ValkeyModuleACLLogEntryReason reason) {
     int acl_reason = moduleGetACLLogEntryReason(reason);
     if (!acl_reason) return VALKEYMODULE_ERR;
-    addACLLogEntry(ctx->client, acl_reason, ACL_LOG_CTX_MODULE, -1, username->ptr, sdsdup(object->ptr));
+    addACLLogEntry(ctx->client, acl_reason, ACL_LOG_CTX_MODULE, -1, objectGetVal(username), sdsdup(objectGetVal(object)));
     return VALKEYMODULE_OK;
 }
 
@@ -10097,12 +10097,12 @@ int VM_DictReplaceC(ValkeyModuleDict *d, void *key, size_t keylen, void *ptr) {
 
 /* Like ValkeyModule_DictSetC() but takes the key as a ValkeyModuleString. */
 int VM_DictSet(ValkeyModuleDict *d, ValkeyModuleString *key, void *ptr) {
-    return VM_DictSetC(d, key->ptr, sdslen(key->ptr), ptr);
+    return VM_DictSetC(d, objectGetVal(key), sdslen(objectGetVal(key)), ptr);
 }
 
 /* Like ValkeyModule_DictReplaceC() but takes the key as a ValkeyModuleString. */
 int VM_DictReplace(ValkeyModuleDict *d, ValkeyModuleString *key, void *ptr) {
-    return VM_DictReplaceC(d, key->ptr, sdslen(key->ptr), ptr);
+    return VM_DictReplaceC(d, objectGetVal(key), sdslen(objectGetVal(key)), ptr);
 }
 
 /* Return the value stored at the specified key. The function returns NULL
@@ -10119,7 +10119,7 @@ void *VM_DictGetC(ValkeyModuleDict *d, void *key, size_t keylen, int *nokey) {
 
 /* Like ValkeyModule_DictGetC() but takes the key as a ValkeyModuleString. */
 void *VM_DictGet(ValkeyModuleDict *d, ValkeyModuleString *key, int *nokey) {
-    return VM_DictGetC(d, key->ptr, sdslen(key->ptr), nokey);
+    return VM_DictGetC(d, objectGetVal(key), sdslen(objectGetVal(key)), nokey);
 }
 
 /* Remove the specified key from the dictionary, returning VALKEYMODULE_OK if
@@ -10136,7 +10136,7 @@ int VM_DictDelC(ValkeyModuleDict *d, void *key, size_t keylen, void *oldval) {
 
 /* Like ValkeyModule_DictDelC() but gets the key as a ValkeyModuleString. */
 int VM_DictDel(ValkeyModuleDict *d, ValkeyModuleString *key, void *oldval) {
-    return VM_DictDelC(d, key->ptr, sdslen(key->ptr), oldval);
+    return VM_DictDelC(d, objectGetVal(key), sdslen(objectGetVal(key)), oldval);
 }
 
 /* Return an iterator, setup in order to start iterating from the specified
@@ -10170,7 +10170,7 @@ ValkeyModuleDictIter *VM_DictIteratorStartC(ValkeyModuleDict *d, const char *op,
 /* Exactly like ValkeyModule_DictIteratorStartC, but the key is passed as a
  * ValkeyModuleString. */
 ValkeyModuleDictIter *VM_DictIteratorStart(ValkeyModuleDict *d, const char *op, ValkeyModuleString *key) {
-    return VM_DictIteratorStartC(d, op, key->ptr, sdslen(key->ptr));
+    return VM_DictIteratorStartC(d, op, objectGetVal(key), sdslen(objectGetVal(key)));
 }
 
 /* Release the iterator created with ValkeyModule_DictIteratorStart(). This call
@@ -10194,7 +10194,7 @@ int VM_DictIteratorReseekC(ValkeyModuleDictIter *di, const char *op, void *key, 
 /* Like ValkeyModule_DictIteratorReseekC() but takes the key as a
  * ValkeyModuleString. */
 int VM_DictIteratorReseek(ValkeyModuleDictIter *di, const char *op, ValkeyModuleString *key) {
-    return VM_DictIteratorReseekC(di, op, key->ptr, sdslen(key->ptr));
+    return VM_DictIteratorReseekC(di, op, objectGetVal(key), sdslen(objectGetVal(key)));
 }
 
 /* Return the current item of the dictionary iterator `di` and steps to the
@@ -10285,7 +10285,7 @@ int VM_DictCompareC(ValkeyModuleDictIter *di, const char *op, void *key, size_t 
  * iterator key as a ValkeyModuleString. */
 int VM_DictCompare(ValkeyModuleDictIter *di, const char *op, ValkeyModuleString *key) {
     if (raxEOF(&di->ri)) return VALKEYMODULE_ERR;
-    int res = raxCompare(&di->ri, op, key->ptr, sdslen(key->ptr));
+    int res = raxCompare(&di->ri, op, objectGetVal(key), sdslen(objectGetVal(key)));
     return res ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
 }
 
@@ -10359,10 +10359,10 @@ int VM_InfoEndDictField(ValkeyModuleInfoCtx *ctx) {
 int VM_InfoAddFieldString(ValkeyModuleInfoCtx *ctx, const char *field, ValkeyModuleString *value) {
     if (!ctx->in_section) return VALKEYMODULE_ERR;
     if (ctx->in_dict_field) {
-        ctx->info = sdscatfmt(ctx->info, "%s=%S,", field, (sds)value->ptr);
+        ctx->info = sdscatfmt(ctx->info, "%s=%S,", field, (sds)objectGetVal(value));
         return VALKEYMODULE_OK;
     }
-    ctx->info = sdscatfmt(ctx->info, "%s_%s:%S\r\n", ctx->module->name, field, (sds)value->ptr);
+    ctx->info = sdscatfmt(ctx->info, "%s_%s:%S\r\n", ctx->module->name, field, (sds)objectGetVal(value));
     return VALKEYMODULE_OK;
 }
 
@@ -11175,11 +11175,11 @@ int VM_ScanKey(ValkeyModuleKey *key, ValkeyModuleScanCursor *cursor, ValkeyModul
     hashtable *ht = NULL;
     robj *o = key->value;
     if (o->type == OBJ_SET) {
-        if (o->encoding == OBJ_ENCODING_HASHTABLE) ht = o->ptr;
+        if (o->encoding == OBJ_ENCODING_HASHTABLE) ht = objectGetVal(o);
     } else if (o->type == OBJ_HASH) {
-        if (o->encoding == OBJ_ENCODING_HASHTABLE) ht = o->ptr;
+        if (o->encoding == OBJ_ENCODING_HASHTABLE) ht = objectGetVal(o);
     } else if (o->type == OBJ_ZSET) {
-        if (o->encoding == OBJ_ENCODING_SKIPLIST) ht = ((zset *)o->ptr)->ht;
+        if (o->encoding == OBJ_ENCODING_SKIPLIST) ht = ((zset *)objectGetVal(o))->ht;
     } else {
         errno = EINVAL;
         return 0;
@@ -11209,7 +11209,7 @@ int VM_ScanKey(ValkeyModuleKey *key, ValkeyModuleScanCursor *cursor, ValkeyModul
         cursor->done = 1;
         ret = 0;
     } else if (o->type == OBJ_ZSET || o->type == OBJ_HASH) {
-        unsigned char *p = lpSeek(o->ptr, 0);
+        unsigned char *p = lpSeek(objectGetVal(o), 0);
         unsigned char *vstr;
         unsigned int vlen;
         long long vll;
@@ -11217,12 +11217,12 @@ int VM_ScanKey(ValkeyModuleKey *key, ValkeyModuleScanCursor *cursor, ValkeyModul
             vstr = lpGetValue(p, &vlen, &vll);
             robj *field =
                 (vstr != NULL) ? createStringObject((char *)vstr, vlen) : createStringObjectFromLongLongWithSds(vll);
-            p = lpNext(o->ptr, p);
+            p = lpNext(objectGetVal(o), p);
             vstr = lpGetValue(p, &vlen, &vll);
             robj *value =
                 (vstr != NULL) ? createStringObject((char *)vstr, vlen) : createStringObjectFromLongLongWithSds(vll);
             fn(key, field, value, privdata);
-            p = lpNext(o->ptr, p);
+            p = lpNext(objectGetVal(o), p);
             decrRefCount(field);
             decrRefCount(value);
         }
@@ -11858,7 +11858,7 @@ void moduleNotifyKeyUnlink(robj *key, robj *val, int dbid, int flags) {
     moduleFireServerEvent(VALKEYMODULE_EVENT_KEY, subevent, &info);
 
     if (val->type == OBJ_MODULE) {
-        moduleValue *mv = val->ptr;
+        moduleValue *mv = objectGetVal(val);
         moduleType *mt = mv->type;
         /* We prefer to use the enhanced version. */
         if (mt->unlink2 != NULL) {
@@ -11875,7 +11875,7 @@ void moduleNotifyKeyUnlink(robj *key, robj *val, int dbid, int flags) {
  * `free_effort` or `free_effort2`, and the default return value is 1.
  * value of 0 means very high effort (always asynchronous freeing). */
 size_t moduleGetFreeEffort(robj *key, robj *val, int dbid) {
-    moduleValue *mv = val->ptr;
+    moduleValue *mv = objectGetVal(val);
     moduleType *mt = mv->type;
     size_t effort = 1;
     /* We prefer to use the enhanced version. */
@@ -11892,7 +11892,7 @@ size_t moduleGetFreeEffort(robj *key, robj *val, int dbid) {
 /* Return the memory usage of the module, it will automatically choose to call
  * `mem_usage` or `mem_usage2`, and the default return value is 0. */
 size_t moduleGetMemUsage(robj *key, robj *val, size_t sample_size, int dbid) {
-    moduleValue *mv = val->ptr;
+    moduleValue *mv = objectGetVal(val);
     moduleType *mt = mv->type;
     size_t size = 0;
     /* We prefer to use the enhanced version. */
@@ -12209,14 +12209,14 @@ int parseLoadexArguments(ValkeyModuleString ***module_argv, int *module_argc) {
     ValkeyModuleString **argv = *module_argv;
     int argc = *module_argc;
     for (int i = 0; i < argc; i++) {
-        char *arg_val = argv[i]->ptr;
+        char *arg_val = objectGetVal(argv[i]);
         if (!strcasecmp(arg_val, "CONFIG")) {
             if (i + 2 >= argc) {
                 serverLog(LL_NOTICE, "CONFIG specified without name value pair");
                 return VALKEYMODULE_ERR;
             }
-            sds name = sdsdup(argv[i + 1]->ptr);
-            sds value = sdsdup(argv[i + 2]->ptr);
+            sds name = sdsdup(objectGetVal(argv[i + 1]));
+            sds value = sdsdup(objectGetVal(argv[i + 2]));
             if (!dictReplace(server.module_configs_queue, name, value)) sdsfree(name);
             i += 2;
         } else if (!strcasecmp(arg_val, "ARGS")) {
@@ -12589,7 +12589,7 @@ int moduleVerifyResourceName(const char *name) {
 static char configerr[CONFIG_ERR_SIZE];
 static void propagateErrorString(ValkeyModuleString *err_in, const char **err) {
     if (err_in) {
-        valkey_strlcpy(configerr, err_in->ptr, CONFIG_ERR_SIZE);
+        valkey_strlcpy(configerr, objectGetVal(err_in), CONFIG_ERR_SIZE);
         decrRefCount(err_in);
         *err = configerr;
     }
@@ -12633,7 +12633,7 @@ int getModuleBoolConfig(ModuleConfig *module_config) {
 
 sds getModuleStringConfig(ModuleConfig *module_config) {
     ValkeyModuleString *val = module_config->get_fn.get_string(module_config->name, module_config->privdata);
-    return val ? sdsdup(val->ptr) : NULL;
+    return val ? sdsdup(objectGetVal(val)) : NULL;
 }
 
 int getModuleEnumConfig(ModuleConfig *module_config) {
@@ -13200,7 +13200,7 @@ int VM_UnregisterScriptingEngine(ValkeyModuleCtx *ctx, const char *engine_name) 
  * MODULE UNLOAD <name>
  */
 void moduleCommand(client *c) {
-    char *subcmd = c->argv[1]->ptr;
+    char *subcmd = objectGetVal(c->argv[1]);
 
     if (c->argc == 2 && !strcasecmp(subcmd, "help")) {
         const char *help[] = {
@@ -13223,7 +13223,7 @@ void moduleCommand(client *c) {
             argv = &c->argv[3];
         }
 
-        if (moduleLoad(c->argv[2]->ptr, (void **)argv, argc, 0) == C_OK)
+        if (moduleLoad(objectGetVal(c->argv[2]), (void **)argv, argc, 0) == C_OK)
             addReply(c, shared.ok);
         else
             addReplyError(c, "Error loading the extension. Please check the server logs.");
@@ -13238,7 +13238,7 @@ void moduleCommand(client *c) {
         /* If this is a loadex command we want to populate server.module_configs_queue with
          * sds NAME VALUE pairs. We also want to increment argv to just after ARGS, if supplied. */
         if (parseLoadexArguments((ValkeyModuleString ***)&argv, &argc) == VALKEYMODULE_OK &&
-            moduleLoad(c->argv[2]->ptr, (void **)argv, argc, 1) == C_OK)
+            moduleLoad(objectGetVal(c->argv[2]), (void **)argv, argc, 1) == C_OK)
             addReply(c, shared.ok);
         else {
             dictEmpty(server.module_configs_queue, NULL);
@@ -13247,12 +13247,12 @@ void moduleCommand(client *c) {
 
     } else if (!strcasecmp(subcmd, "unload") && c->argc == 3) {
         const char *errmsg = NULL;
-        if (moduleUnload(c->argv[2]->ptr, &errmsg) == C_OK)
+        if (moduleUnload(objectGetVal(c->argv[2]), &errmsg) == C_OK)
             addReply(c, shared.ok);
         else {
             if (errmsg == NULL) errmsg = "operation not possible.";
             addReplyErrorFormat(c, "Error unloading module: %s", errmsg);
-            serverLog(LL_WARNING, "Error unloading module %s: %s", (sds)c->argv[2]->ptr, errmsg);
+            serverLog(LL_WARNING, "Error unloading module %s: %s", (sds)objectGetVal(c->argv[2]), errmsg);
         }
     } else if (!strcasecmp(subcmd, "list") && c->argc == 2) {
         addReplyLoadedModules(c);
@@ -13406,7 +13406,7 @@ int VM_ModuleTypeReplaceValue(ValkeyModuleKey *key, moduleType *mt, void *new_va
     if (!(key->mode & VALKEYMODULE_WRITE) || key->iter) return VALKEYMODULE_ERR;
     if (!key->value || key->value->type != OBJ_MODULE) return VALKEYMODULE_ERR;
 
-    moduleValue *mv = key->value->ptr;
+    moduleValue *mv = objectGetVal(key->value);
     if (mv->type != mt) return VALKEYMODULE_ERR;
 
     if (old_value) *old_value = mv->value;
@@ -13616,7 +13616,7 @@ ValkeyModuleString *VM_DefragValkeyModuleString(ValkeyModuleDefragCtx *ctx, Valk
  * or a non-zero value otherwise.
  */
 int moduleLateDefrag(robj *key, robj *value, unsigned long *cursor, monotime endtime, int dbid) {
-    moduleValue *mv = value->ptr;
+    moduleValue *mv = objectGetVal(value);
     moduleType *mt = mv->type;
 
     ValkeyModuleDefragCtx defrag_ctx = {endtime, cursor, key, dbid};
@@ -13642,7 +13642,7 @@ int moduleLateDefrag(robj *key, robj *value, unsigned long *cursor, monotime end
  * be scheduled for late defrag.
  */
 int moduleDefragValue(robj *key, robj *value, int dbid) {
-    moduleValue *mv = value->ptr;
+    moduleValue *mv = objectGetVal(value);
     moduleType *mt = mv->type;
 
     /* Try to defrag moduleValue itself regardless of whether or not

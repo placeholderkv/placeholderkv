@@ -418,7 +418,7 @@ void printBits(unsigned char *p, unsigned long count) {
 int getBitOffsetFromArgument(client *c, robj *o, uint64_t *offset, int hash, int bits) {
     long long loffset;
     char *err = "bit offset is not an integer or out of range";
-    char *p = o->ptr;
+    char *p = objectGetVal(o);
     size_t plen = sdslen(p);
     int usehash = 0;
 
@@ -451,7 +451,7 @@ int getBitOffsetFromArgument(client *c, robj *o, uint64_t *offset, int hash, int
  *
  * On error C_ERR is returned and an error is sent to the client. */
 int getBitfieldTypeFromArgument(client *c, robj *o, int *sign, int *bits) {
-    char *p = o->ptr;
+    char *p = objectGetVal(o);
     char *err = "Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.";
     long long llbits;
 
@@ -490,9 +490,9 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit, int *dirty) {
         if (dirty) *dirty = 1;
     } else {
         o = dbUnshareStringValue(c->db, c->argv[1], o);
-        size_t oldlen = sdslen(o->ptr);
-        o->ptr = sdsgrowzero(o->ptr, byte + 1);
-        if (dirty && oldlen != sdslen(o->ptr)) *dirty = 1;
+        size_t oldlen = sdslen(objectGetVal(o));
+        o->ptr = sdsgrowzero(objectGetVal(o), byte + 1);
+        if (dirty && oldlen != sdslen(objectGetVal(o))) *dirty = 1;
     }
     return o;
 }
@@ -518,10 +518,10 @@ unsigned char *getObjectReadOnlyString(robj *o, long *len, char *llbuf) {
      * array if our string was integer encoded. */
     if (o && o->encoding == OBJ_ENCODING_INT) {
         p = (unsigned char *)llbuf;
-        if (len) *len = ll2string(llbuf, LONG_STR_SIZE, (long)o->ptr);
+        if (len) *len = ll2string(llbuf, LONG_STR_SIZE, (long)objectGetVal(o));
     } else if (o) {
-        p = (unsigned char *)o->ptr;
-        if (len) *len = sdslen(o->ptr);
+        p = (unsigned char *)objectGetVal(o);
+        if (len) *len = sdslen(objectGetVal(o));
     } else {
         if (len) *len = 0;
     }
@@ -552,7 +552,7 @@ void setbitCommand(client *c) {
 
     /* Get current values */
     byte = bitoffset >> 3;
-    byteval = ((uint8_t *)o->ptr)[byte];
+    byteval = ((uint8_t *)objectGetVal(o))[byte];
     bit = 7 - (bitoffset & 0x7);
     bitval = byteval & (1 << bit);
 
@@ -563,7 +563,7 @@ void setbitCommand(client *c) {
         /* Update byte with new bit value. */
         byteval &= ~(1 << bit);
         byteval |= ((on & 0x1) << bit);
-        ((uint8_t *)o->ptr)[byte] = byteval;
+        ((uint8_t *)objectGetVal(o))[byte] = byteval;
         signalModifiedKey(c, c->db, c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_STRING, "setbit", c->argv[1], c->db->id);
         server.dirty++;
@@ -588,9 +588,9 @@ void getbitCommand(client *c) {
     byte = bitoffset >> 3;
     bit = 7 - (bitoffset & 0x7);
     if (sdsEncodedObject(o)) {
-        if (byte < sdslen(o->ptr)) bitval = ((uint8_t *)o->ptr)[byte] & (1 << bit);
+        if (byte < sdslen(objectGetVal(o))) bitval = ((uint8_t *)objectGetVal(o))[byte] & (1 << bit);
     } else {
-        if (byte < (size_t)ll2string(llbuf, sizeof(llbuf), (long)o->ptr)) bitval = llbuf[byte] & (1 << bit);
+        if (byte < (size_t)ll2string(llbuf, sizeof(llbuf), (long)objectGetVal(o))) bitval = llbuf[byte] & (1 << bit);
     }
 
     addReply(c, bitval ? shared.cone : shared.czero);
@@ -599,7 +599,7 @@ void getbitCommand(client *c) {
 /* BITOP op_name target_key src_key1 src_key2 src_key3 ... src_keyN */
 VALKEY_NO_SANITIZE("alignment")
 void bitopCommand(client *c) {
-    char *opname = c->argv[1]->ptr;
+    char *opname = objectGetVal(c->argv[1]);
     robj *o, *targetkey = c->argv[2];
     unsigned long op, j, numkeys;
     robj **objects;                 /* Array of source objects. */
@@ -656,8 +656,8 @@ void bitopCommand(client *c) {
             return;
         }
         objects[j] = getDecodedObject(o);
-        src[j] = objects[j]->ptr;
-        len[j] = sdslen(objects[j]->ptr);
+        src[j] = objectGetVal(objects[j]);
+        len[j] = sdslen(objectGetVal(objects[j]));
         if (len[j] > maxlen) maxlen = len[j];
         if (j == 0 || len[j] < minlen) minlen = len[j];
     }
@@ -797,9 +797,9 @@ void bitcountCommand(client *c) {
     if (c->argc == 3 || c->argc == 4 || c->argc == 5) {
         if (getLongLongFromObjectOrReply(c, c->argv[2], &start, NULL) != C_OK) return;
         if (c->argc == 5) {
-            if (!strcasecmp(c->argv[4]->ptr, "bit"))
+            if (!strcasecmp(objectGetVal(c->argv[4]), "bit"))
                 isbit = 1;
-            else if (!strcasecmp(c->argv[4]->ptr, "byte"))
+            else if (!strcasecmp(objectGetVal(c->argv[4]), "byte"))
                 isbit = 0;
             else {
                 addReplyErrorObject(c, shared.syntaxerr);
@@ -902,9 +902,9 @@ void bitposCommand(client *c) {
     if (c->argc == 4 || c->argc == 5 || c->argc == 6) {
         if (getLongLongFromObjectOrReply(c, c->argv[3], &start, NULL) != C_OK) return;
         if (c->argc == 6) {
-            if (!strcasecmp(c->argv[5]->ptr, "bit"))
+            if (!strcasecmp(objectGetVal(c->argv[5]), "bit"))
                 isbit = 1;
-            else if (!strcasecmp(c->argv[5]->ptr, "byte"))
+            else if (!strcasecmp(objectGetVal(c->argv[5]), "byte"))
                 isbit = 0;
             else {
                 addReplyErrorObject(c, shared.syntaxerr);
@@ -1059,7 +1059,7 @@ void bitfieldGeneric(client *c, int flags) {
 
     for (j = 2; j < c->argc; j++) {
         int remargs = c->argc - j - 1;  /* Remaining args other than current. */
-        char *subcmd = c->argv[j]->ptr; /* Current command name. */
+        char *subcmd = objectGetVal(c->argv[j]); /* Current command name. */
         int opcode;                     /* Current operation code. */
         long long i64 = 0;              /* Signed SET value. */
         int sign = 0;                   /* Signed or unsigned type? */
@@ -1072,7 +1072,7 @@ void bitfieldGeneric(client *c, int flags) {
         else if (!strcasecmp(subcmd, "incrby") && remargs >= 3)
             opcode = BITFIELDOP_INCRBY;
         else if (!strcasecmp(subcmd, "overflow") && remargs >= 1) {
-            char *owtypename = c->argv[j + 1]->ptr;
+            char *owtypename = objectGetVal(c->argv[j + 1]);
             j++;
             if (!strcasecmp(owtypename, "wrap"))
                 owtype = BFOVERFLOW_WRAP;
@@ -1168,7 +1168,7 @@ void bitfieldGeneric(client *c, int flags) {
                 int64_t oldval, newval, wrapped, retval;
                 int overflow;
 
-                oldval = getSignedBitfield(o->ptr, thisop->offset, thisop->bits);
+                oldval = getSignedBitfield(objectGetVal(o), thisop->offset, thisop->bits);
 
                 if (thisop->opcode == BITFIELDOP_INCRBY) {
                     overflow = checkSignedBitfieldOverflow(oldval, thisop->i64, thisop->bits, thisop->owtype, &wrapped);
@@ -1185,7 +1185,7 @@ void bitfieldGeneric(client *c, int flags) {
                  * NULL to signal the condition. */
                 if (!(overflow && thisop->owtype == BFOVERFLOW_FAIL)) {
                     addReplyLongLong(c, retval);
-                    setSignedBitfield(o->ptr, thisop->offset, thisop->bits, newval);
+                    setSignedBitfield(objectGetVal(o), thisop->offset, thisop->bits, newval);
 
                     if (dirty || (oldval != newval)) changes++;
                 } else {
@@ -1197,7 +1197,7 @@ void bitfieldGeneric(client *c, int flags) {
                 uint64_t oldval, newval, retval, wrapped = 0;
                 int overflow;
 
-                oldval = getUnsignedBitfield(o->ptr, thisop->offset, thisop->bits);
+                oldval = getUnsignedBitfield(objectGetVal(o), thisop->offset, thisop->bits);
 
                 if (thisop->opcode == BITFIELDOP_INCRBY) {
                     newval = oldval + thisop->i64;
@@ -1215,7 +1215,7 @@ void bitfieldGeneric(client *c, int flags) {
                  * NULL to signal the condition. */
                 if (!(overflow && thisop->owtype == BFOVERFLOW_FAIL)) {
                     addReplyLongLong(c, retval);
-                    setUnsignedBitfield(o->ptr, thisop->offset, thisop->bits, newval);
+                    setUnsignedBitfield(objectGetVal(o), thisop->offset, thisop->bits, newval);
 
                     if (dirty || (oldval != newval)) changes++;
                 } else {

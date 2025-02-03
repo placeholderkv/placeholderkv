@@ -122,12 +122,12 @@ int checkPrefixCollisionsOrReply(client *c, robj **prefixes, size_t numprefix) {
             raxStart(&ri, c->pubsub_data->client_tracking_prefixes);
             raxSeek(&ri, "^", NULL, 0);
             while (raxNext(&ri)) {
-                if (stringCheckPrefix(ri.key, ri.key_len, prefixes[i]->ptr, sdslen(prefixes[i]->ptr))) {
+                if (stringCheckPrefix(ri.key, ri.key_len, objectGetVal(prefixes[i]), sdslen(objectGetVal(prefixes[i])))) {
                     sds collision = sdsnewlen(ri.key, ri.key_len);
                     addReplyErrorFormat(c,
                                         "Prefix '%s' overlaps with an existing prefix '%s'. "
                                         "Prefixes for a single client must not overlap.",
-                                        (unsigned char *)prefixes[i]->ptr, (unsigned char *)collision);
+                                        (unsigned char *)objectGetVal(prefixes[i]), (unsigned char *)collision);
                     sdsfree(collision);
                     raxStop(&ri);
                     return 0;
@@ -137,12 +137,12 @@ int checkPrefixCollisionsOrReply(client *c, robj **prefixes, size_t numprefix) {
         }
         /* Check input has no overlap with itself. */
         for (size_t j = i + 1; j < numprefix; j++) {
-            if (stringCheckPrefix(prefixes[i]->ptr, sdslen(prefixes[i]->ptr), prefixes[j]->ptr,
-                                  sdslen(prefixes[j]->ptr))) {
+            if (stringCheckPrefix(objectGetVal(prefixes[i]), sdslen(objectGetVal(prefixes[i])), objectGetVal(prefixes[j]),
+                                  sdslen(objectGetVal(prefixes[j])))) {
                 addReplyErrorFormat(c,
                                     "Prefix '%s' overlaps with another provided prefix '%s'. "
                                     "Prefixes for a single client must not overlap.",
-                                    (unsigned char *)prefixes[i]->ptr, (unsigned char *)prefixes[j]->ptr);
+                                    (unsigned char *)objectGetVal(prefixes[i]), (unsigned char *)objectGetVal(prefixes[j]));
                 return i;
             }
         }
@@ -202,7 +202,7 @@ void enableTracking(client *c, uint64_t redirect_to, struct ClientFlags options,
         c->flag.tracking_bcast = 1;
         if (numprefix == 0) enableBcastTrackingForPrefix(c, "", 0);
         for (size_t j = 0; j < numprefix; j++) {
-            sds sdsprefix = prefix[j]->ptr;
+            sds sdsprefix = objectGetVal(prefix[j]);
             enableBcastTrackingForPrefix(c, sdsprefix, sdslen(sdsprefix));
         }
     }
@@ -245,7 +245,7 @@ void trackingRememberKeys(client *tracking, client *executing) {
 
     for (int j = 0; j < numkeys; j++) {
         int idx = keys[j].pos;
-        sds sdskey = executing->argv[idx]->ptr;
+        sds sdskey = objectGetVal(executing->argv[idx]);
         void *result;
         rax *ids;
         if (!raxFind(TrackingTable, (unsigned char *)sdskey, sdslen(sdskey), &result)) {
@@ -373,8 +373,8 @@ void trackingRememberKeyToBroadcast(client *c, char *keyname, size_t keylen) {
 void trackingInvalidateKey(client *c, robj *keyobj, int bcast) {
     if (TrackingTable == NULL) return;
 
-    unsigned char *key = (unsigned char *)keyobj->ptr;
-    size_t keylen = sdslen(keyobj->ptr);
+    unsigned char *key = (unsigned char *)objectGetVal(keyobj);
+    size_t keylen = sdslen(objectGetVal(keyobj));
 
     if (bcast && raxSize(PrefixTable) > 0) trackingRememberKeyToBroadcast(c, (char *)key, keylen);
 
@@ -411,7 +411,7 @@ void trackingInvalidateKey(client *c, robj *keyobj, int bcast) {
             incrRefCount(keyobj);
             listAddNodeTail(server.tracking_pending_keys, keyobj);
         } else {
-            sendTrackingMessage(target, (char *)keyobj->ptr, sdslen(keyobj->ptr), 0);
+            sendTrackingMessage(target, (char *)objectGetVal(keyobj), sdslen(objectGetVal(keyobj)), 0);
         }
     }
     raxStop(&ri);
@@ -440,10 +440,10 @@ void trackingHandlePendingKeyInvalidations(void) {
          * message only when current_client is still alive */
         if (server.current_client != NULL) {
             if (key != NULL) {
-                sendTrackingMessage(server.current_client, (char *)key->ptr, sdslen(key->ptr), 0);
+                sendTrackingMessage(server.current_client, (char *)objectGetVal(key), sdslen(objectGetVal(key)), 0);
             } else {
-                sendTrackingMessage(server.current_client, shared.null[server.current_client->resp]->ptr,
-                                    sdslen(shared.null[server.current_client->resp]->ptr), 1);
+                sendTrackingMessage(server.current_client, objectGetVal(shared.null[server.current_client->resp]),
+                                    sdslen(objectGetVal(shared.null[server.current_client->resp])), 1);
             }
         }
         if (key != NULL) decrRefCount(key);
@@ -479,7 +479,7 @@ void trackingInvalidateKeysOnFlush(int async) {
                     /* We use a special NULL to indicate that we should send null */
                     listAddNodeTail(server.tracking_pending_keys, NULL);
                 } else {
-                    sendTrackingMessage(c, shared.null[c->resp]->ptr, sdslen(shared.null[c->resp]->ptr), 1);
+                    sendTrackingMessage(c, objectGetVal(shared.null[c->resp]), sdslen(objectGetVal(shared.null[c->resp])), 1);
                 }
             }
         }

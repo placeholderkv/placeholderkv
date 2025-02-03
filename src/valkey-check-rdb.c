@@ -124,7 +124,7 @@ void rdbCheckError(const char *fmt, ...) {
     printf("--- RDB ERROR DETECTED ---\n");
     printf("[offset %llu] %s\n", (unsigned long long)(rdbstate.rio ? rdbstate.rio->processed_bytes : 0), msg);
     printf("[additional info] While doing: %s\n", rdb_check_doing_string[rdbstate.doing]);
-    if (rdbstate.key) printf("[additional info] Reading key '%s'\n", (char *)rdbstate.key->ptr);
+    if (rdbstate.key) printf("[additional info] Reading key '%s'\n", (char *)objectGetVal(rdbstate.key));
     if (rdbstate.key_type != -1)
         printf("[additional info] Reading type %d (%s)\n", rdbstate.key_type,
                ((unsigned)rdbstate.key_type < sizeof(rdb_type_string) / sizeof(char *))
@@ -281,7 +281,7 @@ int redis_check_rdb(char *rdbfilename, FILE *fp) {
                 goto eoferr;
             }
 
-            rdbCheckInfo("AUX FIELD %s = '%s'", (char *)auxkey->ptr, (char *)auxval->ptr);
+            rdbCheckInfo("AUX FIELD %s = '%s'", (char *)objectGetVal(auxkey), (char *)objectGetVal(auxval));
             decrRefCount(auxkey);
             decrRefCount(auxval);
             continue; /* Read type again. */
@@ -331,7 +331,7 @@ int redis_check_rdb(char *rdbfilename, FILE *fp) {
         rdbstate.keys++;
         /* Read value */
         rdbstate.doing = RDB_CHECK_DOING_READ_OBJECT_VALUE;
-        if ((val = rdbLoadObject(type, &rdb, key->ptr, selected_dbid, NULL)) == NULL) goto eoferr;
+        if ((val = rdbLoadObject(type, &rdb, objectGetVal(key), selected_dbid, NULL)) == NULL) goto eoferr;
         /* Check if the key already expired. */
         if (expiretime != -1 && expiretime < now) rdbstate.already_expired++;
         if (expiretime != -1) rdbstate.expires++;

@@ -300,7 +300,7 @@ int pubsubSubscribeChannel(client *c, robj *channel, pubsubtype type) {
         retval = 1;
         /* Add the client to the channel -> list of clients hash table */
         if (server.cluster_enabled && type.shard) {
-            slot = getKeySlot(channel->ptr);
+            slot = getKeySlot(objectGetVal(channel));
         }
 
         hashtablePosition pos;
@@ -340,7 +340,7 @@ int pubsubUnsubscribeChannel(client *c, robj *channel, int notify, pubsubtype ty
         retval = 1;
         /* Remove the client from the channel -> clients list hash table */
         if (server.cluster_enabled && type.shard) {
-            slot = getKeySlot(channel->ptr);
+            slot = getKeySlot(objectGetVal(channel));
         }
         void *found;
         kvstoreHashtableFind(*type.serverPubSubChannels, slot, channel, &found);
@@ -520,7 +520,7 @@ int pubsubPublishMessageInternal(robj *channel, robj *message, pubsubtype type) 
 
     /* Send to clients listening for that channel */
     if (server.cluster_enabled && type.shard) {
-        slot = keyHashSlot(channel->ptr, sdslen(channel->ptr));
+        slot = keyHashSlot(objectGetVal(channel), sdslen(objectGetVal(channel)));
     }
     if (kvstoreHashtableFind(*type.serverPubSubChannels, (slot == -1) ? 0 : slot, channel, &element)) {
         dict *clients = element;
@@ -548,7 +548,7 @@ int pubsubPublishMessageInternal(robj *channel, robj *message, pubsubtype type) 
         while ((de = dictNext(di)) != NULL) {
             robj *pattern = dictGetKey(de);
             dict *clients = dictGetVal(de);
-            if (!stringmatchlen((char *)pattern->ptr, sdslen(pattern->ptr), (char *)channel->ptr, sdslen(channel->ptr),
+            if (!stringmatchlen((char *)objectGetVal(pattern), sdslen(objectGetVal(pattern)), (char *)objectGetVal(channel), sdslen(objectGetVal(channel)),
                                 0))
                 continue;
 
@@ -666,7 +666,7 @@ void publishCommand(client *c) {
 
 /* PUBSUB command for Pub/Sub introspection. */
 void pubsubCommand(client *c) {
-    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "help")) {
+    if (c->argc == 2 && !strcasecmp(objectGetVal(c->argv[1]), "help")) {
         const char *help[] = {
             "CHANNELS [<pattern>]",
             "    Return the currently active channels matching a <pattern> (default: '*').",
@@ -681,11 +681,11 @@ void pubsubCommand(client *c) {
             "    Return the number of subscribers for the specified shard level channel(s)",
             NULL};
         addReplyHelp(c, help);
-    } else if (!strcasecmp(c->argv[1]->ptr, "channels") && (c->argc == 2 || c->argc == 3)) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "channels") && (c->argc == 2 || c->argc == 3)) {
         /* PUBSUB CHANNELS [<pattern>] */
-        sds pat = (c->argc == 2) ? NULL : c->argv[2]->ptr;
+        sds pat = (c->argc == 2) ? NULL : objectGetVal(c->argv[2]);
         channelList(c, pat, server.pubsub_channels);
-    } else if (!strcasecmp(c->argv[1]->ptr, "numsub") && c->argc >= 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "numsub") && c->argc >= 2) {
         /* PUBSUB NUMSUB [Channel_1 ... Channel_N] */
         int j;
 
@@ -697,19 +697,19 @@ void pubsubCommand(client *c) {
             addReplyBulk(c, c->argv[j]);
             addReplyLongLong(c, d ? dictSize(d) : 0);
         }
-    } else if (!strcasecmp(c->argv[1]->ptr, "numpat") && c->argc == 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "numpat") && c->argc == 2) {
         /* PUBSUB NUMPAT */
         addReplyLongLong(c, dictSize(server.pubsub_patterns));
-    } else if (!strcasecmp(c->argv[1]->ptr, "shardchannels") && (c->argc == 2 || c->argc == 3)) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "shardchannels") && (c->argc == 2 || c->argc == 3)) {
         /* PUBSUB SHARDCHANNELS */
-        sds pat = (c->argc == 2) ? NULL : c->argv[2]->ptr;
+        sds pat = (c->argc == 2) ? NULL : objectGetVal(c->argv[2]);
         channelList(c, pat, server.pubsubshard_channels);
-    } else if (!strcasecmp(c->argv[1]->ptr, "shardnumsub") && c->argc >= 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "shardnumsub") && c->argc >= 2) {
         /* PUBSUB SHARDNUMSUB [ShardChannel_1 ... ShardChannel_N] */
         int j;
         addReplyArrayLen(c, (c->argc - 2) * 2);
         for (j = 2; j < c->argc; j++) {
-            sds key = c->argv[j]->ptr;
+            sds key = objectGetVal(c->argv[j]);
             unsigned int slot = server.cluster_enabled ? keyHashSlot(key, (int)sdslen(key)) : 0;
             void *found = NULL;
             kvstoreHashtableFind(server.pubsubshard_channels, slot, c->argv[j], &found);
@@ -735,7 +735,7 @@ void channelList(client *c, sds pat, kvstore *pubsub_channels) {
         while (kvstoreHashtableIteratorNext(kvs_di, &next)) {
             dict *clients = next;
             robj *cobj = *(robj **)dictMetadata(clients);
-            sds channel = cobj->ptr;
+            sds channel = objectGetVal(cobj);
 
             if (!pat || stringmatchlen(pat, sdslen(pat), channel, sdslen(channel), 0)) {
                 addReplyBulk(c, cobj);

@@ -248,13 +248,13 @@ static int functionLibCreateFunction(robj *name,
     serverAssert(name->type == OBJ_STRING);
     serverAssert(desc == NULL || desc->type == OBJ_STRING);
 
-    if (functionsVerifyName(name->ptr) != C_OK) {
+    if (functionsVerifyName(objectGetVal(name)) != C_OK) {
         *err = sdsnew("Function names can only contain letters, numbers, or "
                       "underscores(_) and must be at least one character long");
         return C_ERR;
     }
 
-    sds name_sds = sdsdup(name->ptr);
+    sds name_sds = sdsdup(objectGetVal(name));
     if (dictFetchValue(li->functions, name_sds)) {
         *err = sdsnew("Function already exists in the library");
         sdsfree(name_sds);
@@ -266,7 +266,7 @@ static int functionLibCreateFunction(robj *name,
         .name = name_sds,
         .function = function,
         .li = li,
-        .desc = desc ? sdsdup(desc->ptr) : NULL,
+        .desc = desc ? sdsdup(objectGetVal(desc)) : NULL,
         .f_flags = f_flags,
     };
 
@@ -457,7 +457,7 @@ void functionStatsCommand(client *c) {
         client *script_client = scriptGetCaller();
         addReplyArrayLen(c, script_client->argc);
         for (int i = 0; i < script_client->argc; ++i) {
-            addReplyBulkCBuffer(c, script_client->argv[i]->ptr, sdslen(script_client->argv[i]->ptr));
+            addReplyBulkCBuffer(c, objectGetVal(script_client->argv[i]), sdslen(objectGetVal(script_client->argv[i])));
         }
         addReplyBulkCString(c, "duration_ms");
         addReplyLongLong(c, scriptRunDuration());
@@ -504,19 +504,19 @@ void functionListCommand(client *c) {
     sds library_name = NULL;
     for (int i = 2; i < c->argc; ++i) {
         robj *next_arg = c->argv[i];
-        if (!with_code && !strcasecmp(next_arg->ptr, "withcode")) {
+        if (!with_code && !strcasecmp(objectGetVal(next_arg), "withcode")) {
             with_code = 1;
             continue;
         }
-        if (!library_name && !strcasecmp(next_arg->ptr, "libraryname")) {
+        if (!library_name && !strcasecmp(objectGetVal(next_arg), "libraryname")) {
             if (i >= c->argc - 1) {
                 addReplyError(c, "library name argument was not given");
                 return;
             }
-            library_name = c->argv[++i]->ptr;
+            library_name = objectGetVal(c->argv[++i]);
             continue;
         }
-        addReplyErrorSds(c, sdscatfmt(sdsempty(), "Unknown argument %s", next_arg->ptr));
+        addReplyErrorSds(c, sdscatfmt(sdsempty(), "Unknown argument %s", objectGetVal(next_arg)));
         return;
     }
     size_t reply_len = 0;
@@ -580,7 +580,7 @@ void functionListCommand(client *c) {
  */
 void functionDeleteCommand(client *c) {
     robj *function_name = c->argv[2];
-    functionLibInfo *li = dictFetchValue(curr_functions_lib_ctx->libraries, function_name->ptr);
+    functionLibInfo *li = dictFetchValue(curr_functions_lib_ctx->libraries, objectGetVal(function_name));
     if (!li) {
         addReplyError(c, "Library not found");
         return;
@@ -603,7 +603,7 @@ void functionKillCommand(client *c) {
  * Note that it does not guarantee the command arguments are right. */
 uint64_t fcallGetCommandFlags(client *c, uint64_t cmd_flags) {
     robj *function_name = c->argv[1];
-    c->cur_script = dictFind(curr_functions_lib_ctx->functions, function_name->ptr);
+    c->cur_script = dictFind(curr_functions_lib_ctx->functions, objectGetVal(function_name));
     if (!c->cur_script) return cmd_flags;
     functionInfo *fi = dictGetVal(c->cur_script);
     uint64_t script_flags = fi->f_flags;
@@ -616,7 +616,7 @@ static void fcallCommandGeneric(client *c, int ro) {
 
     robj *function_name = c->argv[1];
     dictEntry *de = c->cur_script;
-    if (!de) de = dictFind(curr_functions_lib_ctx->functions, function_name->ptr);
+    if (!de) de = dictFind(curr_functions_lib_ctx->functions, objectGetVal(function_name));
     if (!de) {
         addReplyError(c, "Function not found");
         return;
@@ -721,13 +721,13 @@ void functionRestoreCommand(client *c) {
     }
 
     restorePolicy restore_replicy = restorePolicy_Append; /* default policy: APPEND */
-    sds data = c->argv[2]->ptr;
+    sds data = objectGetVal(c->argv[2]);
     size_t data_len = sdslen(data);
     rio payload;
     sds err = NULL;
 
     if (c->argc == 4) {
-        const char *restore_policy_str = c->argv[3]->ptr;
+        const char *restore_policy_str = objectGetVal(c->argv[3]);
         if (!strcasecmp(restore_policy_str, "append")) {
             restore_replicy = restorePolicy_Append;
         } else if (!strcasecmp(restore_policy_str, "replace")) {
@@ -804,9 +804,9 @@ void functionFlushCommand(client *c) {
         return;
     }
     int async = 0;
-    if (c->argc == 3 && !strcasecmp(c->argv[2]->ptr, "sync")) {
+    if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[2]), "sync")) {
         async = 0;
-    } else if (c->argc == 3 && !strcasecmp(c->argv[2]->ptr, "async")) {
+    } else if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[2]), "async")) {
         async = 1;
     } else if (c->argc == 2) {
         async = server.lazyfree_lazy_user_flush ? 1 : 0;
@@ -1017,7 +1017,7 @@ sds functionsCreateWithLibraryCtx(sds code, int replace, sds *err, functionsLibC
     if (compiled_functions == NULL) {
         serverAssert(num_compiled_functions == 0);
         serverAssert(compile_error != NULL);
-        *err = sdsdup(compile_error->ptr);
+        *err = sdsdup(objectGetVal(compile_error));
         decrRefCount(compile_error);
         goto error;
     }
@@ -1094,11 +1094,11 @@ void functionLoadCommand(client *c) {
     int argc_pos = 2;
     while (argc_pos < c->argc - 1) {
         robj *next_arg = c->argv[argc_pos++];
-        if (!strcasecmp(next_arg->ptr, "replace")) {
+        if (!strcasecmp(objectGetVal(next_arg), "replace")) {
             replace = 1;
             continue;
         }
-        addReplyErrorFormat(c, "Unknown option given: %s", (char *)next_arg->ptr);
+        addReplyErrorFormat(c, "Unknown option given: %s", (char *)objectGetVal(next_arg));
         return;
     }
 
@@ -1114,7 +1114,7 @@ void functionLoadCommand(client *c) {
     if (mustObeyClient(c)) {
         timeout = 0;
     }
-    if (!(library_name = functionsCreateWithLibraryCtx(code->ptr, replace, &err, curr_functions_lib_ctx, timeout))) {
+    if (!(library_name = functionsCreateWithLibraryCtx(objectGetVal(code), replace, &err, curr_functions_lib_ctx, timeout))) {
         serverAssert(err != NULL);
         addReplyErrorSds(c, err);
         return;

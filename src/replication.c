@@ -324,11 +324,11 @@ void feedReplicationBufferWithObject(robj *o) {
     size_t len;
 
     if (o->encoding == OBJ_ENCODING_INT) {
-        len = ll2string(llstr, sizeof(llstr), (long)o->ptr);
+        len = ll2string(llstr, sizeof(llstr), (long)objectGetVal(o));
         p = llstr;
     } else {
-        len = sdslen(o->ptr);
-        p = o->ptr;
+        len = sdslen(objectGetVal(o));
+        p = objectGetVal(o);
     }
     feedReplicationBuffer(p, len);
 }
@@ -576,7 +576,7 @@ void replicationFeedReplicas(int dictid, robj **argv, int argc) {
         /* Although the SELECT command is not associated with any slot,
          * its per-slot network-bytes-out accumulation is made by the above function call.
          * To cancel-out this accumulation, below adjustment is made. */
-        clusterSlotStatsDecrNetworkBytesOutForReplication(sdslen(selectcmd->ptr));
+        clusterSlotStatsDecrNetworkBytesOutForReplication(sdslen(objectGetVal(selectcmd)));
 
         if (dictid < 0 || dictid >= PROTO_SHARED_SELECT_CMDS) decrRefCount(selectcmd);
 
@@ -693,9 +693,9 @@ void replicationFeedMonitors(client *c, list *monitors, int dictid, robj **argv,
 
     for (j = 0; j < argc; j++) {
         if (argv[j]->encoding == OBJ_ENCODING_INT) {
-            cmdrepr = sdscatprintf(cmdrepr, "\"%ld\"", (long)argv[j]->ptr);
+            cmdrepr = sdscatprintf(cmdrepr, "\"%ld\"", (long)objectGetVal(argv[j]));
         } else {
-            cmdrepr = sdscatrepr(cmdrepr, (char *)argv[j]->ptr, sdslen(argv[j]->ptr));
+            cmdrepr = sdscatrepr(cmdrepr, (char *)objectGetVal(argv[j]), sdslen(objectGetVal(argv[j])));
         }
         if (j != argc - 1) cmdrepr = sdscatlen(cmdrepr, " ", 1);
     }
@@ -831,7 +831,7 @@ int replicationSetupReplicaForFullResync(client *replica, long long offset) {
  * with the usual full resync. */
 int primaryTryPartialResynchronization(client *c, long long psync_offset) {
     long long psync_len;
-    char *primary_replid = c->argv[1]->ptr;
+    char *primary_replid = objectGetVal(c->argv[1]);
     char buf[128];
     int buflen;
 
@@ -1044,14 +1044,14 @@ void syncCommand(client *c) {
 
     /* Check if this is a failover request to a replica with the same replid and
      * become a primary if so. */
-    if (c->argc > 3 && !strcasecmp(c->argv[0]->ptr, "psync") && !strcasecmp(c->argv[3]->ptr, "failover")) {
-        serverLog(LL_NOTICE, "Failover request received for replid %s.", (unsigned char *)c->argv[1]->ptr);
+    if (c->argc > 3 && !strcasecmp(objectGetVal(c->argv[0]), "psync") && !strcasecmp(objectGetVal(c->argv[3]), "failover")) {
+        serverLog(LL_NOTICE, "Failover request received for replid %s.", (unsigned char *)objectGetVal(c->argv[1]));
         if (!server.primary_host) {
             addReplyError(c, "PSYNC FAILOVER can't be sent to a master.");
             return;
         }
 
-        if (!strcasecmp(c->argv[1]->ptr, server.replid)) {
+        if (!strcasecmp(objectGetVal(c->argv[1]), server.replid)) {
             if (server.cluster_enabled) {
                 clusterPromoteSelfToPrimary();
             } else {
@@ -1107,7 +1107,7 @@ void syncCommand(client *c) {
      *
      * So the replica knows the new replid and offset to try a PSYNC later
      * if the connection with the primary is lost. */
-    if (!strcasecmp(c->argv[0]->ptr, "psync")) {
+    if (!strcasecmp(objectGetVal(c->argv[0]), "psync")) {
         long long psync_offset;
         if (getLongLongFromObjectOrReply(c, c->argv[2], &psync_offset, NULL) != C_OK) {
             serverLog(LL_WARNING, "Replica %s asks for synchronization but with a wrong offset",
@@ -1119,7 +1119,7 @@ void syncCommand(client *c) {
             server.stat_sync_partial_ok++;
             return; /* No full resync needed, return. */
         } else {
-            char *primary_replid = c->argv[1]->ptr;
+            char *primary_replid = objectGetVal(c->argv[1]);
 
             /* Increment stats for failed PSYNCs, but only if the
              * replid is not "?", as this is used by replicas to force a full
@@ -1358,13 +1358,13 @@ void replconfCommand(client *c) {
 
     /* Process every option-value pair. */
     for (j = 1; j < c->argc; j += 2) {
-        if (!strcasecmp(c->argv[j]->ptr, "listening-port")) {
+        if (!strcasecmp(objectGetVal(c->argv[j]), "listening-port")) {
             long port;
 
             if ((getLongFromObjectOrReply(c, c->argv[j + 1], &port, NULL) != C_OK)) return;
             c->repl_data->replica_listening_port = port;
-        } else if (!strcasecmp(c->argv[j]->ptr, "ip-address")) {
-            sds addr = c->argv[j + 1]->ptr;
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "ip-address")) {
+            sds addr = objectGetVal(c->argv[j + 1]);
             if (sdslen(addr) < NET_HOST_STR_LEN) {
                 if (c->repl_data->replica_addr) sdsfree(c->repl_data->replica_addr);
                 c->repl_data->replica_addr = sdsdup(addr);
@@ -1375,19 +1375,19 @@ void replconfCommand(client *c) {
                                     sdslen(addr));
                 return;
             }
-        } else if (!strcasecmp(c->argv[j]->ptr, "capa")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "capa")) {
             /* Ignore capabilities not understood by this primary. */
-            if (!strcasecmp(c->argv[j + 1]->ptr, "eof"))
+            if (!strcasecmp(objectGetVal(c->argv[j + 1]), "eof"))
                 c->repl_data->replica_capa |= REPLICA_CAPA_EOF;
-            else if (!strcasecmp(c->argv[j + 1]->ptr, "psync2"))
+            else if (!strcasecmp(objectGetVal(c->argv[j + 1]), "psync2"))
                 c->repl_data->replica_capa |= REPLICA_CAPA_PSYNC2;
-            else if (!strcasecmp(c->argv[j + 1]->ptr, "dual-channel") && server.dual_channel_replication &&
+            else if (!strcasecmp(objectGetVal(c->argv[j + 1]), "dual-channel") && server.dual_channel_replication &&
                      server.repl_diskless_sync) {
                 /* If dual-channel is disable on this primary, treat this command as unrecognized
                  * replconf option. */
                 c->repl_data->replica_capa |= REPLICA_CAPA_DUAL_CHANNEL;
             }
-        } else if (!strcasecmp(c->argv[j]->ptr, "ack")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "ack")) {
             /* REPLCONF ACK is used by replica to inform the primary the amount
              * of replication stream that it processed so far. It is an
              * internal only command that normal clients should never use. */
@@ -1396,7 +1396,7 @@ void replconfCommand(client *c) {
             if (!c->flag.replica) return;
             if ((getLongLongFromObject(c->argv[j + 1], &offset) != C_OK)) return;
             if (offset > c->repl_data->repl_ack_off) c->repl_data->repl_ack_off = offset;
-            if (c->argc > j + 3 && !strcasecmp(c->argv[j + 2]->ptr, "fack")) {
+            if (c->argc > j + 3 && !strcasecmp(objectGetVal(c->argv[j + 2]), "fack")) {
                 if ((getLongLongFromObject(c->argv[j + 3], &offset) != C_OK)) return;
                 if (offset > c->repl_data->repl_aof_off) c->repl_data->repl_aof_off = offset;
             }
@@ -1417,12 +1417,12 @@ void replconfCommand(client *c) {
             }
             /* Note: this command does not reply anything! */
             return;
-        } else if (!strcasecmp(c->argv[j]->ptr, "getack")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "getack")) {
             /* REPLCONF GETACK is used in order to request an ACK ASAP
              * to the replica. */
             if (server.primary_host && server.primary) replicationSendAck();
             return;
-        } else if (!strcasecmp(c->argv[j]->ptr, "rdb-only")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "rdb-only")) {
             /* REPLCONF RDB-ONLY is used to identify the client only wants
              * RDB snapshot without replication buffer. */
             long rdb_only = 0;
@@ -1431,7 +1431,7 @@ void replconfCommand(client *c) {
                 c->flag.repl_rdbonly = 1;
             else
                 c->flag.repl_rdbonly = 0;
-        } else if (!strcasecmp(c->argv[j]->ptr, "rdb-filter-only")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "rdb-filter-only")) {
             /* REPLCONFG RDB-FILTER-ONLY is used to define "include" filters
              * for the RDB snapshot. Currently we only support a single
              * include filter: "functions". In the future we may want to add
@@ -1441,7 +1441,7 @@ void replconfCommand(client *c) {
              * filter out certain data. */
             int filter_count, i;
             sds *filters;
-            if (!(filters = sdssplitargs(c->argv[j + 1]->ptr, &filter_count))) {
+            if (!(filters = sdssplitargs(objectGetVal(c->argv[j + 1]), &filter_count))) {
                 addReplyError(c, "Missing rdb-filter-only values");
                 return;
             }
@@ -1458,16 +1458,16 @@ void replconfCommand(client *c) {
                 }
             }
             sdsfreesplitres(filters, filter_count);
-        } else if (!strcasecmp(c->argv[j]->ptr, "version")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "version")) {
             /* REPLCONF VERSION x.y.z */
-            int version = version2num(c->argv[j + 1]->ptr);
+            int version = version2num(objectGetVal(c->argv[j + 1]));
             if (version >= 0) {
                 c->repl_data->replica_version = version;
             } else {
-                addReplyErrorFormat(c, "Unrecognized version format: %s", (char *)c->argv[j + 1]->ptr);
+                addReplyErrorFormat(c, "Unrecognized version format: %s", (char *)objectGetVal(c->argv[j + 1]));
                 return;
             }
-        } else if (!strcasecmp(c->argv[j]->ptr, "rdb-channel")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "rdb-channel")) {
             long start_with_offset = 0;
             if (getRangeLongFromObjectOrReply(c, c->argv[j + 1], 0, 1, &start_with_offset, NULL) != C_OK) {
                 return;
@@ -1479,7 +1479,7 @@ void replconfCommand(client *c) {
                 c->flag.repl_rdb_channel = 0;
                 c->repl_data->replica_req &= ~REPLICA_REQ_RDB_CHANNEL;
             }
-        } else if (!strcasecmp(c->argv[j]->ptr, "set-rdb-client-id")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "set-rdb-client-id")) {
             /* REPLCONF identify <client-id> is used to identify the current replica main channel with existing
              * rdb-connection with the given id. */
             long long client_id = 0;
@@ -1492,7 +1492,7 @@ void replconfCommand(client *c) {
             }
             c->repl_data->associated_rdb_client_id = (uint64_t)client_id;
         } else {
-            addReplyErrorFormat(c, "Unrecognized REPLCONF option: %s", (char *)c->argv[j]->ptr);
+            addReplyErrorFormat(c, "Unrecognized REPLCONF option: %s", (char *)objectGetVal(c->argv[j]));
             return;
         }
     }
@@ -4057,7 +4057,7 @@ void replicaofCommand(client *c) {
 
     /* The special host/port combination "NO" "ONE" turns the instance
      * into a primary. Otherwise the new primary address is set. */
-    if (!strcasecmp(c->argv[1]->ptr, "no") && !strcasecmp(c->argv[2]->ptr, "one")) {
+    if (!strcasecmp(objectGetVal(c->argv[1]), "no") && !strcasecmp(objectGetVal(c->argv[2]), "one")) {
         if (server.primary_host) {
             replicationUnsetPrimary();
             sds client = catClientInfoShortString(sdsempty(), c, server.hide_user_data_from_log);
@@ -4078,7 +4078,7 @@ void replicaofCommand(client *c) {
         if (getRangeLongFromObjectOrReply(c, c->argv[2], 0, 65535, &port, "Invalid master port") != C_OK) return;
 
         /* Check if we are already attached to the specified primary */
-        if (server.primary_host && !strcasecmp(server.primary_host, c->argv[1]->ptr) && server.primary_port == port) {
+        if (server.primary_host && !strcasecmp(server.primary_host, objectGetVal(c->argv[1])) && server.primary_port == port) {
             serverLog(LL_NOTICE, "REPLICAOF would result into synchronization "
                                  "with the primary we are already connected "
                                  "with. No operation performed.");
@@ -4088,7 +4088,7 @@ void replicaofCommand(client *c) {
         }
         /* There was no previous primary or the user specified a different one,
          * we can continue. */
-        replicationSetPrimary(c->argv[1]->ptr, port, 0);
+        replicationSetPrimary(objectGetVal(c->argv[1]), port, 0);
         sds client = catClientInfoShortString(sdsempty(), c, server.hide_user_data_from_log);
         serverLog(LL_NOTICE, "REPLICAOF %s:%d enabled (user request from '%s')", server.primary_host,
                   server.primary_port, client);
@@ -4991,7 +4991,7 @@ void failoverCommand(client *c) {
     }
 
     /* Handle special case for abort */
-    if ((c->argc == 2) && !strcasecmp(c->argv[1]->ptr, "abort")) {
+    if ((c->argc == 2) && !strcasecmp(objectGetVal(c->argv[1]), "abort")) {
         if (server.failover_state == NO_FAILOVER) {
             addReplyError(c, "No failover in progress.");
             return;
@@ -5009,18 +5009,18 @@ void failoverCommand(client *c) {
 
     /* Parse the command for syntax and arguments. */
     for (int j = 1; j < c->argc; j++) {
-        if (!strcasecmp(c->argv[j]->ptr, "timeout") && (j + 1 < c->argc) && timeout_in_ms == 0) {
+        if (!strcasecmp(objectGetVal(c->argv[j]), "timeout") && (j + 1 < c->argc) && timeout_in_ms == 0) {
             if (getLongFromObjectOrReply(c, c->argv[j + 1], &timeout_in_ms, NULL) != C_OK) return;
             if (timeout_in_ms <= 0) {
                 addReplyError(c, "FAILOVER timeout must be greater than 0");
                 return;
             }
             j++;
-        } else if (!strcasecmp(c->argv[j]->ptr, "to") && (j + 2 < c->argc) && !host) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "to") && (j + 2 < c->argc) && !host) {
             if (getLongFromObjectOrReply(c, c->argv[j + 2], &port, NULL) != C_OK) return;
-            host = c->argv[j + 1]->ptr;
+            host = objectGetVal(c->argv[j + 1]);
             j += 2;
-        } else if (!strcasecmp(c->argv[j]->ptr, "force") && !force_flag) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "force") && !force_flag) {
             force_flag = 1;
         } else {
             addReplyErrorObject(c, shared.syntaxerr);
