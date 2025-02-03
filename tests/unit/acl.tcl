@@ -1258,9 +1258,8 @@ tags {acl external:skip} {
             r ACL setuser newuser on nopass ~* +acl -ping +incr
             r AUTH newuser anypass
             r VINCR mycounter ; # Should not raise an error
-            catch {r vping} e
-            set e
-        } {*NOPERM*ping*}
+            assert_error {*NOPERM*ping*} {r vping}
+        }
 
         test {ACL command classes aren't affected by command renaming} {
             r ACL setuser newuser -@all +@set +acl
@@ -1268,10 +1267,9 @@ tags {acl external:skip} {
             r ACL setuser newuser +@all -@string
             r VSADD myset a b c; # Again should not raise an error
             # String commands instead should raise an error
-            catch {r vset foo bar} e
+            assert_error {*NOPERM*set*} {r vset foo bar}
             r ACL setuser newuser allcommands; # Undo commands ACL
-            set e
-        } {*NOPERM*set*}
+        }
 
         test {ACL GETUSER provides correct results when commands renamed} {
             r ACL SETUSER adv-test
