@@ -2787,7 +2787,7 @@ void initServer(void) {
 
     if (server.maxmemory) {
         if (server.maxmemory < server.maxmemory_reserved) {
-	    serverLog(LL_WARNING, "Failed to config reserved memory buffer, which is greater than maxmemory.");
+            serverLog(LL_WARNING, "Failed to config reserved memory buffer, which is greater than maxmemory.");
             exit(1);
         }
         server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;

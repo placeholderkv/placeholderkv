@@ -2502,7 +2502,7 @@ static int updateMaxmemoryReserved(const char **err) {
             *err = "The maxmemory value is smaller than the new reserved memory buffer set via CONFIG SET";
             return 0;
         }
-	server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
+        server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
         size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
         if (server.key_eviction_memory < used) {
             serverLog(LL_WARNING, "WARNING: the difference between memory usage and maxmemory is less than reserved memory. "
@@ -2521,10 +2521,10 @@ static int updateMaxmemoryReserved(const char **err) {
 
 static int updateMaxmemory(const char **err) {
     if (server.maxmemory) {
-	if (server.maxmemory < server.maxmemory_reserved) {
+        if (server.maxmemory < server.maxmemory_reserved) {
             *err = "The new maxmemory value set via CONFIG SET is smaller than the existing reserved memory buffer";
             return 0;
-	}
+        }
         size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
         if (server.maxmemory < used) {
             serverLog(LL_WARNING,
@@ -2537,7 +2537,7 @@ static int updateMaxmemory(const char **err) {
         startEvictionTimeProc();
     } else {
         server.maxmemory_reserved = 0;
-	server.key_eviction_memory = 0;
+        server.key_eviction_memory = 0;
     }
     return 1;
 }
