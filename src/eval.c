@@ -409,14 +409,14 @@ int evalExtractShebangFlags(sds body, uint64_t *out_flags, ssize_t *out_shebang_
 uint64_t evalGetCommandFlags(client *c, uint64_t cmd_flags) {
     char funcname[43];
     int evalsha = c->cmd->proc == evalShaCommand || c->cmd->proc == evalShaRoCommand;
-    if (evalsha && sdslen(c->argv[1]->ptr) != 40) return cmd_flags;
+    if (evalsha && sdslen(objectGetVal(c->argv[1])) != 40) return cmd_flags;
     uint64_t script_flags;
-    evalCalcFunctionName(evalsha, c->argv[1]->ptr, funcname);
+    evalCalcFunctionName(evalsha, objectGetVal(c->argv[1]), funcname);
     char *lua_cur_script = funcname + 2;
     c->cur_script = dictFind(lctx.lua_scripts, lua_cur_script);
     if (!c->cur_script) {
         if (evalsha) return cmd_flags;
-        if (evalExtractShebangFlags(c->argv[1]->ptr, &script_flags, NULL, NULL) == C_ERR) return cmd_flags;
+        if (evalExtractShebangFlags(objectGetVal(c->argv[1]), &script_flags, NULL, NULL) == C_ERR) return cmd_flags;
     } else {
         luaScript *l = dictGetVal(c->cur_script);
         script_flags = l->flags;
@@ -452,7 +452,7 @@ sds luaCreateFunction(client *c, robj *body, int evalsha) {
 
     funcname[0] = 'f';
     funcname[1] = '_';
-    sha1hex(funcname + 2, body->ptr, sdslen(body->ptr));
+    sha1hex(funcname + 2, objectGetVal(body), sdslen(objectGetVal(body)));
 
     if ((de = dictFind(lctx.lua_scripts, funcname + 2)) != NULL) {
         /* If the script was previously added via EVAL, we promote it to
@@ -468,7 +468,7 @@ sds luaCreateFunction(client *c, robj *body, int evalsha) {
     /* Handle shebang header in script code */
     ssize_t shebang_len = 0;
     sds err = NULL;
-    if (evalExtractShebangFlags(body->ptr, &script_flags, &shebang_len, &err) == C_ERR) {
+    if (evalExtractShebangFlags(objectGetVal(body), &script_flags, &shebang_len, &err) == C_ERR) {
         if (c != NULL) {
             addReplyErrorSds(c, err);
         }
@@ -476,7 +476,7 @@ sds luaCreateFunction(client *c, robj *body, int evalsha) {
     }
 
     /* Note that in case of a shebang line we skip it but keep the line feed to conserve the user's line numbers */
-    if (luaL_loadbuffer(lctx.lua, (char *)body->ptr + shebang_len, sdslen(body->ptr) - shebang_len, "@user_script")) {
+    if (luaL_loadbuffer(lctx.lua, (char *)objectGetVal(body) + shebang_len, sdslen(objectGetVal(body)) - shebang_len, "@user_script")) {
         if (c != NULL) {
             addReplyErrorFormat(c, "Error compiling script (new function): %s", lua_tostring(lctx.lua, -1));
         }
@@ -578,7 +578,7 @@ void evalGenericCommand(client *c, int evalsha) {
         memcpy(funcname + 2, dictGetKey(c->cur_script), 40);
         funcname[42] = '\0';
     } else
-        evalCalcFunctionName(evalsha, c->argv[1]->ptr, funcname);
+        evalCalcFunctionName(evalsha, objectGetVal(c->argv[1]), funcname);
 
     /* Push the pcall error handler function on the stack. */
     lua_getglobal(lua, "__server__err__handler");
@@ -650,7 +650,7 @@ void evalShaCommand(client *c) {
     /* Explicitly feed monitor here so that lua commands appear after their
      * script command. */
     replicationFeedMonitors(c, server.monitors, c->db->id, c->argv, c->argc);
-    if (sdslen(c->argv[1]->ptr) != 40) {
+    if (sdslen(objectGetVal(c->argv[1])) != 40) {
         /* We know that a match is not possible if the provided SHA is
          * not the right length. So we return an error ASAP, this way
          * evalGenericCommand() can be implemented without string length
@@ -671,7 +671,7 @@ void evalShaRoCommand(client *c) {
 }
 
 void scriptCommand(client *c) {
-    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "help")) {
+    if (c->argc == 2 && !strcasecmp(objectGetVal(c->argv[1]), "help")) {
         const char *help[] = {
             "DEBUG (YES|SYNC|NO)",
             "    Set the debug mode for subsequent scripts executed.",
@@ -692,11 +692,11 @@ void scriptCommand(client *c) {
             NULL,
         };
         addReplyHelp(c, help);
-    } else if (c->argc >= 2 && !strcasecmp(c->argv[1]->ptr, "flush")) {
+    } else if (c->argc >= 2 && !strcasecmp(objectGetVal(c->argv[1]), "flush")) {
         int async = 0;
-        if (c->argc == 3 && !strcasecmp(c->argv[2]->ptr, "sync")) {
+        if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[2]), "sync")) {
             async = 0;
-        } else if (c->argc == 3 && !strcasecmp(c->argv[2]->ptr, "async")) {
+        } else if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[2]), "async")) {
             async = 1;
         } else if (c->argc == 2) {
             async = server.lazyfree_lazy_user_flush ? 1 : 0;
@@ -706,34 +706,34 @@ void scriptCommand(client *c) {
         }
         scriptingReset(async);
         addReply(c, shared.ok);
-    } else if (c->argc >= 2 && !strcasecmp(c->argv[1]->ptr, "exists")) {
+    } else if (c->argc >= 2 && !strcasecmp(objectGetVal(c->argv[1]), "exists")) {
         int j;
 
         addReplyArrayLen(c, c->argc - 2);
         for (j = 2; j < c->argc; j++) {
-            if (dictFind(lctx.lua_scripts, c->argv[j]->ptr))
+            if (dictFind(lctx.lua_scripts, objectGetVal(c->argv[j])))
                 addReply(c, shared.cone);
             else
                 addReply(c, shared.czero);
         }
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr, "load")) {
+    } else if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[1]), "load")) {
         sds sha = luaCreateFunction(c, c->argv[2], 1);
         if (sha == NULL) return; /* The error was sent by luaCreateFunction(). */
         addReplyBulkCBuffer(c, sha, 40);
-    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "kill")) {
+    } else if (c->argc == 2 && !strcasecmp(objectGetVal(c->argv[1]), "kill")) {
         scriptKill(c, 1);
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr, "debug")) {
+    } else if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[1]), "debug")) {
         if (clientHasPendingReplies(c)) {
             addReplyError(c, "SCRIPT DEBUG must be called outside a pipeline");
             return;
         }
-        if (!strcasecmp(c->argv[2]->ptr, "no")) {
+        if (!strcasecmp(objectGetVal(c->argv[2]), "no")) {
             ldbDisable(c);
             addReply(c, shared.ok);
-        } else if (!strcasecmp(c->argv[2]->ptr, "yes")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[2]), "yes")) {
             ldbEnable(c);
             addReply(c, shared.ok);
-        } else if (!strcasecmp(c->argv[2]->ptr, "sync")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[2]), "sync")) {
             ldbEnable(c);
             addReply(c, shared.ok);
             c->flag.lua_debug_sync = 1;
@@ -741,11 +741,11 @@ void scriptCommand(client *c) {
             addReplyError(c, "Use SCRIPT DEBUG YES/SYNC/NO");
             return;
         }
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr, "show")) {
+    } else if (c->argc == 3 && !strcasecmp(objectGetVal(c->argv[1]), "show")) {
         dictEntry *de;
         luaScript *ls;
 
-        if (sdslen(c->argv[2]->ptr) == 40 && (de = dictFind(lctx.lua_scripts, c->argv[2]->ptr))) {
+        if (sdslen(objectGetVal(c->argv[2])) == 40 && (de = dictFind(lctx.lua_scripts, objectGetVal(c->argv[2])))) {
             ls = dictGetVal(de);
             addReplyBulk(c, ls->body);
         } else {
@@ -912,7 +912,7 @@ int ldbStartSession(client *c) {
 
     /* First argument of EVAL is the script itself. We split it into different
      * lines since this is the way the debugger accesses the source code. */
-    sds srcstring = sdsdup(c->argv[1]->ptr);
+    sds srcstring = sdsdup(objectGetVal(c->argv[1]));
     size_t srclen = sdslen(srcstring);
     while (srclen && (srcstring[srclen - 1] == '\n' || srcstring[srclen - 1] == '\r')) {
         srcstring[--srclen] = '\0';

@@ -405,7 +405,7 @@ void touchWatchedKey(serverDb *db, robj *key) {
 
         if (wk->expired) {
             /* The key was already expired when WATCH was called. */
-            if (db == wk->db && equalStringObjects(key, wk->key) && dbFind(db, key->ptr) == NULL) {
+            if (db == wk->db && equalStringObjects(key, wk->key) && dbFind(db, objectGetVal(key)) == NULL) {
                 /* Already expired key is deleted, so logically no change. Clear
                  * the flag. Deleted keys are not flagged as expired. */
                 wk->expired = 0;
@@ -443,15 +443,15 @@ void touchAllWatchedKeysInDb(serverDb *emptied, serverDb *replaced_with) {
     dictIterator *di = dictGetSafeIterator(emptied->watched_keys);
     while ((de = dictNext(di)) != NULL) {
         robj *key = dictGetKey(de);
-        int exists_in_emptied = dbFind(emptied, key->ptr) != NULL;
-        if (exists_in_emptied || (replaced_with && dbFind(replaced_with, key->ptr) != NULL)) {
+        int exists_in_emptied = dbFind(emptied, objectGetVal(key)) != NULL;
+        if (exists_in_emptied || (replaced_with && dbFind(replaced_with, objectGetVal(key)) != NULL)) {
             list *clients = dictGetVal(de);
             if (!clients) continue;
             listRewind(clients, &li);
             while ((ln = listNext(&li))) {
                 watchedKey *wk = server_member2struct(watchedKey, node, ln);
                 if (wk->expired) {
-                    if (!replaced_with || !dbFind(replaced_with, key->ptr)) {
+                    if (!replaced_with || !dbFind(replaced_with, objectGetVal(key))) {
                         /* Expired key now deleted. No logical change. Clear the
                          * flag. Deleted keys are not flagged as expired. */
                         wk->expired = 0;

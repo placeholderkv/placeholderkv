@@ -478,13 +478,13 @@ void rememberReplicaKeyWithExpire(serverDb *db, robj *key) {
     }
     if (db->id > 63) return;
 
-    dictEntry *de = dictAddOrFind(replicaKeysWithExpire, key->ptr);
+    dictEntry *de = dictAddOrFind(replicaKeysWithExpire, objectGetVal(key));
     /* If the entry was just created, set it to a copy of the SDS string
      * representing the key: we don't want to need to take those keys
      * in sync with the main DB. The keys will be removed by expireReplicaKeys()
      * as it scans to find keys to remove. */
-    if (dictGetKey(de) == key->ptr) {
-        dictSetKey(replicaKeysWithExpire, de, sdsdup(key->ptr));
+    if (dictGetKey(de) == objectGetVal(key)) {
+        dictSetKey(replicaKeysWithExpire, de, sdsdup(objectGetVal(key)));
         dictSetUnsignedIntegerVal(de, 0);
     }
 
@@ -544,7 +544,7 @@ int parseExtendedExpireArgumentsOrReply(client *c, int *flags) {
 
     int j = 3;
     while (j < c->argc) {
-        char *opt = c->argv[j]->ptr;
+        char *opt = objectGetVal(c->argv[j]);
         if (!strcasecmp(opt, "nx")) {
             *flags |= EXPIRE_NX;
             nx = 1;

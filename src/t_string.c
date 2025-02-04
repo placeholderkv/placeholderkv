@@ -180,7 +180,7 @@ void setGenericCommand(client *c,
         int j;
         robj **argv = zmalloc((c->argc - 1) * sizeof(robj *));
         for (j = 0; j < c->argc; j++) {
-            char *a = c->argv[j]->ptr;
+            char *a = objectGetVal(c->argv[j]);
             /* Skip GET which may be repeated multiple times. */
             if (j >= 3 && (a[0] == 'g' || a[0] == 'G') && (a[1] == 'e' || a[1] == 'E') &&
                 (a[2] == 't' || a[2] == 'T') && a[3] == '\0')
@@ -252,7 +252,7 @@ static int getExpireMillisecondsOrReply(client *c, robj *expire, int flags, int 
 int parseExtendedStringArgumentsOrReply(client *c, int *flags, int *unit, robj **expire, robj **compare_val, int command_type) {
     int j = command_type == COMMAND_GET ? 2 : 3;
     for (; j < c->argc; j++) {
-        char *opt = c->argv[j]->ptr;
+        char *opt = objectGetVal(c->argv[j]);
         robj *next = (j == c->argc - 1) ? NULL : c->argv[j + 1];
 
         /* clang-format off */
@@ -492,7 +492,7 @@ void getsetCommand(client *c) {
 void setrangeCommand(client *c) {
     robj *o;
     long offset;
-    sds value = c->argv[3]->ptr;
+    sds value = objectGetVal(c->argv[3]);
 
     if (getLongFromObjectOrReply(c, c->argv[2], &offset, NULL) != C_OK)
         return;
@@ -539,14 +539,14 @@ void setrangeCommand(client *c) {
     }
 
     if (sdslen(value) > 0) {
-        o->ptr = sdsgrowzero(o->ptr, offset + sdslen(value));
-        memcpy((char *)o->ptr + offset, value, sdslen(value));
+        objectSetVal(o, sdsgrowzero(objectGetVal(o), offset + sdslen(value)));
+        memcpy((char *)objectGetVal(o) + offset, value, sdslen(value));
         signalModifiedKey(c, c->db, c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_STRING,
                             "setrange", c->argv[1], c->db->id);
         server.dirty++;
     }
-    addReplyLongLong(c, sdslen(o->ptr));
+    addReplyLongLong(c, sdslen(objectGetVal(o)));
 }
 
 void getrangeCommand(client *c) {
@@ -564,9 +564,9 @@ void getrangeCommand(client *c) {
 
     if (o->encoding == OBJ_ENCODING_INT) {
         str = llbuf;
-        strlen = ll2string(llbuf, sizeof(llbuf), (long)o->ptr);
+        strlen = ll2string(llbuf, sizeof(llbuf), (long)objectGetVal(o));
     } else {
-        str = o->ptr;
+        str = objectGetVal(o);
         strlen = sdslen(str);
     }
 
@@ -669,7 +669,7 @@ void incrDecrCommand(client *c, long long incr) {
     if (o && o->refcount == 1 && o->encoding == OBJ_ENCODING_INT &&
         value >= LONG_MIN && value <= LONG_MAX) {
         new = o;
-        o->ptr = (void *)((long)value);
+        objectSetVal(o, (void *)((long)value));
     } else {
         new = createStringObjectFromLongLongForValue(value);
         if (o) {
@@ -762,13 +762,13 @@ void appendCommand(client *c) {
 
         /* "append" is an argument, so always an sds */
         append = c->argv[2];
-        if (checkStringLength(c, stringObjectLen(o), sdslen(append->ptr)) != C_OK)
+        if (checkStringLength(c, stringObjectLen(o), sdslen(objectGetVal(append))) != C_OK)
             return;
 
         /* Append the value */
         o = dbUnshareStringValue(c->db, c->argv[1], o);
-        o->ptr = sdscatlen(o->ptr, append->ptr, sdslen(append->ptr));
-        totlen = sdslen(o->ptr);
+        objectSetVal(o, sdscatlen(objectGetVal(o), objectGetVal(append), sdslen(objectGetVal(append))));
+        totlen = sdslen(objectGetVal(o));
     }
     signalModifiedKey(c, c->db, c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_STRING, "append", c->argv[1], c->db->id);
@@ -805,11 +805,11 @@ void lcsCommand(client *c) {
     }
     obja = obja ? getDecodedObject(obja) : createStringObject("", 0);
     objb = objb ? getDecodedObject(objb) : createStringObject("", 0);
-    a = obja->ptr;
-    b = objb->ptr;
+    a = objectGetVal(obja);
+    b = objectGetVal(objb);
 
     for (j = 3; j < (uint32_t)c->argc; j++) {
-        char *opt = c->argv[j]->ptr;
+        char *opt = objectGetVal(c->argv[j]);
         int moreargs = (c->argc - 1) - j;
 
         if (!strcasecmp(opt, "IDX")) {

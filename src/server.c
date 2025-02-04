@@ -419,12 +419,12 @@ void *dictSdsDup(const void *key) {
 
 int dictObjKeyCompare(const void *key1, const void *key2) {
     const robj *o1 = key1, *o2 = key2;
-    return dictSdsKeyCompare(o1->ptr, o2->ptr);
+    return dictSdsKeyCompare(objectGetVal(o1), objectGetVal(o2));
 }
 
 uint64_t dictObjHash(const void *key) {
     const robj *o = key;
-    return dictGenHashFunction(o->ptr, sdslen((sds)o->ptr));
+    return dictGenHashFunction(objectGetVal(o), sdslen((sds)objectGetVal(o)));
 }
 
 uint64_t dictSdsHash(const void *key) {
@@ -473,7 +473,7 @@ int dictEncObjKeyCompare(const void *key1, const void *key2) {
     robj *o1 = (robj *)key1, *o2 = (robj *)key2;
     int cmp;
 
-    if (o1->encoding == OBJ_ENCODING_INT && o2->encoding == OBJ_ENCODING_INT) return o1->ptr == o2->ptr;
+    if (o1->encoding == OBJ_ENCODING_INT && o2->encoding == OBJ_ENCODING_INT) return objectGetVal(o1) == objectGetVal(o2);
 
     /* Due to OBJ_STATIC_REFCOUNT, we avoid calling getDecodedObject() without
      * good reasons, because it would incrRefCount() the object, which
@@ -481,7 +481,7 @@ int dictEncObjKeyCompare(const void *key1, const void *key2) {
      * objects as well. */
     if (o1->refcount != OBJ_STATIC_REFCOUNT) o1 = getDecodedObject(o1);
     if (o2->refcount != OBJ_STATIC_REFCOUNT) o2 = getDecodedObject(o2);
-    cmp = dictSdsKeyCompare(o1->ptr, o2->ptr);
+    cmp = dictSdsKeyCompare(objectGetVal(o1), objectGetVal(o2));
     if (o1->refcount != OBJ_STATIC_REFCOUNT) decrRefCount(o1);
     if (o2->refcount != OBJ_STATIC_REFCOUNT) decrRefCount(o2);
     return cmp;
@@ -491,12 +491,12 @@ uint64_t dictEncObjHash(const void *key) {
     robj *o = (robj *)key;
 
     if (sdsEncodedObject(o)) {
-        return dictGenHashFunction(o->ptr, sdslen((sds)o->ptr));
+        return dictGenHashFunction(objectGetVal(o), sdslen((sds)objectGetVal(o)));
     } else if (o->encoding == OBJ_ENCODING_INT) {
         char buf[32];
         int len;
 
-        len = ll2string(buf, 32, (long)o->ptr);
+        len = ll2string(buf, 32, (long)objectGetVal(o));
         return dictGenHashFunction((unsigned char *)buf, len);
     } else {
         serverPanic("Unknown string encoding");
@@ -587,13 +587,13 @@ void hashtableObjectPrefetchValue(const void *entry) {
     const robj *obj = entry;
     if (obj->encoding != OBJ_ENCODING_EMBSTR &&
         obj->encoding != OBJ_ENCODING_INT) {
-        valkey_prefetch(obj->ptr);
+        valkey_prefetch(objectGetVal(obj));
     }
 }
 
 int hashtableObjKeyCompare(const void *key1, const void *key2) {
     const robj *o1 = key1, *o2 = key2;
-    return hashtableSdsKeyCompare(o1->ptr, o2->ptr);
+    return hashtableSdsKeyCompare(objectGetVal(o1), objectGetVal(o2));
 }
 
 void hashtableObjectDestructor(void *val) {
@@ -3312,7 +3312,7 @@ struct serverCommand *lookupSubcommand(struct serverCommand *container, sds sub_
  */
 struct serverCommand *lookupCommandLogic(hashtable *commands, robj **argv, int argc, int strict) {
     void *entry = NULL;
-    int found_command = hashtableFind(commands, argv[0]->ptr, &entry);
+    int found_command = hashtableFind(commands, objectGetVal(argv[0]), &entry);
     struct serverCommand *base_cmd = entry;
     int has_subcommands = found_command && base_cmd->subcommands_ht;
     if (argc == 1 || !has_subcommands) {
@@ -3322,7 +3322,7 @@ struct serverCommand *lookupCommandLogic(hashtable *commands, robj **argv, int a
     } else { /* argc > 1 && has_subcommands */
         if (strict && argc != 2) return NULL;
         /* Note: Currently we support just one level of subcommands */
-        return lookupSubcommand(base_cmd, argv[1]->ptr);
+        return lookupSubcommand(base_cmd, objectGetVal(argv[1]));
     }
 }
 
@@ -3870,7 +3870,7 @@ void rejectCommand(client *c, robj *reply) {
     c->duration = 0;
     if (c->cmd) c->cmd->rejected_calls++;
     if (c->cmd && c->cmd->proc == execCommand) {
-        execCommandAbort(c, reply->ptr);
+        execCommandAbort(c, objectGetVal(reply));
     } else {
         /* using addReplyError* rather than addReply so that the error can be logged. */
         addReplyErrorObject(c, reply);
@@ -3923,22 +3923,22 @@ void afterCommand(client *c) {
 int commandCheckExistence(client *c, sds *err) {
     if (c->cmd) return 1;
     if (!err) return 0;
-    if (isContainerCommandBySds(c->argv[0]->ptr) && c->argc >= 2) {
+    if (isContainerCommandBySds(objectGetVal(c->argv[0])) && c->argc >= 2) {
         /* If we can't find the command but argv[0] by itself is a command
          * it means we're dealing with an invalid subcommand. Print Help. */
-        sds cmd = sdsnew((char *)c->argv[0]->ptr);
+        sds cmd = sdsnew((char *)objectGetVal(c->argv[0]));
         sdstoupper(cmd);
         *err = sdsnew(NULL);
-        *err = sdscatprintf(*err, "unknown subcommand '%.128s'. Try %s HELP.", (char *)c->argv[1]->ptr, cmd);
+        *err = sdscatprintf(*err, "unknown subcommand '%.128s'. Try %s HELP.", (char *)objectGetVal(c->argv[1]), cmd);
         sdsfree(cmd);
     } else {
         sds args = sdsempty();
         int i;
         for (i = 1; i < c->argc && sdslen(args) < 128; i++)
-            args = sdscatprintf(args, "'%.*s' ", 128 - (int)sdslen(args), (char *)c->argv[i]->ptr);
+            args = sdscatprintf(args, "'%.*s' ", 128 - (int)sdslen(args), (char *)objectGetVal(c->argv[i]));
         *err = sdsnew(NULL);
         *err =
-            sdscatprintf(*err, "unknown command '%.128s', with args beginning with: %s", (char *)c->argv[0]->ptr, args);
+            sdscatprintf(*err, "unknown command '%.128s', with args beginning with: %s", (char *)objectGetVal(c->argv[0]), args);
         sdsfree(args);
     }
     /* Make sure there are no newlines in the string, otherwise invalid protocol
@@ -4021,7 +4021,7 @@ int processCommand(client *c) {
         struct serverCommand *cmd = c->io_parsed_cmd ? c->io_parsed_cmd : lookupCommand(c->argv, c->argc);
         if (!cmd) {
             /* Handle possible security attacks. */
-            if (!strcasecmp(c->argv[0]->ptr, "host:") || !strcasecmp(c->argv[0]->ptr, "post")) {
+            if (!strcasecmp(objectGetVal(c->argv[0]), "host:") || !strcasecmp(objectGetVal(c->argv[0]), "post")) {
                 securityWarningCommand(c);
                 return C_ERR;
             }
@@ -4091,7 +4091,7 @@ int processCommand(client *c) {
     if (acl_retval != ACL_OK) {
         addACLLogEntry(c, acl_retval, (c->flag.multi) ? ACL_LOG_CTX_MULTI : ACL_LOG_CTX_TOPLEVEL, acl_errpos, NULL,
                        NULL);
-        sds msg = getAclErrorMessage(acl_retval, c->user, c->cmd, c->argv[acl_errpos]->ptr, 0);
+        sds msg = getAclErrorMessage(acl_retval, c->user, c->cmd, objectGetVal(c->argv[acl_errpos]), 0);
         rejectCommandFormat(c, "-NOPERM %s", msg);
         sdsfree(msg);
         return C_OK;
@@ -4641,7 +4641,7 @@ int writeCommandsDeniedByDiskError(void) {
 sds writeCommandsGetDiskErrorMessage(int error_code) {
     sds ret = NULL;
     if (error_code == DISK_ERROR_TYPE_RDB) {
-        ret = sdsdup(shared.bgsaveerr->ptr);
+        ret = sdsdup(objectGetVal(shared.bgsaveerr));
     } else {
         ret = sdscatfmt(sdsempty(), "-MISCONF Errors writing to the AOF file: %s\r\n",
                         strerror(server.aof_last_write_errno));
@@ -5251,9 +5251,9 @@ void commandListCommand(client *c) {
     commandListFilter filter = {0};
     for (; i < c->argc; i++) {
         int moreargs = (c->argc - 1) - i; /* Number of additional arguments. */
-        char *opt = c->argv[i]->ptr;
+        char *opt = objectGetVal(c->argv[i]);
         if (!strcasecmp(opt, "filterby") && moreargs == 2) {
-            char *filtertype = c->argv[i + 1]->ptr;
+            char *filtertype = objectGetVal(c->argv[i + 1]);
             if (!strcasecmp(filtertype, "module")) {
                 filter.type = COMMAND_LIST_FILTER_MODULE;
             } else if (!strcasecmp(filtertype, "aclcat")) {
@@ -5265,7 +5265,7 @@ void commandListCommand(client *c) {
                 return;
             }
             got_filter = 1;
-            filter.arg = c->argv[i + 2]->ptr;
+            filter.arg = objectGetVal(c->argv[i + 2]);
             i += 2;
         } else {
             addReplyErrorObject(c, shared.syntaxerr);
@@ -5302,7 +5302,7 @@ void commandInfoCommand(client *c) {
     } else {
         addReplyArrayLen(c, c->argc - 2);
         for (i = 2; i < c->argc; i++) {
-            addReplyCommandInfo(c, lookupCommandBySds(c->argv[i]->ptr));
+            addReplyCommandInfo(c, lookupCommandBySds(objectGetVal(c->argv[i])));
         }
     }
 }
@@ -5327,7 +5327,7 @@ void commandDocsCommand(client *c) {
         int numcmds = 0;
         void *replylen = addReplyDeferredLen(c);
         for (i = 2; i < c->argc; i++) {
-            struct serverCommand *cmd = lookupCommandBySds(c->argv[i]->ptr);
+            struct serverCommand *cmd = lookupCommandBySds(objectGetVal(c->argv[i]));
             if (!cmd) continue;
             addReplyBulkCBuffer(c, cmd->fullname, sdslen(cmd->fullname));
             addReplyCommandDocs(c, cmd);
@@ -5550,15 +5550,15 @@ dict *genInfoSectionDict(robj **argv, int argc, char **defaults, int *out_all, i
     dict *section_dict = dictCreate(&stringSetDictType);
     dictExpand(section_dict, min(argc, 16));
     for (int i = 0; i < argc; i++) {
-        if (!strcasecmp(argv[i]->ptr, "default")) {
+        if (!strcasecmp(objectGetVal(argv[i]), "default")) {
             addInfoSectionsToDict(section_dict, defaults);
-        } else if (!strcasecmp(argv[i]->ptr, "all")) {
+        } else if (!strcasecmp(objectGetVal(argv[i]), "all")) {
             if (out_all) *out_all = 1;
-        } else if (!strcasecmp(argv[i]->ptr, "everything")) {
+        } else if (!strcasecmp(objectGetVal(argv[i]), "everything")) {
             if (out_everything) *out_everything = 1;
             if (out_all) *out_all = 1;
         } else {
-            sds section = sdsnew(argv[i]->ptr);
+            sds section = sdsnew(objectGetVal(argv[i]));
             if (dictAdd(section_dict, section, NULL) != DICT_OK) sdsfree(section);
         }
     }

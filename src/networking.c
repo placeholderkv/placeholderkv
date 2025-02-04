@@ -88,7 +88,7 @@ typedef enum {
 size_t getStringObjectSdsUsedMemory(robj *o) {
     serverAssertWithInfo(NULL, o, o->type == OBJ_STRING);
     if (o->encoding != OBJ_ENCODING_INT) {
-        return sdsAllocSize(o->ptr);
+        return sdsAllocSize(objectGetVal(o));
     }
     return 0;
 }
@@ -98,8 +98,8 @@ size_t getStringObjectSdsUsedMemory(robj *o) {
 size_t getStringObjectLen(robj *o) {
     serverAssertWithInfo(NULL, o, o->type == OBJ_STRING);
     switch (o->encoding) {
-    case OBJ_ENCODING_RAW: return sdslen(o->ptr);
-    case OBJ_ENCODING_EMBSTR: return sdslen(o->ptr);
+    case OBJ_ENCODING_RAW: return sdslen(objectGetVal(o));
+    case OBJ_ENCODING_EMBSTR: return sdslen(objectGetVal(o));
     default: return 0; /* Just integer encoding for now. */
     }
 }
@@ -494,13 +494,13 @@ void addReply(client *c, robj *obj) {
     if (prepareClientToWrite(c) != C_OK) return;
 
     if (sdsEncodedObject(obj)) {
-        _addReplyToBufferOrList(c, obj->ptr, sdslen(obj->ptr));
+        _addReplyToBufferOrList(c, objectGetVal(obj), sdslen(objectGetVal(obj)));
     } else if (obj->encoding == OBJ_ENCODING_INT) {
         /* For integer encoded strings we just convert it into a string
          * using our optimized function, and attach the resulting string
          * to the output buffer. */
         char buf[32];
-        size_t len = ll2string(buf, sizeof(buf), (long)obj->ptr);
+        size_t len = ll2string(buf, sizeof(buf), (long)objectGetVal(obj));
         _addReplyToBufferOrList(c, buf, len);
     } else {
         serverPanic("Wrong obj->encoding in addReply()");
@@ -654,7 +654,7 @@ void afterErrorReply(client *c, const char *s, size_t len, int flags) {
  * Unlike addReplyErrorSds and others alike which rely on addReplyErrorLength. */
 void addReplyErrorObject(client *c, robj *err) {
     addReply(c, err);
-    afterErrorReply(c, err->ptr, sdslen(err->ptr) - 2, 0); /* Ignore trailing \r\n */
+    afterErrorReply(c, objectGetVal(err), sdslen(objectGetVal(err)) - 2, 0); /* Ignore trailing \r\n */
 }
 
 /* Sends either a reply or an error reply by checking the first char.
@@ -664,7 +664,7 @@ void addReplyErrorObject(client *c, robj *err) {
  * logging and stats update. */
 void addReplyOrErrorObject(client *c, robj *reply) {
     serverAssert(sdsEncodedObject(reply));
-    sds rep = reply->ptr;
+    sds rep = objectGetVal(reply);
     if (sdslen(rep) > 1 && rep[0] == '-') {
         addReplyErrorObject(c, reply);
     } else {
@@ -886,15 +886,15 @@ void setDeferredAggregateLen(client *c, void *node, long length, char prefix) {
     const size_t hdr_len = OBJ_SHARED_HDR_STRLEN(length);
     const int opt_hdr = length < OBJ_SHARED_BULKHDR_LEN;
     if (prefix == '*' && opt_hdr) {
-        setDeferredReply(c, node, shared.mbulkhdr[length]->ptr, hdr_len);
+        setDeferredReply(c, node, objectGetVal(shared.mbulkhdr[length]), hdr_len);
         return;
     }
     if (prefix == '%' && opt_hdr) {
-        setDeferredReply(c, node, shared.maphdr[length]->ptr, hdr_len);
+        setDeferredReply(c, node, objectGetVal(shared.maphdr[length]), hdr_len);
         return;
     }
     if (prefix == '~' && opt_hdr) {
-        setDeferredReply(c, node, shared.sethdr[length]->ptr, hdr_len);
+        setDeferredReply(c, node, objectGetVal(shared.sethdr[length]), hdr_len);
         return;
     }
 
@@ -1016,16 +1016,16 @@ static void _addReplyLongLongWithPrefix(client *c, long long ll, char prefix) {
     const int opt_hdr = ll < OBJ_SHARED_BULKHDR_LEN && ll >= 0;
     const size_t hdr_len = OBJ_SHARED_HDR_STRLEN(ll);
     if (prefix == '*' && opt_hdr) {
-        _addReplyToBufferOrList(c, shared.mbulkhdr[ll]->ptr, hdr_len);
+        _addReplyToBufferOrList(c, objectGetVal(shared.mbulkhdr[ll]), hdr_len);
         return;
     } else if (prefix == '$' && opt_hdr) {
-        _addReplyToBufferOrList(c, shared.bulkhdr[ll]->ptr, hdr_len);
+        _addReplyToBufferOrList(c, objectGetVal(shared.bulkhdr[ll]), hdr_len);
         return;
     } else if (prefix == '%' && opt_hdr) {
-        _addReplyToBufferOrList(c, shared.maphdr[ll]->ptr, hdr_len);
+        _addReplyToBufferOrList(c, objectGetVal(shared.maphdr[ll]), hdr_len);
         return;
     } else if (prefix == '~' && opt_hdr) {
-        _addReplyToBufferOrList(c, shared.sethdr[ll]->ptr, hdr_len);
+        _addReplyToBufferOrList(c, objectGetVal(shared.sethdr[ll]), hdr_len);
         return;
     }
 
@@ -1240,7 +1240,7 @@ void addReplyVerbatim(client *c, const char *s, size_t len, const char *ext) {
  * specific subcommands in `extended_help`.
  */
 void addExtendedReplyHelp(client *c, const char **help, const char **extended_help) {
-    sds cmd = sdsnew((char *)c->argv[0]->ptr);
+    sds cmd = sdsnew((char *)objectGetVal(c->argv[0]));
     void *blenp = addReplyDeferredLen(c);
     int blen = 0;
     int idx = 0;
@@ -1275,10 +1275,10 @@ void addReplyHelp(client *c, const char **help) {
  * This function is typically invoked by from commands that support
  * subcommands in response to an unknown subcommand or argument error. */
 void addReplySubcommandSyntaxError(client *c) {
-    sds cmd = sdsnew((char *)c->argv[0]->ptr);
+    sds cmd = sdsnew((char *)objectGetVal(c->argv[0]));
     sdstoupper(cmd);
     addReplyErrorFormat(c, "unknown subcommand or wrong number of arguments for '%.128s'. Try %s HELP.",
-                        (char *)c->argv[1]->ptr, cmd);
+                        (char *)objectGetVal(c->argv[1]), cmd);
     sdsfree(cmd);
 }
 
@@ -3309,7 +3309,7 @@ sds catClientInfoString(sds s, client *client, int hide_user_data) {
             " addr=%s", getClientPeerId(client),
             " laddr=%s", getClientSockname(client),
             " %s", connGetInfo(client->conn, conninfo, sizeof(conninfo)),
-            " name=%s", hide_user_data ? "*redacted*" : (client->name ? (char *)client->name->ptr : ""),
+            " name=%s", hide_user_data ? "*redacted*" : (client->name ? (char *)objectGetVal(client->name) : ""),
             " age=%I", (long long)(commandTimeSnapshot() / 1000 - client->ctime),
             " idle=%I", (long long)(server.unixtime - client->last_interaction),
             " flags=%s", flags,
@@ -3334,8 +3334,8 @@ sds catClientInfoString(sds s, client *client, int hide_user_data) {
             " user=%s", hide_user_data ? "*redacted*" : (client->user ? client->user->name : "(superuser)"),
             " redir=%I", (client->flag.tracking) ? (long long)client->pubsub_data->client_tracking_redirection : -1,
             " resp=%i", client->resp,
-            " lib-name=%s", client->lib_name ? (char *)client->lib_name->ptr : "",
-            " lib-ver=%s", client->lib_ver ? (char *)client->lib_ver->ptr : "",
+            " lib-name=%s", client->lib_name ? (char *)objectGetVal(client->lib_name) : "",
+            " lib-ver=%s", client->lib_ver ? (char *)objectGetVal(client->lib_ver) : "",
             " tot-net-in=%U", client->net_input_bytes,
             " tot-net-out=%U", client->net_output_bytes,
             " tot-cmds=%U", client->commands_processed));
@@ -3358,10 +3358,10 @@ sds catClientInfoShortString(sds s, client *client, int hide_user_data) {
             " addr=%s", getClientPeerId(client),
             " laddr=%s", getClientSockname(client),
             " %s", connGetInfo(client->conn, conninfo, sizeof(conninfo)),
-            " name=%s", hide_user_data ? "*redacted*" : (client->name ? (char *)client->name->ptr : ""),
+            " name=%s", hide_user_data ? "*redacted*" : (client->name ? (char *)objectGetVal(client->name) : ""),
             " user=%s", hide_user_data ? "*redacted*" : (client->user ? client->user->name : "(superuser)"),
-            " lib-name=%s", client->lib_name ? (char *)client->lib_name->ptr : "",
-            " lib-ver=%s", client->lib_ver ? (char *)client->lib_ver->ptr : ""));
+            " lib-name=%s", client->lib_name ? (char *)objectGetVal(client->lib_name) : "",
+            " lib-ver=%s", client->lib_ver ? (char *)objectGetVal(client->lib_ver) : ""));
     return ret;
 }
 
@@ -3414,10 +3414,10 @@ int validateClientAttr(const char *val) {
 /* Returns C_OK if the name is valid. Returns C_ERR & sets `err` (when provided) otherwise. */
 int validateClientName(robj *name, const char **err) {
     const char *err_msg = "Client names cannot contain spaces, newlines or special characters.";
-    int len = (name != NULL) ? sdslen(name->ptr) : 0;
+    int len = (name != NULL) ? sdslen(objectGetVal(name)) : 0;
     /* We allow setting the client name to an empty string. */
     if (len == 0) return C_OK;
-    if (validateClientAttr(name->ptr) == C_ERR) {
+    if (validateClientAttr(objectGetVal(name)) == C_ERR) {
         if (err) *err = err_msg;
         return C_ERR;
     }
@@ -3429,7 +3429,7 @@ int clientSetName(client *c, robj *name, const char **err) {
     if (validateClientName(name, err) == C_ERR) {
         return C_ERR;
     }
-    int len = (name != NULL) ? sdslen(name->ptr) : 0;
+    int len = (name != NULL) ? sdslen(objectGetVal(name)) : 0;
     /* Setting the client name to an empty string actually removes
      * the current name. */
     if (len == 0) {
@@ -3463,9 +3463,9 @@ int clientSetNameOrReply(client *c, robj *name) {
 
 /* Set client or connection related info */
 void clientSetinfoCommand(client *c) {
-    sds attr = c->argv[2]->ptr;
+    sds attr = objectGetVal(c->argv[2]);
     robj *valob = c->argv[3];
-    sds val = valob->ptr;
+    sds val = objectGetVal(valob);
     robj **destvar = NULL;
     if (!strcasecmp(attr, "lib-name")) {
         destvar = &c->lib_name;
@@ -3520,7 +3520,7 @@ static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter)
     while (index < c->argc) {
         int moreargs = c->argc > index + 1;
 
-        if (!strcasecmp(c->argv[index]->ptr, "id")) {
+        if (!strcasecmp(objectGetVal(c->argv[index]), "id")) {
             if (filter->ids == NULL) {
                 /* Initialize the intset for IDs */
                 filter->ids = intsetNew();
@@ -3530,7 +3530,7 @@ static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter)
             /* Process all IDs until a non-numeric argument or end of args */
             while (index < c->argc) {
                 long long id;
-                if (!string2ll(c->argv[index]->ptr, sdslen(c->argv[index]->ptr), &id)) {
+                if (!string2ll(objectGetVal(c->argv[index]), sdslen(objectGetVal(c->argv[index])), &id)) {
                     break; /* Stop processing IDs if a non-numeric argument is encountered */
                 }
                 if (id < 1) {
@@ -3542,7 +3542,7 @@ static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter)
                 filter->ids = intsetAdd(filter->ids, id, &added);
                 index++; /* Move to the next argument */
             }
-        } else if (!strcasecmp(c->argv[index]->ptr, "maxage") && moreargs) {
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "maxage") && moreargs) {
             long long tmp;
 
             if (getLongLongFromObjectOrReply(c, c->argv[index + 1], &tmp,
@@ -3555,30 +3555,30 @@ static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter)
 
             filter->max_age = tmp;
             index += 2;
-        } else if (!strcasecmp(c->argv[index]->ptr, "type") && moreargs) {
-            filter->type = getClientTypeByName(c->argv[index + 1]->ptr);
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "type") && moreargs) {
+            filter->type = getClientTypeByName(objectGetVal(c->argv[index + 1]));
             if (filter->type == -1) {
-                addReplyErrorFormat(c, "Unknown client type '%s'", (char *)c->argv[index + 1]->ptr);
+                addReplyErrorFormat(c, "Unknown client type '%s'", (char *)objectGetVal(c->argv[index + 1]));
                 return C_ERR;
             }
             index += 2;
-        } else if (!strcasecmp(c->argv[index]->ptr, "addr") && moreargs) {
-            filter->addr = c->argv[index + 1]->ptr;
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "addr") && moreargs) {
+            filter->addr = objectGetVal(c->argv[index + 1]);
             index += 2;
-        } else if (!strcasecmp(c->argv[index]->ptr, "laddr") && moreargs) {
-            filter->laddr = c->argv[index + 1]->ptr;
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "laddr") && moreargs) {
+            filter->laddr = objectGetVal(c->argv[index + 1]);
             index += 2;
-        } else if (!strcasecmp(c->argv[index]->ptr, "user") && moreargs) {
-            filter->user = ACLGetUserByName(c->argv[index + 1]->ptr, sdslen(c->argv[index + 1]->ptr));
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "user") && moreargs) {
+            filter->user = ACLGetUserByName(objectGetVal(c->argv[index + 1]), sdslen(objectGetVal(c->argv[index + 1])));
             if (filter->user == NULL) {
-                addReplyErrorFormat(c, "No such user '%s'", (char *)c->argv[index + 1]->ptr);
+                addReplyErrorFormat(c, "No such user '%s'", (char *)objectGetVal(c->argv[index + 1]));
                 return C_ERR;
             }
             index += 2;
-        } else if (!strcasecmp(c->argv[index]->ptr, "skipme") && moreargs) {
-            if (!strcasecmp(c->argv[index + 1]->ptr, "yes")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[index]), "skipme") && moreargs) {
+            if (!strcasecmp(objectGetVal(c->argv[index + 1]), "yes")) {
                 filter->skipme = 1;
-            } else if (!strcasecmp(c->argv[index + 1]->ptr, "no")) {
+            } else if (!strcasecmp(objectGetVal(c->argv[index + 1]), "no")) {
                 filter->skipme = 0;
             } else {
                 addReplyErrorObject(c, shared.syntaxerr);
@@ -3725,13 +3725,13 @@ void clientListCommand(client *c) {
 
 void clientReplyCommand(client *c) {
     /* CLIENT REPLY ON|OFF|SKIP */
-    if (!strcasecmp(c->argv[2]->ptr, "on")) {
+    if (!strcasecmp(objectGetVal(c->argv[2]), "on")) {
         c->flag.reply_skip = 0;
         c->flag.reply_off = 0;
         addReply(c, shared.ok);
-    } else if (!strcasecmp(c->argv[2]->ptr, "off")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "off")) {
         c->flag.reply_off = 1;
-    } else if (!strcasecmp(c->argv[2]->ptr, "skip")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "skip")) {
         if (!c->flag.reply_off) c->flag.reply_skip_next = 1;
     } else {
         addReplyErrorObject(c, shared.syntaxerr);
@@ -3741,11 +3741,11 @@ void clientReplyCommand(client *c) {
 
 void clientNoEvictCommand(client *c) {
     /* CLIENT NO-EVICT ON|OFF */
-    if (!strcasecmp(c->argv[2]->ptr, "on")) {
+    if (!strcasecmp(objectGetVal(c->argv[2]), "on")) {
         c->flag.no_evict = 1;
         removeClientFromMemUsageBucket(c, 0);
         addReply(c, shared.ok);
-    } else if (!strcasecmp(c->argv[2]->ptr, "off")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "off")) {
         c->flag.no_evict = 0;
         updateClientMemUsageAndBucket(c);
         addReply(c, shared.ok);
@@ -3774,7 +3774,7 @@ void clientKillCommand(client *c) {
 
     if (c->argc == 3) {
         /* Old style syntax: CLIENT KILL <addr> */
-        client_filter.addr = c->argv[2]->ptr;
+        client_filter.addr = objectGetVal(c->argv[2]);
         client_filter.skipme = 0; /* With the old form, you can kill yourself. */
     } else if (c->argc > 3) {
         int i = 2; /* Next option index. */
@@ -3829,9 +3829,9 @@ void clientUnblockCommand(client *c) {
     int unblock_error = 0;
 
     if (c->argc == 4) {
-        if (!strcasecmp(c->argv[3]->ptr, "timeout")) {
+        if (!strcasecmp(objectGetVal(c->argv[3]), "timeout")) {
             unblock_error = 0;
-        } else if (!strcasecmp(c->argv[3]->ptr, "error")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[3]), "error")) {
             unblock_error = 1;
         } else {
             addReplyError(c, "CLIENT UNBLOCK reason should be TIMEOUT or ERROR");
@@ -3881,9 +3881,9 @@ void clientPauseCommand(client *c) {
     mstime_t end;
     int isPauseClientAll = 1;
     if (c->argc == 4) {
-        if (!strcasecmp(c->argv[3]->ptr, "write")) {
+        if (!strcasecmp(objectGetVal(c->argv[3]), "write")) {
             isPauseClientAll = 0;
-        } else if (strcasecmp(c->argv[3]->ptr, "all")) {
+        } else if (strcasecmp(objectGetVal(c->argv[3]), "all")) {
             addReplyError(c, "CLIENT PAUSE mode must be WRITE or ALL");
             return;
         }
@@ -3907,7 +3907,7 @@ void clientTrackingCommand(client *c) {
     for (int j = 3; j < c->argc; j++) {
         int moreargs = (c->argc - 1) - j;
 
-        if (!strcasecmp(c->argv[j]->ptr, "redirect") && moreargs) {
+        if (!strcasecmp(objectGetVal(c->argv[j]), "redirect") && moreargs) {
             j++;
             if (redir != 0) {
                 addReplyError(c, "A client can only redirect to a single "
@@ -3929,15 +3929,15 @@ void clientTrackingCommand(client *c) {
                 zfree(prefix);
                 return;
             }
-        } else if (!strcasecmp(c->argv[j]->ptr, "bcast")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "bcast")) {
             options.tracking_bcast = 1;
-        } else if (!strcasecmp(c->argv[j]->ptr, "optin")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "optin")) {
             options.tracking_optin = 1;
-        } else if (!strcasecmp(c->argv[j]->ptr, "optout")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "optout")) {
             options.tracking_optout = 1;
-        } else if (!strcasecmp(c->argv[j]->ptr, "noloop")) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "noloop")) {
             options.tracking_noloop = 1;
-        } else if (!strcasecmp(c->argv[j]->ptr, "prefix") && moreargs) {
+        } else if (!strcasecmp(objectGetVal(c->argv[j]), "prefix") && moreargs) {
             j++;
             prefix = zrealloc(prefix, sizeof(robj *) * (numprefix + 1));
             prefix[numprefix++] = c->argv[j];
@@ -3949,7 +3949,7 @@ void clientTrackingCommand(client *c) {
     }
 
     /* Options are ok: enable or disable the tracking for this client. */
-    if (!strcasecmp(c->argv[2]->ptr, "on")) {
+    if (!strcasecmp(objectGetVal(c->argv[2]), "on")) {
         /* Before enabling tracking, make sure options are compatible
          * among each other and with the current state of the client. */
         if (!(options.tracking_bcast) && numprefix) {
@@ -3999,7 +3999,7 @@ void clientTrackingCommand(client *c) {
         }
 
         enableTracking(c, redir, options, prefix, numprefix);
-    } else if (!strcasecmp(c->argv[2]->ptr, "off")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "off")) {
         disableTracking(c);
     } else {
         zfree(prefix);
@@ -4018,7 +4018,7 @@ void clientCachingCommand(client *c) {
         return;
     }
 
-    char *opt = c->argv[2]->ptr;
+    char *opt = objectGetVal(c->argv[2]);
     if (!strcasecmp(opt, "yes")) {
         if (c->flag.tracking_optin) {
             c->flag.tracking_caching = 1;
@@ -4116,10 +4116,10 @@ void clientTrackingInfoCommand(client *c) {
 
 void clientNoTouchCommand(client *c) {
     /* CLIENT NO-TOUCH ON|OFF */
-    if (!strcasecmp(c->argv[2]->ptr, "on")) {
+    if (!strcasecmp(objectGetVal(c->argv[2]), "on")) {
         c->flag.no_touch = 1;
         addReply(c, shared.ok);
-    } else if (!strcasecmp(c->argv[2]->ptr, "off")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "off")) {
         c->flag.no_touch = 0;
         addReply(c, shared.ok);
     } else {
@@ -4129,7 +4129,7 @@ void clientNoTouchCommand(client *c) {
 
 void clientCapaCommand(client *c) {
     for (int i = 2; i < c->argc; i++) {
-        if (!strcasecmp(c->argv[i]->ptr, "redirect")) {
+        if (!strcasecmp(objectGetVal(c->argv[i]), "redirect")) {
             c->capa |= CLIENT_CAPA_REDIRECT;
         }
     }
@@ -4138,14 +4138,14 @@ void clientCapaCommand(client *c) {
 
 void clientImportSourceCommand(client *c) {
     /* CLIENT IMPORT-SOURCE ON|OFF */
-    if (!server.import_mode && strcasecmp(c->argv[2]->ptr, "off")) {
+    if (!server.import_mode && strcasecmp(objectGetVal(c->argv[2]), "off")) {
         addReplyError(c, "Server is not in import mode");
         return;
     }
-    if (!strcasecmp(c->argv[2]->ptr, "on")) {
+    if (!strcasecmp(objectGetVal(c->argv[2]), "on")) {
         c->flag.import_source = 1;
         addReply(c, shared.ok);
-    } else if (!strcasecmp(c->argv[2]->ptr, "off")) {
+    } else if (!strcasecmp(objectGetVal(c->argv[2]), "off")) {
         c->flag.import_source = 0;
         addReply(c, shared.ok);
     } else {
@@ -4180,7 +4180,7 @@ void helloCommand(client *c) {
     robj *clientname = NULL;
     for (int j = next_arg; j < c->argc; j++) {
         int moreargs = (c->argc - 1) - j;
-        const char *opt = c->argv[j]->ptr;
+        const char *opt = objectGetVal(c->argv[j]);
         if (!strcasecmp(opt, "AUTH") && moreargs >= 2) {
             redactClientCommandArgument(c, j + 1);
             redactClientCommandArgument(c, j + 2);
@@ -5005,7 +5005,7 @@ void ioThreadReadQueryFromClient(void *data) {
         int numkeys = getKeysFromCommand(c->io_parsed_cmd, c->argv, c->argc, &result);
         if (numkeys) {
             robj *first_key = c->argv[result.keys[0].pos];
-            c->slot = keyHashSlot(first_key->ptr, sdslen(first_key->ptr));
+            c->slot = keyHashSlot(objectGetVal(first_key), sdslen(objectGetVal(first_key)));
         }
         getKeysFreeResult(&result);
     }

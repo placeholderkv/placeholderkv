@@ -276,7 +276,7 @@ void clusterSlotStatsCommand(client *c) {
     }
 
     /* Parse additional arguments. */
-    if (c->argc == 5 && !strcasecmp(c->argv[2]->ptr, "slotsrange")) {
+    if (c->argc == 5 && !strcasecmp(objectGetVal(c->argv[2]), "slotsrange")) {
         /* CLUSTER SLOT-STATS SLOTSRANGE start-slot end-slot */
         int startslot, endslot;
         if ((startslot = getSlotOrReply(c, c->argv[3])) == -1 ||
@@ -292,17 +292,17 @@ void clusterSlotStatsCommand(client *c) {
         int assigned_slots_count = markSlotsAssignedToMyShard(assigned_slots, startslot, endslot);
         addReplySlotsRange(c, assigned_slots, startslot, endslot, assigned_slots_count);
 
-    } else if (c->argc >= 4 && !strcasecmp(c->argv[2]->ptr, "orderby")) {
+    } else if (c->argc >= 4 && !strcasecmp(objectGetVal(c->argv[2]), "orderby")) {
         /* CLUSTER SLOT-STATS ORDERBY metric [LIMIT limit] [ASC | DESC] */
         int desc = 1;
         slotStatType order_by = INVALID;
-        if (!strcasecmp(c->argv[3]->ptr, "key-count")) {
+        if (!strcasecmp(objectGetVal(c->argv[3]), "key-count")) {
             order_by = KEY_COUNT;
-        } else if (!strcasecmp(c->argv[3]->ptr, "cpu-usec") && server.cluster_slot_stats_enabled) {
+        } else if (!strcasecmp(objectGetVal(c->argv[3]), "cpu-usec") && server.cluster_slot_stats_enabled) {
             order_by = CPU_USEC;
-        } else if (!strcasecmp(c->argv[3]->ptr, "network-bytes-in") && server.cluster_slot_stats_enabled) {
+        } else if (!strcasecmp(objectGetVal(c->argv[3]), "network-bytes-in") && server.cluster_slot_stats_enabled) {
             order_by = NETWORK_BYTES_IN;
-        } else if (!strcasecmp(c->argv[3]->ptr, "network-bytes-out") && server.cluster_slot_stats_enabled) {
+        } else if (!strcasecmp(objectGetVal(c->argv[3]), "network-bytes-out") && server.cluster_slot_stats_enabled) {
             order_by = NETWORK_BYTES_OUT;
         } else {
             addReplyError(c, "Unrecognized sort metric for ORDERBY.");
@@ -313,7 +313,7 @@ void clusterSlotStatsCommand(client *c) {
         long limit = CLUSTER_SLOTS;
         while (i < c->argc) {
             int moreargs = c->argc > i + 1;
-            if (!strcasecmp(c->argv[i]->ptr, "limit") && moreargs) {
+            if (!strcasecmp(objectGetVal(c->argv[i]), "limit") && moreargs) {
                 if (getRangeLongFromObjectOrReply(
                         c, c->argv[i + 1], 1, CLUSTER_SLOTS, &limit,
                         "Limit has to lie in between 1 and 16384 (maximum number of slots).") != C_OK) {
@@ -321,10 +321,10 @@ void clusterSlotStatsCommand(client *c) {
                 }
                 i++;
                 limit_counter++;
-            } else if (!strcasecmp(c->argv[i]->ptr, "asc")) {
+            } else if (!strcasecmp(objectGetVal(c->argv[i]), "asc")) {
                 desc = 0;
                 asc_desc_counter++;
-            } else if (!strcasecmp(c->argv[i]->ptr, "desc")) {
+            } else if (!strcasecmp(objectGetVal(c->argv[i]), "desc")) {
                 desc = 1;
                 asc_desc_counter++;
             } else {

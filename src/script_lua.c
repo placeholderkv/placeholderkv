@@ -848,7 +848,7 @@ static robj **luaArgsToServerArgv(lua_State *lua, int *argc, int *argv_len) {
         }
         /* Try to use a cached object. */
         if (j < LUA_CMD_OBJCACHE_SIZE && lua_args_cached_objects[j] && lua_args_cached_objects_len[j] >= obj_len) {
-            sds s = lua_args_cached_objects[j]->ptr;
+            sds s = objectGetVal(lua_args_cached_objects[j]);
             lua_argv[j] = lua_args_cached_objects[j];
             lua_args_cached_objects[j] = NULL;
             memcpy(s, obj_s, obj_len + 1);
@@ -884,8 +884,8 @@ void freeLuaServerArgv(robj **argv, int argc, int argv_len) {
          * (we must be the only owner) for us to cache it. */
         if (j < LUA_CMD_OBJCACHE_SIZE && o->refcount == 1 &&
             (o->encoding == OBJ_ENCODING_RAW || o->encoding == OBJ_ENCODING_EMBSTR) &&
-            sdslen(o->ptr) <= LUA_CMD_OBJCACHE_MAX_LEN) {
-            sds s = o->ptr;
+            sdslen(objectGetVal(o)) <= LUA_CMD_OBJCACHE_MAX_LEN) {
+            sds s = objectGetVal(o);
             if (lua_args_cached_objects[j]) decrRefCount(lua_args_cached_objects[j]);
             lua_args_cached_objects[j] = o;
             lua_args_cached_objects_len[j] = sdsalloc(s);
@@ -938,7 +938,7 @@ static int luaServerGenericCommand(lua_State *lua, int raise_error) {
                 break;
             } else {
                 cmdlog = sdscatlen(cmdlog, " ", 1);
-                cmdlog = sdscatsds(cmdlog, c->argv[j]->ptr);
+                cmdlog = sdscatsds(cmdlog, objectGetVal(c->argv[j]));
             }
         }
         ldbLog(cmdlog);
@@ -1555,7 +1555,7 @@ static void luaCreateArray(lua_State *lua, robj **elev, int elec) {
 
     lua_createtable(lua, elec, 0);
     for (j = 0; j < elec; j++) {
-        lua_pushlstring(lua, (char *)elev[j]->ptr, sdslen(elev[j]->ptr));
+        lua_pushlstring(lua, (char *)objectGetVal(elev[j]), sdslen(objectGetVal(elev[j])));
         lua_rawseti(lua, -2, j + 1);
     }
 }

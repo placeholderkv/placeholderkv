@@ -555,7 +555,7 @@ void latencySpecificCommandsFillCDF(client *c) {
     void *replylen = addReplyDeferredLen(c);
     int command_with_data = 0;
     for (int j = 2; j < c->argc; j++) {
-        struct serverCommand *cmd = lookupCommandBySds(c->argv[j]->ptr);
+        struct serverCommand *cmd = lookupCommandBySds(objectGetVal(c->argv[j]));
         /* If the command does not exist we skip the reply */
         if (cmd == NULL) {
             continue;
@@ -683,21 +683,21 @@ sds latencyCommandGenSparkeline(char *event, struct latencyTimeSeries *ts) {
 void latencyCommand(client *c) {
     struct latencyTimeSeries *ts;
 
-    if (!strcasecmp(c->argv[1]->ptr, "history") && c->argc == 3) {
+    if (!strcasecmp(objectGetVal(c->argv[1]), "history") && c->argc == 3) {
         /* LATENCY HISTORY <event> */
-        ts = dictFetchValue(server.latency_events, c->argv[2]->ptr);
+        ts = dictFetchValue(server.latency_events, objectGetVal(c->argv[2]));
         if (ts == NULL) {
             addReplyArrayLen(c, 0);
         } else {
             latencyCommandReplyWithSamples(c, ts);
         }
-    } else if (!strcasecmp(c->argv[1]->ptr, "graph") && c->argc == 3) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "graph") && c->argc == 3) {
         /* LATENCY GRAPH <event> */
         sds graph;
         dictEntry *de;
         char *event;
 
-        de = dictFind(server.latency_events, c->argv[2]->ptr);
+        de = dictFind(server.latency_events, objectGetVal(c->argv[2]));
         if (de == NULL) goto nodataerr;
         ts = dictGetVal(de);
         event = dictGetKey(de);
@@ -705,26 +705,26 @@ void latencyCommand(client *c) {
         graph = latencyCommandGenSparkeline(event, ts);
         addReplyVerbatim(c, graph, sdslen(graph), "txt");
         sdsfree(graph);
-    } else if (!strcasecmp(c->argv[1]->ptr, "latest") && c->argc == 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "latest") && c->argc == 2) {
         /* LATENCY LATEST */
         latencyCommandReplyWithLatestEvents(c);
-    } else if (!strcasecmp(c->argv[1]->ptr, "doctor") && c->argc == 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "doctor") && c->argc == 2) {
         /* LATENCY DOCTOR */
         sds report = createLatencyReport();
 
         addReplyVerbatim(c, report, sdslen(report), "txt");
         sdsfree(report);
-    } else if (!strcasecmp(c->argv[1]->ptr, "reset") && c->argc >= 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "reset") && c->argc >= 2) {
         /* LATENCY RESET */
         if (c->argc == 2) {
             addReplyLongLong(c, latencyResetEvent(NULL));
         } else {
             int j, resets = 0;
 
-            for (j = 2; j < c->argc; j++) resets += latencyResetEvent(c->argv[j]->ptr);
+            for (j = 2; j < c->argc; j++) resets += latencyResetEvent(objectGetVal(c->argv[j]));
             addReplyLongLong(c, resets);
         }
-    } else if (!strcasecmp(c->argv[1]->ptr, "histogram") && c->argc >= 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "histogram") && c->argc >= 2) {
         /* LATENCY HISTOGRAM*/
         if (c->argc == 2) {
             int command_with_data = 0;
@@ -734,7 +734,7 @@ void latencyCommand(client *c) {
         } else {
             latencySpecificCommandsFillCDF(c);
         }
-    } else if (!strcasecmp(c->argv[1]->ptr, "help") && c->argc == 2) {
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "help") && c->argc == 2) {
         const char *help[] = {
             "DOCTOR",
             "    Return a human readable latency analysis report.",
@@ -761,7 +761,7 @@ void latencyCommand(client *c) {
 nodataerr:
     /* Common error when the user asks for an event we have no latency
      * information about. */
-    addReplyErrorFormat(c, "No samples available for event '%s'", (char *)c->argv[2]->ptr);
+    addReplyErrorFormat(c, "No samples available for event '%s'", (char *)objectGetVal(c->argv[2]));
 }
 
 void durationAddSample(int type, monotime duration) {

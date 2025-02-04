@@ -115,20 +115,20 @@ void lazyfreeResetStats(void) {
  * representing the list. */
 size_t lazyfreeGetFreeEffort(robj *key, robj *obj, int dbid) {
     if (obj->type == OBJ_LIST && obj->encoding == OBJ_ENCODING_QUICKLIST) {
-        quicklist *ql = obj->ptr;
+        quicklist *ql = objectGetVal(obj);
         return ql->len;
     } else if (obj->type == OBJ_SET && obj->encoding == OBJ_ENCODING_HASHTABLE) {
-        hashtable *ht = obj->ptr;
+        hashtable *ht = objectGetVal(obj);
         return hashtableSize(ht);
     } else if (obj->type == OBJ_ZSET && obj->encoding == OBJ_ENCODING_SKIPLIST) {
-        zset *zs = obj->ptr;
+        zset *zs = objectGetVal(obj);
         return zs->zsl->length;
     } else if (obj->type == OBJ_HASH && obj->encoding == OBJ_ENCODING_HASHTABLE) {
-        hashtable *ht = obj->ptr;
+        hashtable *ht = objectGetVal(obj);
         return hashtableSize(ht);
     } else if (obj->type == OBJ_STREAM) {
         size_t effort = 0;
-        stream *s = obj->ptr;
+        stream *s = objectGetVal(obj);
 
         /* Make a best effort estimate to maintain constant runtime. Every macro
          * node in the Stream is one allocation. */

@@ -130,7 +130,7 @@ static void prefetchValue(KeyPrefetchInfo *info) {
     if (hashtableIncrementalFindGetResult(&info->hashtab_state, &entry)) {
         robj *val = entry;
         if (val->encoding == OBJ_ENCODING_RAW && val->type == OBJ_STRING) {
-            valkey_prefetch(val->ptr);
+            valkey_prefetch(objectGetVal(val));
         }
     }
 
@@ -187,14 +187,14 @@ static void prefetchCommands(void) {
         if (!c || c->argc <= 1) continue;
         for (int j = 1; j < c->argc; j++) {
             if (c->argv[j]->encoding == OBJ_ENCODING_RAW) {
-                valkey_prefetch(c->argv[j]->ptr);
+                valkey_prefetch(objectGetVal(c->argv[j]));
             }
         }
     }
 
     /* Get the keys ptrs - we do it here after the key obj was prefetched. */
     for (size_t i = 0; i < batch->key_count; i++) {
-        batch->keys[i] = ((robj *)batch->keys[i])->ptr;
+        batch->keys[i] = objectGetVal(batch->keys[i]);
     }
 
     /* Prefetch hashtable keys for all commands. Prefetching is beneficial only if there are more than one key. */

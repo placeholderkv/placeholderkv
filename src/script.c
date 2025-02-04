@@ -344,7 +344,7 @@ static int scriptVerifyACL(client *c, sds *err) {
     int acl_retval = ACLCheckAllPerm(c, &acl_errpos);
     if (acl_retval != ACL_OK) {
         addACLLogEntry(c, acl_retval, ACL_LOG_CTX_LUA, acl_errpos, NULL, NULL);
-        sds msg = getAclErrorMessage(acl_retval, c->user, c->cmd, c->argv[acl_errpos]->ptr, 0);
+        sds msg = getAclErrorMessage(acl_retval, c->user, c->cmd, objectGetVal(c->argv[acl_errpos]), 0);
         *err = sdscatsds(sdsnew("ACL failure in script: "), msg);
         sdsfree(msg);
         return C_ERR;
@@ -376,7 +376,7 @@ static int scriptVerifyWriteCommandAllow(scriptRunCtx *run_ctx, char **err) {
     int deny_write_type = writeCommandsDeniedByDiskError();
 
     if (server.primary_host && server.repl_replica_ro && !mustObeyClient(run_ctx->original_client)) {
-        *err = sdsdup(shared.roreplicaerr->ptr);
+        *err = sdsdup(objectGetVal(shared.roreplicaerr));
         return C_ERR;
     }
 
@@ -390,7 +390,7 @@ static int scriptVerifyWriteCommandAllow(scriptRunCtx *run_ctx, char **err) {
      * for Eval scripts that didn't declare flags, see the other check in
      * scriptPrepareForRun */
     if (!checkGoodReplicasStatus()) {
-        *err = sdsdup(shared.noreplicaserr->ptr);
+        *err = sdsdup(objectGetVal(shared.noreplicaserr));
         return C_ERR;
     }
 
@@ -413,7 +413,7 @@ static int scriptVerifyOOM(scriptRunCtx *run_ctx, char **err) {
         !(run_ctx->flags & SCRIPT_WRITE_DIRTY) &&    /* Script had no side effects so far. */
         server.pre_command_oom_state &&              /* Detected OOM when script start. */
         (run_ctx->c->cmd->flags & CMD_DENYOOM)) {
-        *err = sdsdup(shared.oomerr->ptr);
+        *err = sdsdup(objectGetVal(shared.oomerr));
         return C_ERR;
     }
 

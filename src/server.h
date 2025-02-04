@@ -2896,8 +2896,10 @@ void trimStringObjectIfNeeded(robj *o, int trim_small_values);
 
 /* Objects with key attached, AKA valkey (val+key) objects */
 robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long expire);
+void objectSetVal(robj *o, void *val);
 robj *objectSetKeyAndExpire(robj *val, sds key, long long expire);
 robj *objectSetExpire(robj *val, long long expire);
+void *objectGetVal(const robj *o);
 sds objectGetKey(const robj *val);
 long long objectGetExpire(const robj *val);
 
