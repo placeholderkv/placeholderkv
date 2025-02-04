@@ -2894,11 +2894,11 @@ void trimStringObjectIfNeeded(robj *o, int trim_small_values);
 #define sdsEncodedObject(objptr) (objptr->encoding == OBJ_ENCODING_RAW || objptr->encoding == OBJ_ENCODING_EMBSTR)
 
 /* Objects with key attached, AKA valkey (val+key) objects */
-robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long expire);
-robj *objectSetKeyAndExpire(robj *val, sds key, long long expire);
-robj *objectSetExpire(robj *val, long long expire);
-sds objectGetKey(const robj *val);
-long long objectGetExpire(const robj *val);
+robj *createObjectWithEmbeddedData(int type, void *val_ptr, const sds key, long long expire, size_t val_embedded_size, size_t *val_embed_capacity);
+robj *objectSetKeyAndExpire(robj *o, sds key, long long expire);
+robj *objectSetExpire(robj *o, long long expire);
+sds objectGetKey(const robj *o);
+long long objectGetExpire(const robj *o);
 
 /* Synchronous I/O with timeout */
 ssize_t syncWrite(int fd, char *ptr, ssize_t size, long long timeout);
@@ -3404,7 +3404,7 @@ robj *lookupKeyReadWithFlags(serverDb *db, robj *key, int flags);
 robj *lookupKeyWriteWithFlags(serverDb *db, robj *key, int flags);
 robj *objectCommandLookup(client *c, robj *key);
 robj *objectCommandLookupOrReply(client *c, robj *key, robj *reply);
-int objectSetLRUOrLFU(robj *val, long long lfu_freq, long long lru_idle, long long lru_clock, int lru_multiplier);
+int objectSetLRUOrLFU(robj *o, long long lfu_freq, long long lru_idle, long long lru_clock, int lru_multiplier);
 #define LOOKUP_NONE 0
 #define LOOKUP_NOTOUCH (1 << 0)  /* Don't update LRU. */
 #define LOOKUP_NONOTIFY (1 << 1) /* Don't trigger keyspace event on key misses. */
