@@ -30,14 +30,14 @@
  * RETURN        # returns the current value on the top of the stack and marks
  *               # the end of the function declaration.
  *
- * FUNCTION sleep # declaration of function 'sleep'
- * ARGS 0         # pushes the value in the first argument to the top of the
- *                # stack
- * SLEEP          # Pops the current value in the stack and sleeps for `value`
- *                # seconds
- * CONSTI 0       # pushes the value 0 to the top of the stack
- * RETURN         # returns the current value on the top of the stack and marks
- *                # the end of the function declaration.
+ * FUNCTION baz  # declaration of function 'baz'
+ * ARGS 0        # pushes the value in the first argument to the top of the
+ *               # stack
+ * SLEEP         # Pops the current value in the stack and sleeps for `value`
+ *               # seconds
+ * CONSTI 0      # pushes the value 0 to the top of the stack
+ * RETURN        # returns the current value on the top of the stack and marks
+ *               # the end of the function declaration.
  * ```
  */
 
