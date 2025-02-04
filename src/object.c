@@ -569,6 +569,7 @@ void dismissSds(sds s) {
     sdsfree(s);
 }
 
+#if defined(USE_JEMALLOC) && defined(__linux__)
 /* See dismissObject() */
 static void dismissStringObject(robj *o) {
     if (o->encoding == OBJ_ENCODING_RAW) {
@@ -697,6 +698,7 @@ static void dismissStreamObject(robj *o, size_t size_hint) {
         raxStop(&ri);
     }
 }
+#endif
 
 /* When creating a snapshot in a fork child process, the main process and child
  * process share the same physical memory pages, and if / when the parent
