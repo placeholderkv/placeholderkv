@@ -26,7 +26,7 @@ proc test_skip_rdb_checksum {primary primary_host primary_port primary_skipped_r
     }
 }
 
-start_server {tags {"repl tls cluster:skip"} overrides {save {}}} {
+start_server {tags {"repl tls cluster:skip external:skip"} overrides {save {}}} {
     set primary [srv 0 client]
     set primary_host [srv 0 host]
     set primary_port [srv 0 port]
