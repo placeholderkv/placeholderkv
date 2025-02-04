@@ -298,7 +298,9 @@ static ValkeyModuleScriptingEngineMemoryInfo engineGetMemoryInfo(ValkeyModuleCtx
     VALKEYMODULE_NOT_USED(module_ctx);
     VALKEYMODULE_NOT_USED(type);
     HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
-    ValkeyModuleScriptingEngineMemoryInfo mem_info = {0};
+    ValkeyModuleScriptingEngineMemoryInfo mem_info = {
+        .version = VALKEYMODULE_SCRIPTING_ENGINE_ABI_MEMORY_INFO_VERSION
+    };
 
     if (ctx->program != NULL) {
         mem_info.used_memory += ValkeyModule_MallocSize(ctx->program);
@@ -385,6 +387,7 @@ static ValkeyModuleScriptingEngineCompiledFunction **createHelloLangEngine(Valke
         ValkeyModuleScriptingEngineCompiledFunction *cfunc =
             ValkeyModule_Alloc(sizeof(ValkeyModuleScriptingEngineCompiledFunction));
         *cfunc = (ValkeyModuleScriptingEngineCompiledFunction) {
+            .version = VALKEYMODULE_SCRIPTING_ENGINE_ABI_COMPILED_FUNCTION_VERSION,
             .name = ValkeyModule_CreateString(NULL, func->name, strlen(func->name)),
             .function = func,
             .desc = NULL,

@@ -795,41 +795,40 @@ typedef void (*ValkeyModuleInfoFunc)(ValkeyModuleInfoCtx *ctx, int for_crash_rep
 typedef void (*ValkeyModuleDefragFunc)(ValkeyModuleDefragCtx *ctx);
 typedef void (*ValkeyModuleUserChangedFunc)(uint64_t client_id, void *privdata);
 
-/* Current ABI version for scripting engine modules. */
-#define VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION 1UL
-
 /* Type definitions for implementing scripting engines modules. */
 typedef void ValkeyModuleScriptingEngineCtx;
 typedef void ValkeyModuleScriptingEngineServerRuntimeCtx;
 
+/* Current ABI version for scripting engine compiled functions structure. */
+#define VALKEYMODULE_SCRIPTING_ENGINE_ABI_COMPILED_FUNCTION_VERSION 1UL
+
 /* This struct represents a scripting engine function that results from the
  * compilation of a script by the engine implementation.
- *
- * IMPORTANT: If we ever need to add/remove fields from this struct, we need
- * to bump the version number defined in the
- * `VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION` constant.
  */
 typedef struct ValkeyModuleScriptingEngineCompiledFunction {
+    uint64_t version;         /* Version of this structure for ABI compat. */
     ValkeyModuleString *name; /* Function name */
     void *function;           /* Opaque object representing a function, usually it's
                                  the function compiled code. */
     ValkeyModuleString *desc; /* Function description */
     uint64_t f_flags;         /* Function flags */
-} ValkeyModuleScriptingEngineCompiledFunction;
+} ValkeyModuleScriptingEngineCompiledFunctionV1;
+
+#define ValkeyModuleScriptingEngineCompiledFunction ValkeyModuleScriptingEngineCompiledFunctionV1
+
+/* Current ABI version for scripting engine memory info structure. */
+#define VALKEYMODULE_SCRIPTING_ENGINE_ABI_MEMORY_INFO_VERSION 1UL
 
 /* This struct is used to return the memory information of the scripting
  * engine.
- *
- * IMPORTANT: If we ever need to add/remove fields from this struct, we need
- * to bump the version number defined in the
- * `VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION` constant.
  */
 typedef struct ValkeyModuleScriptingEngineMemoryInfo {
-    /* The memory used by the scripting engine runtime. */
-    size_t used_memory;
-    /* The memory used by the scripting engine data structures. */
-    size_t engine_memory_overhead;
-} ValkeyModuleScriptingEngineMemoryInfo;
+    uint64_t version;              /* Version of this structure for ABI compat. */
+    size_t used_memory;            /* The memory used by the scripting engine runtime. */
+    size_t engine_memory_overhead; /* The memory used by the scripting engine data structures. */
+} ValkeyModuleScriptingEngineMemoryInfoV1;
+
+#define ValkeyModuleScriptingEngineMemoryInfo ValkeyModuleScriptingEngineMemoryInfoV1
 
 typedef enum ValkeyModuleScriptingEngineSubsystemType {
     VMSE_EVAL,
@@ -980,8 +979,10 @@ typedef ValkeyModuleScriptingEngineMemoryInfo (*ValkeyModuleScriptingEngineGetMe
     ValkeyModuleScriptingEngineCtx *engine_ctx,
     ValkeyModuleScriptingEngineSubsystemType type);
 
+/* Current ABI version for scripting engine modules. */
+#define VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION 1UL
 
-typedef struct ValkeyModuleScriptingEngineMethodsV1 {
+typedef struct ValkeyModuleScriptingEngineMethods {
     uint64_t version; /* Version of this structure for ABI compat. */
 
     /* Compile code function callback. When a new script is loaded, this
