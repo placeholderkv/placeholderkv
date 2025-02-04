@@ -539,7 +539,7 @@ void setrangeCommand(client *c) {
     }
 
     if (sdslen(value) > 0) {
-        o->ptr = sdsgrowzero(objectGetVal(o), offset + sdslen(value));
+        objectSetVal(o, sdsgrowzero(objectGetVal(o), offset + sdslen(value)));
         memcpy((char *)objectGetVal(o) + offset, value, sdslen(value));
         signalModifiedKey(c, c->db, c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_STRING,
@@ -669,7 +669,7 @@ void incrDecrCommand(client *c, long long incr) {
     if (o && o->refcount == 1 && o->encoding == OBJ_ENCODING_INT &&
         value >= LONG_MIN && value <= LONG_MAX) {
         new = o;
-        o->ptr = (void *)((long)value);
+        objectSetVal(o, (void *)((long)value));
     } else {
         new = createStringObjectFromLongLongForValue(value);
         if (o) {
@@ -767,7 +767,7 @@ void appendCommand(client *c) {
 
         /* Append the value */
         o = dbUnshareStringValue(c->db, c->argv[1], o);
-        o->ptr = sdscatlen(objectGetVal(o), objectGetVal(append), sdslen(objectGetVal(append)));
+        objectSetVal(o, sdscatlen(objectGetVal(o), objectGetVal(append), sdslen(objectGetVal(append))));
         totlen = sdslen(objectGetVal(o));
     }
     signalModifiedKey(c, c->db, c->argv[1]);

@@ -1941,7 +1941,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
                 /* Fetch integer value from element. */
                 if (isSdsRepresentableAsLongLong(sdsele, &llval) == C_OK) {
                     uint8_t success;
-                    o->ptr = intsetAdd(objectGetVal(o), llval, &success);
+                    objectSetVal(o, intsetAdd(objectGetVal(o), llval, &success));
                     if (!success) {
                         rdbReportCorruptRDB("Duplicate set members detected");
                         decrRefCount(o);
@@ -1974,7 +1974,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
                         sdsfree(sdsele);
                         return NULL;
                     }
-                    o->ptr = lpAppend(objectGetVal(o), (unsigned char *)sdsele, elelen);
+                    objectSetVal(o, lpAppend(objectGetVal(o), (unsigned char *)sdsele, elelen));
                 } else if (setTypeConvertAndExpand(o, OBJ_ENCODING_HASHTABLE, len, 0) != C_OK) {
                     rdbReportCorruptRDB("OOM in hashtableTryExpand %llu", (unsigned long long)len);
                     sdsfree(sdsele);
@@ -2133,8 +2133,8 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             }
 
             /* Add pair to listpack */
-            o->ptr = lpAppend(objectGetVal(o), (unsigned char *)field, sdslen(field));
-            o->ptr = lpAppend(objectGetVal(o), (unsigned char *)value, sdslen(value));
+            objectSetVal(o, lpAppend(objectGetVal(o), (unsigned char *)field, sdslen(field)));
+            objectSetVal(o, lpAppend(objectGetVal(o), (unsigned char *)value, sdslen(value)));
 
             sdsfree(field);
             sdsfree(value);
@@ -2277,7 +2277,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!zipmapValidateIntegrity(encoded, encoded_len, 1)) {
                 rdbReportCorruptRDB("Zipmap integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
@@ -2303,7 +2303,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
                         dictRelease(dupSearchDict);
                         sdsfree(field);
                         zfree(encoded);
-                        o->ptr = NULL;
+                        objectSetVal(o, NULL);
                         decrRefCount(o);
                         return NULL;
                     }
@@ -2314,7 +2314,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
 
                 dictRelease(dupSearchDict);
                 zfree(objectGetVal(o));
-                o->ptr = lp;
+                objectSetVal(o, lp);
                 o->type = OBJ_HASH;
                 o->encoding = OBJ_ENCODING_LISTPACK;
 
@@ -2329,7 +2329,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!ziplistValidateIntegrity(encoded, encoded_len, 1, _listZiplistEntryConvertAndValidate, ql)) {
                 rdbReportCorruptRDB("List ziplist integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 quicklistRelease(ql);
                 return NULL;
@@ -2337,7 +2337,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
 
             if (ql->len == 0) {
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 quicklistRelease(ql);
                 goto emptykey;
@@ -2345,7 +2345,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
 
             zfree(encoded);
             o->type = OBJ_LIST;
-            o->ptr = ql;
+            objectSetVal(o, ql);
             o->encoding = OBJ_ENCODING_QUICKLIST;
             break;
         }
@@ -2354,7 +2354,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!intsetValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
                 rdbReportCorruptRDB("Intset integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
@@ -2367,7 +2367,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!lpValidateIntegrityAndDups(encoded, encoded_len, deep_integrity_validation, 0)) {
                 rdbReportCorruptRDB("Set listpack integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
@@ -2376,7 +2376,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
 
             if (setTypeSize(o) == 0) {
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 goto emptykey;
             }
@@ -2388,14 +2388,14 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
                 rdbReportCorruptRDB("Zset ziplist integrity check failed.");
                 zfree(lp);
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
 
             zfree(objectGetVal(o));
             o->type = OBJ_ZSET;
-            o->ptr = lp;
+            objectSetVal(o, lp);
             o->encoding = OBJ_ENCODING_LISTPACK;
             if (zsetLength(o) == 0) {
                 decrRefCount(o);
@@ -2405,7 +2405,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (zsetLength(o) > server.zset_max_listpack_entries)
                 zsetConvert(o, OBJ_ENCODING_SKIPLIST);
             else
-                o->ptr = lpShrinkToFit(objectGetVal(o));
+                objectSetVal(o, lpShrinkToFit(objectGetVal(o)));
             break;
         }
         case RDB_TYPE_ZSET_LISTPACK:
@@ -2413,7 +2413,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!lpValidateIntegrityAndDups(encoded, encoded_len, deep_integrity_validation, 1)) {
                 rdbReportCorruptRDB("Zset listpack integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
@@ -2432,13 +2432,13 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
                 rdbReportCorruptRDB("Hash ziplist integrity check failed.");
                 zfree(lp);
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }
 
             zfree(objectGetVal(o));
-            o->ptr = lp;
+            objectSetVal(o, lp);
             o->type = OBJ_HASH;
             o->encoding = OBJ_ENCODING_LISTPACK;
             if (hashTypeLength(o) == 0) {
@@ -2449,7 +2449,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (hashTypeLength(o) > server.hash_max_listpack_entries)
                 hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
             else
-                o->ptr = lpShrinkToFit(objectGetVal(o));
+                objectSetVal(o, lpShrinkToFit(objectGetVal(o)));
             break;
         }
         case RDB_TYPE_HASH_LISTPACK:
@@ -2457,7 +2457,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int dbid, int *error) {
             if (!lpValidateIntegrityAndDups(encoded, encoded_len, deep_integrity_validation, 1)) {
                 rdbReportCorruptRDB("Hash listpack integrity check failed.");
                 zfree(encoded);
-                o->ptr = NULL;
+                objectSetVal(o, NULL);
                 decrRefCount(o);
                 return NULL;
             }

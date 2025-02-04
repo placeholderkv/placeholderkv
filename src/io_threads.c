@@ -507,7 +507,7 @@ int tryOffloadFreeObjToIOThreads(robj *obj) {
     /* We offload only the free of the ptr that may be allocated by the I/O thread.
      * The object itself was allocated by the main thread and will be freed by the main thread. */
     IOJobQueue_push(jq, sdsfreeVoid, objectGetVal(obj));
-    obj->ptr = NULL;
+    objectSetVal(obj, NULL);
     decrRefCount(obj);
 
     server.stat_io_freed_objects++;

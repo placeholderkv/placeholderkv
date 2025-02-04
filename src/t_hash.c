@@ -296,7 +296,7 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
             zl = lpAppend(zl, (unsigned char *)field, sdslen(field));
             zl = lpAppend(zl, (unsigned char *)value, sdslen(value));
         }
-        o->ptr = zl;
+        objectSetVal(o, zl);
 
         /* Check if the listpack needs to be converted to a hash table */
         if (hashTypeLength(o) > server.hash_max_listpack_entries) hashTypeConvert(o, OBJ_ENCODING_HASHTABLE);
@@ -348,7 +348,7 @@ int hashTypeDelete(robj *o, sds field) {
             if (fptr != NULL) {
                 /* Delete both field and value. */
                 zl = lpDeleteRangeWithEntry(zl, &fptr, 2);
-                o->ptr = zl;
+                objectSetVal(o, zl);
                 deleted = 1;
             }
         }
@@ -535,7 +535,7 @@ void hashTypeConvertListpack(robj *o, int enc) {
         hashTypeResetIterator(&hi);
         zfree(objectGetVal(o));
         o->encoding = OBJ_ENCODING_HASHTABLE;
-        o->ptr = ht;
+        objectSetVal(o, ht);
     } else {
         serverPanic("Unknown hash encoding");
     }

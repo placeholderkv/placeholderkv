@@ -3021,11 +3021,11 @@ ValkeyModuleString *moduleAssertUnsharedString(ValkeyModuleString *str) {
     if (str->encoding == OBJ_ENCODING_EMBSTR) {
         /* Note: here we "leak" the additional allocation that was
          * used in order to store the embedded string in the object. */
-        str->ptr = sdsnewlen(objectGetVal(str), sdslen(objectGetVal(str)));
+        objectSetVal(str, sdsnewlen(objectGetVal(str), sdslen(objectGetVal(str))));
         str->encoding = OBJ_ENCODING_RAW;
     } else if (str->encoding == OBJ_ENCODING_INT) {
         /* Convert the string from integer to raw encoding. */
-        str->ptr = sdsfromlonglong((long)objectGetVal(str));
+        objectSetVal(str, sdsfromlonglong((long)objectGetVal(str)));
         str->encoding = OBJ_ENCODING_RAW;
     }
     return str;
@@ -3038,7 +3038,7 @@ int VM_StringAppendBuffer(ValkeyModuleCtx *ctx, ValkeyModuleString *str, const c
     UNUSED(ctx);
     str = moduleAssertUnsharedString(str);
     if (str == NULL) return VALKEYMODULE_ERR;
-    str->ptr = sdscatlen(objectGetVal(str), buf, len);
+    objectSetVal(str, sdscatlen(objectGetVal(str), buf, len));
     return VALKEYMODULE_OK;
 }
 
@@ -4446,12 +4446,12 @@ int VM_StringTruncate(ValkeyModuleKey *key, size_t newlen) {
         key->value = dbUnshareStringValue(key->db, key->key, key->value);
         size_t curlen = sdslen(objectGetVal(key->value));
         if (newlen > curlen) {
-            key->value->ptr = sdsgrowzero(objectGetVal(key->value), newlen);
+            objectSetVal(key->value, sdsgrowzero(objectGetVal(key->value), newlen));
         } else if (newlen < curlen) {
             sdssubstr(objectGetVal(key->value), 0, newlen);
             /* If the string is too wasteful, reallocate it. */
             if (sdslen(objectGetVal(key->value)) < sdsavail(objectGetVal(key->value)))
-                key->value->ptr = sdsRemoveFreeSpace(objectGetVal(key->value), 0);
+                objectSetVal(key->value, sdsRemoveFreeSpace(objectGetVal(key->value), 0));
         }
     }
     return VALKEYMODULE_OK;
@@ -5328,7 +5328,7 @@ int VM_HashSet(ValkeyModuleKey *key, int flags, ...) {
         /* If CFIELDS is active, SDS string ownership is now of hashTypeSet(),
          * however we still have to release the 'field' object shell. */
         if (flags & VALKEYMODULE_HASH_CFIELDS) {
-            field->ptr = NULL; /* Prevent the SDS string from being freed. */
+            objectSetVal(field, NULL); /* Prevent the SDS string from being freed. */
             decrRefCount(field);
         }
     }
@@ -13650,7 +13650,8 @@ int moduleDefragValue(robj *key, robj *value, int dbid) {
      */
     moduleValue *newmv = activeDefragAlloc(mv);
     if (newmv) {
-        value->ptr = mv = newmv;
+        mv = newmv;
+        objectSetVal(value, mv);
     }
 
     if (!mt->defrag) return 1;

@@ -1312,7 +1312,7 @@ void zsetConvertAndExpand(robj *zobj, int encoding, unsigned long cap) {
         }
 
         zfree(objectGetVal(zobj));
-        zobj->ptr = zs;
+        objectSetVal(zobj, zs);
         zobj->encoding = OBJ_ENCODING_SKIPLIST;
     } else if (zobj->encoding == OBJ_ENCODING_SKIPLIST) {
         unsigned char *zl = lpNew(0);
@@ -1335,7 +1335,7 @@ void zsetConvertAndExpand(robj *zobj, int encoding, unsigned long cap) {
         }
 
         zfree(zs);
-        zobj->ptr = zl;
+        objectSetVal(zobj, zl);
         zobj->encoding = OBJ_ENCODING_LISTPACK;
     } else {
         serverPanic("Unknown sorted set encoding");
@@ -1467,8 +1467,8 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
 
             /* Remove and re-insert when score changed. */
             if (score != curscore) {
-                zobj->ptr = zzlDelete(objectGetVal(zobj), eptr);
-                zobj->ptr = zzlInsert(objectGetVal(zobj), ele, score);
+                objectSetVal(zobj, zzlDelete(objectGetVal(zobj), eptr));
+                objectSetVal(zobj, zzlInsert(objectGetVal(zobj), ele, score));
                 *out_flags |= ZADD_OUT_UPDATED;
             }
             return 1;
@@ -1479,7 +1479,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
                 sdslen(ele) > server.zset_max_listpack_value || !lpSafeToAdd(objectGetVal(zobj), sdslen(ele))) {
                 zsetConvertAndExpand(zobj, OBJ_ENCODING_SKIPLIST, zsetLength(zobj) + 1);
             } else {
-                zobj->ptr = zzlInsert(objectGetVal(zobj), ele, score);
+                objectSetVal(zobj, zzlInsert(objectGetVal(zobj), ele, score));
                 if (newscore) *newscore = score;
                 *out_flags |= ZADD_OUT_ADDED;
                 return 1;
@@ -1572,7 +1572,7 @@ int zsetDel(robj *zobj, sds ele) {
         unsigned char *eptr;
 
         if ((eptr = zzlFind(objectGetVal(zobj), ele, NULL)) != NULL) {
-            zobj->ptr = zzlDelete(objectGetVal(zobj), eptr);
+            objectSetVal(zobj, zzlDelete(objectGetVal(zobj), eptr));
             return 1;
         }
     } else if (zobj->encoding == OBJ_ENCODING_SKIPLIST) {
@@ -1971,9 +1971,9 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
     if (zobj->encoding == OBJ_ENCODING_LISTPACK) {
         switch (rangetype) {
         case ZRANGE_AUTO:
-        case ZRANGE_RANK: zobj->ptr = zzlDeleteRangeByRank(objectGetVal(zobj), start + 1, end + 1, &deleted); break;
-        case ZRANGE_SCORE: zobj->ptr = zzlDeleteRangeByScore(objectGetVal(zobj), &range, &deleted); break;
-        case ZRANGE_LEX: zobj->ptr = zzlDeleteRangeByLex(objectGetVal(zobj), &lexrange, &deleted); break;
+        case ZRANGE_RANK: objectSetVal(zobj, zzlDeleteRangeByRank(objectGetVal(zobj), start + 1, end + 1, &deleted)); break;
+        case ZRANGE_SCORE: objectSetVal(zobj, zzlDeleteRangeByScore(objectGetVal(zobj), &range, &deleted)); break;
+        case ZRANGE_LEX: objectSetVal(zobj, zzlDeleteRangeByLex(objectGetVal(zobj), &lexrange, &deleted)); break;
         }
         if (zzlLength(objectGetVal(zobj)) == 0) {
             dbDelete(c->db, key);

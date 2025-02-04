@@ -206,7 +206,7 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
     } else {
         memset(sh->buf, 0, val_len + 1);
     }
-    o->ptr = sh->buf;
+    objectSetVal(o, sh->buf);
 
     return o;
 }
@@ -290,6 +290,10 @@ robj *objectSetExpire(robj *val, long long expire) {
     }
 }
 
+void objectSetVal(robj *o, void *val) {
+    o->ptr = val;
+}
+
 /* This functions may reallocate the value. The new allocation is returned and
  * the old object's reference counter is decremented and possibly freed. Use the
  * returned object instead of 'val' after calling this function. */
@@ -306,7 +310,7 @@ robj *objectSetKeyAndExpire(robj *val, sds key, long long expire) {
     if (val->refcount == 1) {
         /* Reuse the ptr. There are no other references to val. */
         ptr = objectGetVal(val);
-        val->ptr = NULL;
+        objectSetVal(val, NULL);
     } else if (val->type == OBJ_STRING && val->encoding == OBJ_ENCODING_INT) {
         /* The pointer is not allocated memory. We can just copy the pointer. */
         ptr = objectGetVal(val);
@@ -413,7 +417,7 @@ robj *dupStringObject(const robj *o) {
     case OBJ_ENCODING_INT:
         d = createObject(OBJ_STRING, NULL);
         d->encoding = OBJ_ENCODING_INT;
-        d->ptr = o->ptr;
+        objectSetVal(d, objectGetVal(o));
         return d;
     default: serverPanic("Wrong encoding."); break;
     }
@@ -793,7 +797,7 @@ void trimStringObjectIfNeeded(robj *o, int trim_small_values) {
     if (len >= PROTO_MBULK_BIG_ARG || trim_small_values ||
         (server.executing_client && server.executing_client->flag.script && len < LUA_CMD_OBJCACHE_MAX_LEN)) {
         if (sdsavail(objectGetVal(o)) > len / 10) {
-            o->ptr = sdsRemoveFreeSpace(objectGetVal(o), 0);
+            objectSetVal(o, sdsRemoveFreeSpace(objectGetVal(o), 0));
         }
     }
 }
@@ -829,7 +833,7 @@ robj *tryObjectEncodingEx(robj *o, int try_trim) {
         if (o->encoding == OBJ_ENCODING_RAW) {
             sdsfree(objectGetVal(o));
             o->encoding = OBJ_ENCODING_INT;
-            o->ptr = (void *)value;
+            objectSetVal(o, (void *)value);
             return o;
         } else if (o->encoding == OBJ_ENCODING_EMBSTR) {
             decrRefCount(o);

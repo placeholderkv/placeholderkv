@@ -354,10 +354,10 @@ static void dbSetValue(serverDb *db, robj *key, robj **valref, int overwrite, vo
         void *tmp_ptr = objectGetVal(old);
         old->type = val->type;
         old->encoding = val->encoding;
-        old->ptr = objectGetVal(val);
+        objectSetVal(old, objectGetVal(val));
         val->type = tmp_type;
         val->encoding = tmp_encoding;
-        val->ptr = tmp_ptr;
+        objectSetVal(val, tmp_ptr);
         /* Set new to old to keep the old object. Set old to val to be freed below. */
         new = old;
         old = val;

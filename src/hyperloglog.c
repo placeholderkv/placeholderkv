@@ -643,7 +643,7 @@ int hllSparseToDense(robj *o) {
 
     /* Free the old representation and set the new one. */
     sdsfree(objectGetVal(o));
-    o->ptr = dense;
+    objectSetVal(o, dense);
     return C_OK;
 }
 
@@ -687,7 +687,7 @@ int hllSparseSet(robj *o, long index, uint8_t count) {
             min(newlen,
                 300); /* Greediness: double 'newlen' if it is smaller than 300, or add 300 to it when it exceeds 300 */
         if (newlen > server.hll_sparse_max_bytes) newlen = server.hll_sparse_max_bytes;
-        o->ptr = sdsResize(objectGetVal(o), newlen, 1);
+        objectSetVal(o, sdsResize(objectGetVal(o), newlen, 1));
     }
 
     /* Step 1: we need to locate the opcode we need to modify to check
