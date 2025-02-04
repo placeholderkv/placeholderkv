@@ -44,7 +44,6 @@
 #include "monotonic.h"
 #include "resp_parser.h"
 #include "script.h"
-#include "lua/debug_lua.h"
 #include "scripting_engine.h"
 #include "sds.h"
 
@@ -556,8 +555,9 @@ void evalShaRoCommand(client *c) {
 void scriptCommand(client *c) {
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "help")) {
         const char *help[] = {
-            "DEBUG (YES|SYNC|NO)",
-            "    Set the debug mode for subsequent scripts executed.",
+            "DEBUG (YES|SYNC|NO) [<engine_name>]",
+            "    Set the debug mode for subsequent scripts executed of the specified engine.",
+            "    Default engine name: 'lua'",
             "EXISTS <sha1> [<sha1> ...]",
             "    Return information about the existence of the scripts in the script cache.",
             "FLUSH [ASYNC|SYNC]",
@@ -609,19 +609,42 @@ void scriptCommand(client *c) {
         zfree(sha);
     } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "kill")) {
         scriptKill(c, 1);
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr, "debug")) {
+    } else if ((c->argc == 3 || c->argc == 4) && !strcasecmp(c->argv[1]->ptr, "debug")) {
         if (clientHasPendingReplies(c)) {
             addReplyError(c, "SCRIPT DEBUG must be called outside a pipeline");
             return;
         }
+        scriptingEngine *en = NULL;
+        if (c->argc == 4) {
+            sds engine_name = c->argv[3]->ptr;
+            en = scriptingEngineManagerFind(engine_name);
+            if (en == NULL) {
+                addReplyErrorFormat(c, "No scripting engine found with name '%s' to enable debug", (const char *)engine_name);
+                return;
+            }
+        } else {
+            en = scriptingEngineManagerFind("lua");
+            if (en == NULL) {
+                addReplyError(c, "No scripting engine found with name 'lua' to enable debug");
+                return;
+            }
+        }
+        serverAssert(en != NULL);
+        sds err;
         if (!strcasecmp(c->argv[2]->ptr, "no")) {
-            ldbDisable(c);
+            scriptingEngineDebuggerDisable(c);
             addReply(c, shared.ok);
         } else if (!strcasecmp(c->argv[2]->ptr, "yes")) {
-            ldbEnable(c);
+            if (scriptingEngineDebuggerEnable(c, en, &err) != C_OK) {
+                addReplyErrorSds(c, err);
+                return;
+            }
             addReply(c, shared.ok);
         } else if (!strcasecmp(c->argv[2]->ptr, "sync")) {
-            ldbEnable(c);
+            if (scriptingEngineDebuggerEnable(c, en, &err) != C_OK) {
+                addReplyErrorSds(c, err);
+                return;
+            }
             addReply(c, shared.ok);
             c->flag.lua_debug_sync = 1;
         } else {
@@ -669,11 +692,11 @@ unsigned long evalScriptsMemory(void) {
 /* Wrapper for EVAL / EVALSHA that enables debugging, and makes sure
  * that when EVAL returns, whatever happened, the session is ended. */
 void evalGenericCommandWithDebugging(client *c, int evalsha) {
-    if (ldbStartSession(c)) {
+    if (scriptingEngineDebuggerStartSession(c)) {
         evalGenericCommand(c, evalsha);
-        ldbEndSession(c);
+        scriptingEngineDebuggerEndSession(c);
     } else {
-        ldbDisable(c);
+        scriptingEngineDebuggerDisable(c);
     }
 }
 

@@ -372,6 +372,48 @@ static void luaEngineFreeFunction(ValkeyModuleCtx *module_ctx,
     zfree(compiled_function);
 }
 
+static debuggerEnableRet luaEngineDebuggerEnable(ValkeyModuleCtx *module_ctx,
+                                                 engineCtx *engine_ctx,
+                                                 subsystemType type) {
+    UNUSED(module_ctx);
+    UNUSED(engine_ctx);
+
+    if (type != VMSE_EVAL) {
+        return VMSE_DEBUG_NOT_SUPPORTED;
+    }
+
+    ldbEnable();
+    return VMSE_DEBUG_ENABLED;
+}
+
+static void luaEngineDebuggerDisable(ValkeyModuleCtx *module_ctx,
+                                     engineCtx *engine_ctx,
+                                     subsystemType type) {
+    UNUSED(module_ctx);
+    UNUSED(engine_ctx);
+    UNUSED(type);
+    ldbDisable();
+}
+
+static void luaEngineDebuggerStart(ValkeyModuleCtx *module_ctx,
+                                   engineCtx *engine_ctx,
+                                   subsystemType type,
+                                   robj *source) {
+    UNUSED(module_ctx);
+    UNUSED(engine_ctx);
+    UNUSED(type);
+    ldbStart(source);
+}
+
+static void luaEngineDebuggerEnd(ValkeyModuleCtx *module_ctx,
+                                 engineCtx *engine_ctx,
+                                 subsystemType type) {
+    UNUSED(module_ctx);
+    UNUSED(engine_ctx);
+    UNUSED(type);
+    ldbEnd();
+}
+
 int luaEngineInitEngine(void) {
     ldbInit();
 
@@ -382,6 +424,10 @@ int luaEngineInitEngine(void) {
         .get_function_memory_overhead = luaEngineFunctionMemoryOverhead,
         .reset_eval_env = luaEngineResetEvalEnv,
         .get_memory_info = luaEngineGetMemoryInfo,
+        .debugger_enable = luaEngineDebuggerEnable,
+        .debugger_disable = luaEngineDebuggerDisable,
+        .debugger_start = luaEngineDebuggerStart,
+        .debugger_end = luaEngineDebuggerEnd,
     };
 
     return scriptingEngineManagerRegister(LUA_ENGINE_NAME,

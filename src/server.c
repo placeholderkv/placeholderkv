@@ -45,7 +45,6 @@
 #include "module.h"
 #include "scripting_engine.h"
 #include "lua/engine_lua.h"
-#include "lua/debug_lua.h"
 #include "eval.h"
 
 #include <time.h>
@@ -1407,7 +1406,7 @@ void checkChildrenDone(void) {
             if (!bysignal && exitcode == 0) receiveChildInfo();
             resetChildState();
         } else {
-            if (!ldbRemoveChild(pid)) {
+            if (!scriptingEngineDebuggerRemoveChild(pid)) {
                 serverLog(LL_WARNING, "Warning, detected child with unmatched pid: %ld", (long)pid);
             }
         }
@@ -1583,7 +1582,7 @@ long long serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDa
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
-    if (hasActiveChildProcess() || ldbPendingChildren()) {
+    if (hasActiveChildProcess() || scriptingEngineDebuggerPendingChildren()) {
         run_with_period(1000) receiveChildInfo();
         checkChildrenDone();
     } else {
@@ -4536,7 +4535,7 @@ int finishShutdown(void) {
     }
 
     /* Kill all the Lua debugger forked sessions. */
-    ldbKillForkedSessions();
+    scriptingEngineDebuggerKillForkedSessions();
 
     /* Kill the saving child if there is a background saving in progress.
        We want to avoid race conditions, for instance our saving child may

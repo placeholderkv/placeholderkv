@@ -10,6 +10,7 @@
 #include "../connection.h"
 #include "../adlist.h"
 #include "../server.h"
+#include "../scripting_engine.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -21,15 +22,9 @@
  * ------------------------------------------------------------------------- */
 
 /* Debugger shared state is stored inside this global structure. */
-#define LDB_BREAKPOINTS_MAX 64  /* Max number of breakpoints. */
-#define LDB_MAX_LEN_DEFAULT 256 /* Default len limit for replies / var dumps. */
+#define LDB_BREAKPOINTS_MAX 64 /* Max number of breakpoints. */
 struct ldbState {
-    connection *conn;            /* Connection of the debugging client. */
     int active;                  /* Are we debugging EVAL right now? */
-    int forked;                  /* Is this a fork()ed debugging session? */
-    list *logs;                  /* List of messages to send to the client. */
-    list *traces;                /* Messages about commands executed since last stop.*/
-    list *children;              /* All forked debugging sessions pids. */
     int bp[LDB_BREAKPOINTS_MAX]; /* An array of breakpoints line numbers. */
     int bpcount;                 /* Number of valid entries inside bp. */
     int step;                    /* Stop at next line regardless of breakpoints. */
@@ -37,28 +32,17 @@ struct ldbState {
     sds *src;                    /* Lua script source code split by line. */
     int lines;                   /* Number of lines in 'src'. */
     int currentline;             /* Current line number. */
-    sds cbuf;                    /* Debugger client command buffer. */
-    size_t maxlen;               /* Max var dump / reply length. */
-    int maxlen_hint_sent;        /* Did we already hint about "set maxlen"? */
 } ldb;
 
 /* Initialize Lua debugger data structures. */
 void ldbInit(void) {
-    ldb.conn = NULL;
     ldb.active = 0;
-    ldb.logs = listCreate();
-    listSetFreeMethod(ldb.logs, (void (*)(void *))sdsfree);
-    ldb.children = listCreate();
+    ldb.bpcount = 0;
+    ldb.step = 0;
+    ldb.luabp = 0;
     ldb.src = NULL;
     ldb.lines = 0;
-    ldb.cbuf = sdsempty();
-}
-
-/* Remove all the pending messages in the specified list. */
-void ldbFlushLog(list *log) {
-    listNode *ln;
-
-    while ((ln = listFirst(log)) != NULL) listDelNode(log, ln);
+    ldb.currentline = -1;
 }
 
 int ldbIsEnabled(void) {
@@ -66,122 +50,27 @@ int ldbIsEnabled(void) {
 }
 
 /* Enable debug mode of Lua scripts for this client. */
-void ldbEnable(client *c) {
-    c->flag.lua_debug = 1;
-    ldbFlushLog(ldb.logs);
-    ldb.conn = c->conn;
+void ldbEnable(void) {
+    ldb.active = 1;
     ldb.step = 1;
     ldb.bpcount = 0;
     ldb.luabp = 0;
-    sdsfree(ldb.cbuf);
-    ldb.cbuf = sdsempty();
-    ldb.maxlen = LDB_MAX_LEN_DEFAULT;
-    ldb.maxlen_hint_sent = 0;
 }
 
 /* Exit debugging mode from the POV of client. This function is not enough
  * to properly shut down a client debugging session, see ldbEndSession()
  * for more information. */
-void ldbDisable(client *c) {
-    c->flag.lua_debug = 0;
-    c->flag.lua_debug_sync = 0;
+void ldbDisable(void) {
+    ldb.step = 0;
+    ldb.active = 0;
 }
 
-/* Append a log entry to the specified LDB log. */
-void ldbLog(sds entry) {
-    listAddNodeTail(ldb.logs, entry);
-}
-
-/* A version of ldbLog() which prevents producing logs greater than
- * ldb.maxlen. The first time the limit is reached a hint is generated
- * to inform the user that reply trimming can be disabled using the
- * debugger "maxlen" command. */
-void ldbLogWithMaxLen(sds entry) {
-    int trimmed = 0;
-    if (ldb.maxlen && sdslen(entry) > ldb.maxlen) {
-        sdsrange(entry, 0, ldb.maxlen - 1);
-        entry = sdscatlen(entry, " ...", 4);
-        trimmed = 1;
-    }
-    ldbLog(entry);
-    if (trimmed && ldb.maxlen_hint_sent == 0) {
-        ldb.maxlen_hint_sent = 1;
-        ldbLog(sdsnew("<hint> The above reply was trimmed. Use 'maxlen 0' to disable trimming."));
-    }
-}
-
-/* Send ldb.logs to the debugging client as a multi-bulk reply
- * consisting of simple strings. Log entries which include newlines have them
- * replaced with spaces. The entries sent are also consumed. */
-void ldbSendLogs(void) {
-    sds proto = sdsempty();
-    proto = sdscatfmt(proto, "*%i\r\n", (int)listLength(ldb.logs));
-    while (listLength(ldb.logs)) {
-        listNode *ln = listFirst(ldb.logs);
-        proto = sdscatlen(proto, "+", 1);
-        sdsmapchars(ln->value, "\r\n", "  ", 2);
-        proto = sdscatsds(proto, ln->value);
-        proto = sdscatlen(proto, "\r\n", 2);
-        listDelNode(ldb.logs, ln);
-    }
-    if (connWrite(ldb.conn, proto, sdslen(proto)) == -1) {
-        /* Avoid warning. We don't check the return value of write()
-         * since the next read() will catch the I/O error and will
-         * close the debugging session. */
-    }
-    sdsfree(proto);
-}
-
-/* Start a debugging session before calling EVAL implementation.
- * The technique we use is to capture the client socket file descriptor,
- * in order to perform direct I/O with it from within Lua hooks. This
- * way we don't have to re-enter the server in order to handle I/O.
- *
- * The function returns 1 if the caller should proceed to call EVAL,
- * and 0 if instead the caller should abort the operation (this happens
- * for the parent in a forked session, since it's up to the children
- * to continue, or when fork returned an error).
- *
- * The caller should call ldbEndSession() only if ldbStartSession()
- * returned 1. */
-int ldbStartSession(client *c) {
-    ldb.forked = !c->flag.lua_debug_sync;
-    if (ldb.forked) {
-        pid_t cp = serverFork(CHILD_TYPE_LDB);
-        if (cp == -1) {
-            addReplyErrorFormat(c, "Fork() failed: can't run EVAL in debugging mode: %s", strerror(errno));
-            return 0;
-        } else if (cp == 0) {
-            /* Child. Let's ignore important signals handled by the parent. */
-            struct sigaction act;
-            sigemptyset(&act.sa_mask);
-            act.sa_flags = 0;
-            act.sa_handler = SIG_IGN;
-            sigaction(SIGTERM, &act, NULL);
-            sigaction(SIGINT, &act, NULL);
-
-            /* Log the creation of the child and close the listening
-             * socket to make sure if the parent crashes a reset is sent
-             * to the clients. */
-            serverLog(LL_NOTICE, "%s forked for debugging eval", SERVER_TITLE);
-        } else {
-            /* Parent */
-            listAddNodeTail(ldb.children, (void *)(unsigned long)cp);
-            freeClientAsync(c); /* Close the client in the parent side. */
-            return 0;
-        }
-    } else {
-        serverLog(LL_NOTICE, "%s synchronous debugging eval session started", SERVER_TITLE);
-    }
-
-    /* Setup our debugging session. */
-    connBlock(ldb.conn);
-    connSendTimeout(ldb.conn, 5000);
+void ldbStart(robj *source) {
     ldb.active = 1;
 
     /* First argument of EVAL is the script itself. We split it into different
      * lines since this is the way the debugger accesses the source code. */
-    sds srcstring = sdsdup(c->argv[1]->ptr);
+    sds srcstring = sdsdup(source->ptr);
     size_t srclen = sdslen(srcstring);
     while (srclen && (srcstring[srclen - 1] == '\n' || srcstring[srclen - 1] == '\r')) {
         srcstring[--srclen] = '\0';
@@ -189,81 +78,32 @@ int ldbStartSession(client *c) {
     sdssetlen(srcstring, srclen);
     ldb.src = sdssplitlen(srcstring, sdslen(srcstring), "\n", 1, &ldb.lines);
     sdsfree(srcstring);
-    return 1;
 }
 
-/* End a debugging session after the EVAL call with debugging enabled
- * returned. */
-void ldbEndSession(client *c) {
-    /* Emit the remaining logs and an <endsession> mark. */
-    ldbLog(sdsnew("<endsession>"));
-    ldbSendLogs();
-
-    /* If it's a fork()ed session, we just exit. */
-    if (ldb.forked) {
-        writeToClient(c);
-        serverLog(LL_NOTICE, "Lua debugging session child exiting");
-        exitFromChild(0);
-    } else {
-        serverLog(LL_NOTICE, "%s synchronous debugging eval session ended", SERVER_TITLE);
-    }
-
-    /* Otherwise let's restore client's state. */
-    connNonBlock(ldb.conn);
-    connSendTimeout(ldb.conn, 0);
-
-    /* Close the client connection after sending the final EVAL reply
-     * in order to signal the end of the debugging session. */
-    c->flag.close_after_reply = 1;
-
-    /* Cleanup. */
+void ldbEnd(void) {
     sdsfreesplitres(ldb.src, ldb.lines);
     ldb.lines = 0;
     ldb.active = 0;
 }
 
-/* If the specified pid is among the list of children spawned for
- * forked debugging sessions, it is removed from the children list.
- * If the pid was found non-zero is returned. */
-int ldbRemoveChild(int pid) {
-    listNode *ln = listSearchKey(ldb.children, (void *)(unsigned long)pid);
-    if (ln) {
-        listDelNode(ldb.children, ln);
-        return 1;
-    }
-    return 0;
+void ldbLog(sds entry) {
+    scriptingEngineDebuggerLog(entry);
 }
 
-/* Return the number of children we still did not receive termination
- * acknowledge via wait() in the parent process. */
-int ldbPendingChildren(void) {
-    return listLength(ldb.children);
+void ldbSendLogs(void) {
+    scriptingEngineDebuggerFlushLogs();
 }
 
-/* Kill all the forked sessions. */
-void ldbKillForkedSessions(void) {
-    listIter li;
-    listNode *ln;
-
-    listRewind(ldb.children, &li);
-    while ((ln = listNext(&li))) {
-        pid_t pid = (unsigned long)ln->value;
-        serverLog(LL_NOTICE, "Killing debugging session %ld", (long)pid);
-        kill(pid, SIGKILL);
-    }
-    listRelease(ldb.children);
-    ldb.children = listCreate();
-}
 /* Return a pointer to ldb.src source code line, considering line to be
  * one-based, and returning a special string for out of range lines. */
-char *ldbGetSourceLine(int line) {
+static char *ldbGetSourceLine(int line) {
     int idx = line - 1;
     if (idx < 0 || idx >= ldb.lines) return "<out of range source code line>";
     return ldb.src[idx];
 }
 
 /* Return true if there is a breakpoint in the specified line. */
-int ldbIsBreakpoint(int line) {
+static int ldbIsBreakpoint(int line) {
     int j;
 
     for (j = 0; j < ldb.bpcount; j++)
@@ -274,7 +114,7 @@ int ldbIsBreakpoint(int line) {
 /* Add the specified breakpoint. Ignore it if we already reached the max.
  * Returns 1 if the breakpoint was added (or was already set). 0 if there is
  * no space for the breakpoint or if the line is invalid. */
-int ldbAddBreakpoint(int line) {
+static int ldbAddBreakpoint(int line) {
     if (line <= 0 || line > ldb.lines) return 0;
     if (!ldbIsBreakpoint(line) && ldb.bpcount != LDB_BREAKPOINTS_MAX) {
         ldb.bp[ldb.bpcount++] = line;
@@ -285,7 +125,7 @@ int ldbAddBreakpoint(int line) {
 
 /* Remove the specified breakpoint, returning 1 if the operation was
  * performed or 0 if there was no such breakpoint. */
-int ldbDelBreakpoint(int line) {
+static int ldbDelBreakpoint(int line) {
     int j;
 
     for (j = 0; j < ldb.bpcount; j++) {
@@ -296,67 +136,6 @@ int ldbDelBreakpoint(int line) {
         }
     }
     return 0;
-}
-
-/* Expect a valid multi-bulk command in the debugging client query buffer.
- * On success the command is parsed and returned as an array of SDS strings,
- * otherwise NULL is returned and there is to read more buffer. */
-sds *ldbReplParseCommand(int *argcp, char **err) {
-    static char *protocol_error = "protocol error";
-    sds *argv = NULL;
-    int argc = 0;
-    if (sdslen(ldb.cbuf) == 0) return NULL;
-
-    /* Working on a copy is simpler in this case. We can modify it freely
-     * for the sake of simpler parsing. */
-    sds copy = sdsdup(ldb.cbuf);
-    char *p = copy;
-
-    /* This RESP parser is a joke... just the simplest thing that
-     * works in this context. It is also very forgiving regarding broken
-     * protocol. */
-
-    /* Seek and parse *<count>\r\n. */
-    p = strchr(p, '*');
-    if (!p) goto protoerr;
-    char *plen = p + 1; /* Multi bulk len pointer. */
-    p = strstr(p, "\r\n");
-    if (!p) goto keep_reading;
-    *p = '\0';
-    p += 2;
-    *argcp = atoi(plen);
-    if (*argcp <= 0 || *argcp > 1024) goto protoerr;
-
-    /* Parse each argument. */
-    argv = zmalloc(sizeof(sds) * (*argcp));
-    argc = 0;
-    while (argc < *argcp) {
-        /* reached the end but there should be more data to read */
-        if (*p == '\0') goto keep_reading;
-
-        if (*p != '$') goto protoerr;
-        plen = p + 1; /* Bulk string len pointer. */
-        p = strstr(p, "\r\n");
-        if (!p) goto keep_reading;
-        *p = '\0';
-        p += 2;
-        int slen = atoi(plen); /* Length of this arg. */
-        if (slen <= 0 || slen > 1024) goto protoerr;
-        if ((size_t)(p + slen + 2 - copy) > sdslen(copy)) goto keep_reading;
-        argv[argc++] = sdsnewlen(p, slen);
-        p += slen; /* Skip the already parsed argument. */
-        if (p[0] != '\r' || p[1] != '\n') goto protoerr;
-        p += 2; /* Skip \r\n. */
-    }
-    sdsfree(copy);
-    return argv;
-
-protoerr:
-    *err = protocol_error;
-keep_reading:
-    sdsfreesplitres(argv, argc);
-    sdsfree(copy);
-    return NULL;
 }
 
 /* Log the specified line in the Lua debugger output. */
@@ -383,7 +162,7 @@ void ldbLogSourceLine(int lnum) {
  * around the specified line is shown. When a line number is specified
  * the amount of context (lines before/after) is specified via the
  * 'context' argument. */
-void ldbList(int around, int context) {
+static void ldbList(int around, int context) {
     int j;
 
     for (j = 1; j <= ldb.lines; j++) {
@@ -479,163 +258,23 @@ sds ldbCatStackValue(sds s, lua_State *lua, int idx) {
 /* Produce a debugger log entry representing the value of the Lua object
  * currently on the top of the stack. The element is not popped nor modified.
  * Check ldbCatStackValue() for the actual implementation. */
-void ldbLogStackValue(lua_State *lua, char *prefix) {
+static void ldbLogStackValue(lua_State *lua, char *prefix) {
     sds s = sdsnew(prefix);
     s = ldbCatStackValue(s, lua, -1);
-    ldbLogWithMaxLen(s);
-}
-
-char *ldbRespToHuman_Int(sds *o, char *reply);
-char *ldbRespToHuman_Bulk(sds *o, char *reply);
-char *ldbRespToHuman_Status(sds *o, char *reply);
-char *ldbRespToHuman_MultiBulk(sds *o, char *reply);
-char *ldbRespToHuman_Set(sds *o, char *reply);
-char *ldbRespToHuman_Map(sds *o, char *reply);
-char *ldbRespToHuman_Null(sds *o, char *reply);
-char *ldbRespToHuman_Bool(sds *o, char *reply);
-char *ldbRespToHuman_Double(sds *o, char *reply);
-
-/* Get RESP from 'reply' and appends it in human readable form to
- * the passed SDS string 'o'.
- *
- * Note that the SDS string is passed by reference (pointer of pointer to
- * char*) so that we can return a modified pointer, as for SDS semantics. */
-char *ldbRespToHuman(sds *o, char *reply) {
-    char *p = reply;
-    switch (*p) {
-    case ':': p = ldbRespToHuman_Int(o, reply); break;
-    case '$': p = ldbRespToHuman_Bulk(o, reply); break;
-    case '+': p = ldbRespToHuman_Status(o, reply); break;
-    case '-': p = ldbRespToHuman_Status(o, reply); break;
-    case '*': p = ldbRespToHuman_MultiBulk(o, reply); break;
-    case '~': p = ldbRespToHuman_Set(o, reply); break;
-    case '%': p = ldbRespToHuman_Map(o, reply); break;
-    case '_': p = ldbRespToHuman_Null(o, reply); break;
-    case '#': p = ldbRespToHuman_Bool(o, reply); break;
-    case ',': p = ldbRespToHuman_Double(o, reply); break;
-    }
-    return p;
-}
-
-/* The following functions are helpers for ldbRespToHuman(), each
- * take care of a given RESP return type. */
-
-char *ldbRespToHuman_Int(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    *o = sdscatlen(*o, reply + 1, p - reply - 1);
-    return p + 2;
-}
-
-char *ldbRespToHuman_Bulk(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    long long bulklen;
-
-    string2ll(reply + 1, p - reply - 1, &bulklen);
-    if (bulklen == -1) {
-        *o = sdscatlen(*o, "NULL", 4);
-        return p + 2;
-    } else {
-        *o = sdscatrepr(*o, p + 2, bulklen);
-        return p + 2 + bulklen + 2;
-    }
-}
-
-char *ldbRespToHuman_Status(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-
-    *o = sdscatrepr(*o, reply, p - reply);
-    return p + 2;
-}
-
-char *ldbRespToHuman_MultiBulk(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    long long mbulklen;
-    int j = 0;
-
-    string2ll(reply + 1, p - reply - 1, &mbulklen);
-    p += 2;
-    if (mbulklen == -1) {
-        *o = sdscatlen(*o, "NULL", 4);
-        return p;
-    }
-    *o = sdscatlen(*o, "[", 1);
-    for (j = 0; j < mbulklen; j++) {
-        p = ldbRespToHuman(o, p);
-        if (j != mbulklen - 1) *o = sdscatlen(*o, ",", 1);
-    }
-    *o = sdscatlen(*o, "]", 1);
-    return p;
-}
-
-char *ldbRespToHuman_Set(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    long long mbulklen;
-    int j = 0;
-
-    string2ll(reply + 1, p - reply - 1, &mbulklen);
-    p += 2;
-    *o = sdscatlen(*o, "~(", 2);
-    for (j = 0; j < mbulklen; j++) {
-        p = ldbRespToHuman(o, p);
-        if (j != mbulklen - 1) *o = sdscatlen(*o, ",", 1);
-    }
-    *o = sdscatlen(*o, ")", 1);
-    return p;
-}
-
-char *ldbRespToHuman_Map(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    long long mbulklen;
-    int j = 0;
-
-    string2ll(reply + 1, p - reply - 1, &mbulklen);
-    p += 2;
-    *o = sdscatlen(*o, "{", 1);
-    for (j = 0; j < mbulklen; j++) {
-        p = ldbRespToHuman(o, p);
-        *o = sdscatlen(*o, " => ", 4);
-        p = ldbRespToHuman(o, p);
-        if (j != mbulklen - 1) *o = sdscatlen(*o, ",", 1);
-    }
-    *o = sdscatlen(*o, "}", 1);
-    return p;
-}
-
-char *ldbRespToHuman_Null(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    *o = sdscatlen(*o, "(null)", 6);
-    return p + 2;
-}
-
-char *ldbRespToHuman_Bool(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    if (reply[1] == 't')
-        *o = sdscatlen(*o, "#true", 5);
-    else
-        *o = sdscatlen(*o, "#false", 6);
-    return p + 2;
-}
-
-char *ldbRespToHuman_Double(sds *o, char *reply) {
-    char *p = strchr(reply + 1, '\r');
-    *o = sdscatlen(*o, "(double) ", 9);
-    *o = sdscatlen(*o, reply + 1, p - reply - 1);
-    return p + 2;
+    scriptingEngineDebuggerLogWithMaxLen(s);
 }
 
 /* Log a RESP reply as debugger output, in a human readable format.
  * If the resulting string is longer than 'len' plus a few more chars
  * used as prefix, it gets truncated. */
 void ldbLogRespReply(char *reply) {
-    sds log = sdsnew("<reply> ");
-    ldbRespToHuman(&log, reply);
-    ldbLogWithMaxLen(log);
+    scriptingEngineDebuggerLogRespReplyStr(reply);
 }
 
 /* Implements the "print <var>" command of the Lua debugger. It scans for Lua
  * var "varname" starting from the current stack frame up to the top stack
  * frame. The first matching variable is printed. */
-void ldbPrint(lua_State *lua, char *varname) {
+static void ldbPrint(lua_State *lua, char *varname) {
     lua_Debug ar;
 
     int l = 0; /* Stack level. */
@@ -667,7 +306,7 @@ void ldbPrint(lua_State *lua, char *varname) {
 
 /* Implements the "print" command (without arguments) of the Lua debugger.
  * Prints all the variables in the current stack frame. */
-void ldbPrintAll(lua_State *lua) {
+static void ldbPrintAll(lua_State *lua) {
     lua_Debug ar;
     int vars = 0;
 
@@ -692,7 +331,7 @@ void ldbPrintAll(lua_State *lua) {
 }
 
 /* Implements the break command to list, add and remove breakpoints. */
-void ldbBreak(sds *argv, int argc) {
+static void ldbBreak(robj **argv, int argc) {
     if (argc == 1) {
         if (ldb.bpcount == 0) {
             ldbLog(sdsnew("No breakpoints set. Use 'b <line>' to add one."));
@@ -705,7 +344,7 @@ void ldbBreak(sds *argv, int argc) {
     } else {
         int j;
         for (j = 1; j < argc; j++) {
-            char *arg = argv[j];
+            char *arg = argv[j]->ptr;
             long line;
             if (!string2l(arg, sdslen(arg), &line)) {
                 ldbLog(sdscatfmt(sdsempty(), "Invalid argument:'%s'", arg));
@@ -735,9 +374,13 @@ void ldbBreak(sds *argv, int argc) {
 /* Implements the Lua debugger "eval" command. It just compiles the user
  * passed fragment of code and executes it, showing the result left on
  * the stack. */
-void ldbEval(lua_State *lua, sds *argv, int argc) {
+static void ldbEval(lua_State *lua, robj **argv, int argc) {
     /* Glue the script together if it is composed of multiple arguments. */
-    sds code = sdsjoinsds(argv + 1, argc - 1, " ", 1);
+    sds code = sdsempty();
+    for (int j = 1; j < argc; j++) {
+        code = sdscatsds(code, argv[j]->ptr);
+        if (j != argc - 1) code = sdscatlen(code, " ", 1);
+    }
     sds expr = sdscatsds(sdsnew("return "), code);
 
     /* Try to compile it as an expression, prepending "return ". */
@@ -769,7 +412,7 @@ void ldbEval(lua_State *lua, sds *argv, int argc) {
  * the implementation very simple: we just call the Lua server.call() command
  * implementation, with ldb.step enabled, so as a side effect the command
  * and its reply are logged. */
-void ldbServer(lua_State *lua, sds *argv, int argc) {
+static void ldbServer(lua_State *lua, robj **argv, int argc) {
     int j;
 
     if (!lua_checkstack(lua, argc + 1)) {
@@ -787,7 +430,7 @@ void ldbServer(lua_State *lua, sds *argv, int argc) {
     lua_pushstring(lua, "call");
     lua_gettable(lua, -2); /* Stack: server, server.call */
     for (j = 1; j < argc; j++)
-        lua_pushlstring(lua, argv[j], sdslen(argv[j]));
+        lua_pushlstring(lua, argv[j]->ptr, sdslen(argv[j]->ptr));
     ldb.step = 1;                   /* Force server.call() to log. */
     lua_pcall(lua, argc - 1, 1, 0); /* Stack: server, result */
     ldb.step = 0;                   /* Disable logging. */
@@ -796,7 +439,7 @@ void ldbServer(lua_State *lua, sds *argv, int argc) {
 
 /* Implements "trace" command of the Lua debugger. It just prints a backtrace
  * querying Lua starting from the current callframe back to the outer one. */
-void ldbTrace(lua_State *lua) {
+static void ldbTrace(lua_State *lua) {
     lua_Debug ar;
     int level = 0;
 
@@ -815,15 +458,14 @@ void ldbTrace(lua_State *lua) {
 
 /* Implements the debugger "maxlen" command. It just queries or sets the
  * ldb.maxlen variable. */
-void ldbMaxlen(sds *argv, int argc) {
+static void ldbMaxlen(robj **argv, int argc) {
     if (argc == 2) {
-        int newval = atoi(argv[1]);
-        ldb.maxlen_hint_sent = 1; /* User knows about this command. */
-        if (newval != 0 && newval <= 60) newval = 60;
-        ldb.maxlen = newval;
+        int newval = atoi(argv[1]->ptr);
+        scriptingEngineDebuggerSetMaxlen(newval);
     }
-    if (ldb.maxlen) {
-        ldbLog(sdscatprintf(sdsempty(), "<value> replies are truncated at %d bytes.", (int)ldb.maxlen));
+    size_t maxlen = scriptingEngineDebuggerGetMaxlen();
+    if (maxlen) {
+        ldbLog(sdscatprintf(sdsempty(), "<value> replies are truncated at %u bytes.", (uint32_t)maxlen));
     } else {
         ldbLog(sdscatprintf(sdsempty(), "<value> replies are unlimited."));
     }
@@ -833,45 +475,32 @@ void ldbMaxlen(sds *argv, int argc) {
  * Return C_OK if the debugging session is continuing, otherwise
  * C_ERR if the client closed the connection or is timing out. */
 int ldbRepl(lua_State *lua) {
-    sds *argv;
-    int argc;
-    char *err = NULL;
+    robj **argv;
+    size_t argc;
+    int client_disconnected = 0;
+    robj *err = NULL;
 
     /* We continue processing commands until a command that should return
      * to the Lua interpreter is found. */
     while (1) {
-        while ((argv = ldbReplParseCommand(&argc, &err)) == NULL) {
-            char buf[1024];
+        while ((argv = scriptingEngineDebuggerReadCommand(&argc, &client_disconnected, &err)) == NULL) {
             if (err) {
-                luaPushError(lua, err);
+                luaPushError(lua, err->ptr);
+                decrRefCount(err);
                 luaError(lua);
-            }
-            int nread = connRead(ldb.conn, buf, sizeof(buf));
-            if (nread <= 0) {
+            } else if (client_disconnected) {
                 /* Make sure the script runs without user input since the
                  * client is no longer connected. */
                 ldb.step = 0;
                 ldb.bpcount = 0;
                 return C_ERR;
             }
-            ldb.cbuf = sdscatlen(ldb.cbuf, buf, nread);
-            /* after 1M we will exit with an error
-             * so that the client will not blow the memory
-             */
-            if (sdslen(ldb.cbuf) > 1 << 20) {
-                sdsfree(ldb.cbuf);
-                ldb.cbuf = sdsempty();
-                luaPushError(lua, "max client buffer reached");
-                luaError(lua);
-            }
         }
 
-        /* Flush the old buffer. */
-        sdsfree(ldb.cbuf);
-        ldb.cbuf = sdsempty();
+        serverAssert(argv != NULL);
 
         /* Execute the command. */
-        if (!strcasecmp(argv[0], "h") || !strcasecmp(argv[0], "help")) {
+        if (!strcasecmp(argv[0]->ptr, "h") || !strcasecmp(argv[0]->ptr, "help")) {
             ldbLog(sdsnew("Lua debugger help:"));
             ldbLog(sdsnew("[h]elp               Show this help."));
             ldbLog(sdsnew("[s]tep               Run current line and stop again."));
@@ -902,66 +531,73 @@ int ldbRepl(lua_State *lua) {
             ldbLog(sdsnew("server.debug()       Produce logs in the debugger console."));
             ldbLog(sdsnew("server.breakpoint()  Stop execution like if there was a breakpoint in the"));
             ldbLog(sdsnew("                     next line of code."));
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "s") || !strcasecmp(argv[0], "step") || !strcasecmp(argv[0], "n") ||
-                   !strcasecmp(argv[0], "next")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "s") || !strcasecmp(argv[0]->ptr, "step") || !strcasecmp(argv[0]->ptr, "n") ||
+                   !strcasecmp(argv[0]->ptr, "next")) {
             ldb.step = 1;
             break;
-        } else if (!strcasecmp(argv[0], "c") || !strcasecmp(argv[0], "continue")) {
+        } else if (!strcasecmp(argv[0]->ptr, "c") || !strcasecmp(argv[0]->ptr, "continue")) {
             break;
-        } else if (!strcasecmp(argv[0], "t") || !strcasecmp(argv[0], "trace")) {
+        } else if (!strcasecmp(argv[0]->ptr, "t") || !strcasecmp(argv[0]->ptr, "trace")) {
             ldbTrace(lua);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "m") || !strcasecmp(argv[0], "maxlen")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "m") || !strcasecmp(argv[0]->ptr, "maxlen")) {
             ldbMaxlen(argv, argc);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "b") || !strcasecmp(argv[0], "break")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "b") || !strcasecmp(argv[0]->ptr, "break")) {
             ldbBreak(argv, argc);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "e") || !strcasecmp(argv[0], "eval")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "e") || !strcasecmp(argv[0]->ptr, "eval")) {
             ldbEval(lua, argv, argc);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "a") || !strcasecmp(argv[0], "abort")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "a") || !strcasecmp(argv[0]->ptr, "abort")) {
             luaPushError(lua, "script aborted for user request");
             luaError(lua);
-        } else if (argc > 1 && ((!strcasecmp(argv[0], "r") || !strcasecmp(argv[0], "redis")) ||
-                                (!strcasecmp(argv[0], "v") || !strcasecmp(argv[0], "valkey")) ||
-                                !strcasecmp(argv[0], SERVER_API_NAME))) {
+        } else if (argc > 1 && ((!strcasecmp(argv[0]->ptr, "r") || !strcasecmp(argv[0]->ptr, "redis")) ||
+                                (!strcasecmp(argv[0]->ptr, "v") || !strcasecmp(argv[0]->ptr, "valkey")) ||
+                                !strcasecmp(argv[0]->ptr, SERVER_API_NAME))) {
             /* [r]redis or [v]alkey calls a command. We accept "server" too, but
              * not "s" because that's "step". Neither can we use [c]all because
              * "c" is continue. */
             ldbServer(lua, argv, argc);
-            ldbSendLogs();
-        } else if ((!strcasecmp(argv[0], "p") || !strcasecmp(argv[0], "print"))) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if ((!strcasecmp(argv[0]->ptr, "p") || !strcasecmp(argv[0]->ptr, "print"))) {
             if (argc == 2)
-                ldbPrint(lua, argv[1]);
+                ldbPrint(lua, argv[1]->ptr);
             else
                 ldbPrintAll(lua);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "l") || !strcasecmp(argv[0], "list")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "l") || !strcasecmp(argv[0]->ptr, "list")) {
             int around = ldb.currentline, ctx = 5;
             if (argc > 1) {
-                int num = atoi(argv[1]);
+                int num = atoi(argv[1]->ptr);
                 if (num > 0) around = num;
             }
-            if (argc > 2) ctx = atoi(argv[2]);
+            if (argc > 2) ctx = atoi(argv[2]->ptr);
             ldbList(around, ctx);
-            ldbSendLogs();
-        } else if (!strcasecmp(argv[0], "w") || !strcasecmp(argv[0], "whole")) {
+            scriptingEngineDebuggerFlushLogs();
+        } else if (!strcasecmp(argv[0]->ptr, "w") || !strcasecmp(argv[0]->ptr, "whole")) {
             ldbList(1, 1000000);
-            ldbSendLogs();
+            scriptingEngineDebuggerFlushLogs();
         } else {
             ldbLog(sdsnew("<error> Unknown Lua debugger command or "
                           "wrong number of arguments."));
-            ldbSendLogs();
+            scriptingEngineDebuggerFlushLogs();
         }
 
         /* Free the command vector. */
-        sdsfreesplitres(argv, argc);
+        for (size_t i = 0; i < argc; i++) {
+            decrRefCount(argv[i]);
+        }
+        zfree(argv);
     }
 
     /* Free the current command argv if we break inside the while loop. */
-    sdsfreesplitres(argv, argc);
+    for (size_t i = 0; i < argc; i++) {
+        decrRefCount(argv[i]);
+    }
+    zfree(argv);
+
     return C_OK;
 }
 
