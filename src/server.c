@@ -2722,26 +2722,10 @@ void makeThreadKillable(void) {
 }
 
 /* Return non-zero if the database is empty  */
-int databaseEmpty(int id) {
-    return id < 0 || id >= server.dbnum || !server.db[id] || kvstoreSize(server.db[id]->keys) == 0;
+int dbHasNoKeys(int dbid) {
+    return dbid < 0 || dbid >= server.dbnum || !server.db[dbid] || kvstoreSize(server.db[dbid]->keys) == 0;
 }
 
-// /* Initialize temporary db on replica for use during diskless replication. */
-// serverDb *initTempDb(int id) {
-//     int slot_count_bits = 0;
-//     int flags = KVSTORE_ALLOCATE_HASHTABLES_ON_DEMAND;
-//     if (server.cluster_enabled) {
-//         slot_count_bits = CLUSTER_SLOT_MASK_BITS;
-//         flags |= KVSTORE_FREE_EMPTY_HASHTABLES;
-//     }
-//     serverDb *tempDb = zcalloc(sizeof(serverDb) * server.dbnum);
-//
-//     tempDb->id = id;
-//     tempDb->keys = kvstoreCreate(&kvstoreKeysHashtableType, slot_count_bits, flags);
-//     tempDb->expires = kvstoreCreate(&kvstoreExpiresHashtableType, slot_count_bits, flags);
-//
-//     return tempDb;
-// }
 serverDb *createDatabase(int id) {
     int slot_count_bits = 0;
     int flags = KVSTORE_ALLOCATE_HASHTABLES_ON_DEMAND;
@@ -2763,10 +2747,11 @@ serverDb *createDatabase(int id) {
     return db;
 }
 
-void initDatabase(int id) {
+serverDb *createDatabaseIfNeeded(int id) {
     if (server.db[id] == NULL) {
         server.db[id] = createDatabase(id);
     }
+    return server.db[id];
 }
 
 void initServer(void) {
@@ -2842,7 +2827,7 @@ void initServer(void) {
     }
 
     server.db = zcalloc(sizeof(serverDb *) * server.dbnum);
-    initDatabase(0); /* The default database should always exist */
+    createDatabaseIfNeeded(0); /* The default database should always exist */
 
     evictionPoolAlloc(); /* Initialize the LRU keys pool. */
     /* Note that server.pubsub_channels was chosen to be a kvstore (with only one dict, which

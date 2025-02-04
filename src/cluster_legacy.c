@@ -5711,7 +5711,7 @@ int verifyClusterConfigWithData(void) {
 
     /* Make sure we only have keys in DB0. */
     for (j = 1; j < server.dbnum; j++) {
-        if (!databaseEmpty(j)) return C_ERR;
+        if (!dbHasNoKeys(j)) return C_ERR;
     }
 
     /* Check that all the slots we see populated memory have a corresponding
@@ -6828,7 +6828,7 @@ int clusterCommandSpecial(client *c) {
         }
     } else if (!strcasecmp(c->argv[1]->ptr, "flushslots") && c->argc == 2) {
         /* CLUSTER FLUSHSLOTS */
-        if (!databaseEmpty(0)) {
+        if (!dbHasNoKeys(0)) {
             addReplyError(c, "DB must be empty to perform CLUSTER FLUSHSLOTS.");
             return 1;
         }
@@ -6969,7 +6969,7 @@ int clusterCommandSpecial(client *c) {
         /* If the instance is currently a primary, it should have no assigned
          * slots nor keys to accept to replicate some other node.
          * Replicas can switch to another primary without issues. */
-        if (clusterNodeIsPrimary(myself) && (myself->numslots != 0 || !databaseEmpty(0))) {
+        if (clusterNodeIsPrimary(myself) && (myself->numslots != 0 || !dbHasNoKeys(0))) {
             addReplyError(c, "To set a master the node must be empty and "
                              "without assigned slots.");
             return 1;

@@ -679,8 +679,7 @@ void discardTempDb(serverDb **tempDb) {
 
 int selectDb(client *c, int id) {
     if (id < 0 || id >= server.dbnum) return C_ERR;
-    initDatabase(id);
-    c->db = server.db[id];
+    c->db = createDatabaseIfNeeded(id);
     return C_OK;
 }
 
@@ -688,7 +687,7 @@ long long dbTotalServerKeyCount(void) {
     long long total = 0;
     int j;
     for (j = 0; j < server.dbnum; j++) {
-        if (databaseEmpty(j)) continue;
+        if (dbHasNoKeys(j)) continue;
         total += kvstoreSize(server.db[j]->keys);
     }
     return total;
@@ -1641,10 +1640,9 @@ void scanDatabaseForDeletedKeys(serverDb *emptied, serverDb *replaced_with) {
 int dbSwapDatabases(int id1, int id2) {
     if (id1 < 0 || id1 >= server.dbnum || id2 < 0 || id2 >= server.dbnum) return C_ERR;
     if (id1 == id2) return C_OK;
-    initDatabase(id1);
-    initDatabase(id2);
-    serverDb aux = *server.db[id1];
-    serverDb *db1 = server.db[id1], *db2 = server.db[id2];
+    serverDb *db1 = createDatabaseIfNeeded(id1);
+    serverDb *db2 = createDatabaseIfNeeded(id2);
+    serverDb aux = *db1;
 
     /* Swapdb should make transaction fail if there is any
      * client watching keys */
