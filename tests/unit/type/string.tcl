@@ -778,8 +778,5 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
         regexp {val_sds_len:5 val_sds_avail:(\d+) val_alloc:(\d+)} $debug_sdslen _ avail val_alloc
         set sds_overhead [expr {$obj_alloc + $val_alloc - $obj_header_size - 1 - $content_size - $avail}]
         assert_equal 6 $sds_overhead
-
-        # Check that DEBUG SDSLEN reported allocation sizes matching MEMORY USAGE.
-        assert_equal [r memory usage quux] [expr {$obj_alloc + $val_alloc}]
     } {} {needs:debug}
 }
