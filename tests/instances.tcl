@@ -292,7 +292,7 @@ proc parse_options {} {
             incr j
             set ::host ${val}
         } elseif {$opt eq {--tls} || $opt eq {--tls-module}} {
-            package require tls 1.6
+            package require tls
             ::tls::init \
                 -cafile "$::tlsdir/ca.crt" \
                 -certfile "$::tlsdir/client.crt" \
