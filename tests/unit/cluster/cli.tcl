@@ -458,7 +458,7 @@ start_multiple_servers 3 [list overrides $base_conf] {
     }
 
     
-    test "Mutli-database fill slot 0" {
+    test "Multi-database fill slot 0" {
         # keys {3560}* mapped to slot 0
         # Iterate over databases 0, 1, 2, and 3.
         for {set db 0} {$db < 4} {incr db} {
