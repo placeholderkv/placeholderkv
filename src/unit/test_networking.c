@@ -332,9 +332,9 @@ int test_addBufferToReplyIOV(int argc, char **argv, int flags) {
     addBufferToReplyIOV(c->flag.buf_encoded, c->buf, c->bufpos, &reply, &metadata[0]);
 
     TEST_ASSERT(reply.iov_len_total == total_len);
-    TEST_ASSERT(reply.cnt == 3);
+    TEST_ASSERT(reply.iovcnt == 3);
     const char *ptr = expected_reply;
-    for (int i = 0; i < reply.cnt; ++i) {
+    for (int i = 0; i < reply.iovcnt; ++i) {
         TEST_ASSERT(memcmp(ptr, reply.iov[i].iov_base, reply.iov[i].iov_len) == 0);
         ptr += reply.iov[i].iov_len;
     }
