@@ -689,8 +689,8 @@ void debugCommand(client *c) {
             size_t obj_alloc = zmalloc_usable_size(val);
             size_t val_alloc = val->encoding == OBJ_ENCODING_RAW ? sdsAllocSize(val->ptr) : 0;
             addReplyStatusFormat(c,
-                                 "key_sds_len:%lld, key_sds_avail:%lld, key_alloc:%lld, "
-                                 "val_sds_len:%lld, val_sds_avail:%lld, val_alloc:%lld",
+                                 "key_sds_len:%lld key_sds_avail:%lld obj_alloc:%lld "
+                                 "val_sds_len:%lld val_sds_avail:%lld val_alloc:%lld",
                                  (long long)sdslen(key), (long long)sdsavail(key), (long long)obj_alloc,
                                  (long long)sdslen(val->ptr), (long long)sdsavail(val->ptr),
                                  (long long)val_alloc);

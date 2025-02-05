@@ -52,16 +52,17 @@
  * and expire fields can be omitted by passing NULL and -1, respectively. */
 robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long expire) {
     /* Calculate sizes */
+    int has_embkey = key != NULL;
     int has_expire = (expire != -1 ||
-                      (key != NULL && sdslen(key) >= KEY_SIZE_TO_INCLUDE_EXPIRE_THRESHOLD));
-    size_t key_sds_len = key != NULL ? sdslen(key) : 0;
-    char key_sds_type = key != NULL ? sdsReqType(key_sds_len) : 0;
-    size_t key_sds_size = key != NULL ? sdsReqSize(key_sds_len, key_sds_type) : 0;
+                      (has_embkey && sdslen(key) >= KEY_SIZE_TO_INCLUDE_EXPIRE_THRESHOLD));
+    size_t key_sds_len = has_embkey ? sdslen(key) : 0;
+    char key_sds_type = has_embkey ? sdsReqType(key_sds_len) : 0;
+    size_t key_sds_size = has_embkey ? sdsReqSize(key_sds_len, key_sds_type) : 0;
     size_t min_size = sizeof(robj);
     if (has_expire) {
         min_size += sizeof(long long);
     }
-    if (key != NULL) {
+    if (has_embkey) {
         /* Size of embedded key, incl. 1 byte for prefixed sds hdr size. */
         min_size += 1 + key_sds_size;
     }
@@ -73,7 +74,7 @@ robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long
     o->ptr = ptr;
     o->refcount = 1;
     o->lru = 0;
-    o->hasembkey = (key != NULL);
+    o->hasembkey = has_embkey;
 
     /* If the allocation has enough space for an expire field, add it even if we
      * don't need it now. Then we don't need to realloc if it's needed later. */
@@ -193,7 +194,7 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
         data += key_sds_size;
     }
 
-    /* Copy embedded value (EMBSTR). */
+    /* Copy embedded value (EMBSTR) always as SDS TYPE 8. */
     o->ptr = sdswrite(data, val_sds_size, SDS_TYPE_8, val_ptr, val_len);
 
     return o;

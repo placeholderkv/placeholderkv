@@ -757,8 +757,8 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
     } {12 12}
 
     test {Memory usage of embedded string value} {
-        # Check that we can fit 9 bytes of key + value into a 32 bit allocation,
-        # including the serverObject itself.
+        # Check that we can fit 9 bytes of key + value into a 32 byte
+        # allocation, including the serverObject itself.
         r set quux xyzzy
         assert_lessthan_equal [r memory usage quux] 32
 
@@ -774,12 +774,12 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
         set content_size [expr {[string length quux] + [string length xyzzy]}]
         regexp {robj:(\d+)} [r debug structsize] _ obj_header_size
         set debug_sdslen [r debug sdslen quux]
-        regexp {key_sds_len:4, key_sds_avail:0, key_alloc:(\d+)} $debug_sdslen _ key_alloc
-        regexp {val_sds_len:5, val_sds_avail:(\d+), val_alloc:(\d+)} $debug_sdslen _ avail val_alloc
-        set sds_overhead [expr {$key_alloc + $val_alloc - $obj_header_size - 1 - $content_size - $avail}]
+        regexp {key_sds_len:4 key_sds_avail:0 obj_alloc:(\d+)} $debug_sdslen _ obj_alloc
+        regexp {val_sds_len:5 val_sds_avail:(\d+) val_alloc:(\d+)} $debug_sdslen _ avail val_alloc
+        set sds_overhead [expr {$obj_alloc + $val_alloc - $obj_header_size - 1 - $content_size - $avail}]
         assert_equal 6 $sds_overhead
 
         # Check that DEBUG SDSLEN reported allocation sizes matching MEMORY USAGE.
-        assert_equal [r memory usage quux] [expr {$key_alloc + $val_alloc}]
+        assert_equal [r memory usage quux] [expr {$obj_alloc + $val_alloc}]
     } {} {needs:debug}
 }
