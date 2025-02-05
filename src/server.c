@@ -1167,6 +1167,9 @@ void getExpensiveClientsInfo(size_t *in_usage, size_t *out_usage) {
  * of them need to be processed every second.
  */
 static void clientsCron(int clients_this_cycle) {
+    /* for debug purposes: skip actual cron work if pause_cron is on */
+    if (server.pause_cron) return;
+
     mstime_t now = mstime();
 
     int curr_peak_mem_usage_slot = server.unixtime % CLIENTS_PEAK_MEM_USAGE_SLOTS;
@@ -1220,7 +1223,7 @@ static void clientsCron(int clients_this_cycle) {
  * This cron task follows the following rules:
  *  - To manage latency, we don't check more than MAX_CLIENTS_PER_CLOCK_TICK at a time
  *  - The minimum rate will be defined by server.hz
- *  - The maxmum rate will be defined by CONFIG_MAX_HZ
+ *  - The maximum rate will be defined by CONFIG_MAX_HZ
  *  - At least CLIENTS_CRON_MIN_ITERATIONS will be performed each cycle
  *  - All clients need to be checked (at least) once per second (if possible given other constraints)
  */
