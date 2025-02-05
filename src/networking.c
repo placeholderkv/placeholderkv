@@ -4517,20 +4517,23 @@ char *getClientTypeName(int class) {
     }
 }
 
-/* The function checks if the client reached output buffer soft or hard
- * limit, and also update the state needed to check the soft limit as
- * a side effect.
- *
- * Return value: non-zero if the client reached the soft or the hard limit.
- *               Otherwise zero is returned. */
-int checkClientOutputBufferLimits(client *c) {
-    int soft = 0, hard = 0, class;
-    unsigned long used_mem = getClientOutputBufferMemoryUsage(c);
-
-    class = getClientType(c);
-    /* For the purpose of output buffer limiting, primaries are handled
-     * like normal clients. */
+/* Returns the client type for output buffer limits calculation 
+ * (i.e., primaries are treated as normal). */
+int getClientTypeForOutputBuffering(client* c) {
+    int class = getClientType(c);
     if (class == CLIENT_TYPE_PRIMARY) class = CLIENT_TYPE_NORMAL;
+    return class;
+}
+
+/* Returns the client's output buffer soft limit in bytes. */
+unsigned long long getClientOutputBufferSoftLimit(client* c) {
+    int class = getClientTypeForOutputBuffering(c);
+    return server.client_obuf_limits[class].soft_limit_bytes;
+}
+
+/* Returns the client's output buffer hard limit in bytes. */
+unsigned long long getClientOutputBufferHardLimit(client* c) {
+    int class = getClientTypeForOutputBuffering(c);
 
     /* Note that it doesn't make sense to set the replica clients output buffer
      * limit lower than the repl-backlog-size config (partial sync will succeed
@@ -4538,13 +4541,53 @@ int checkClientOutputBufferLimits(client *c) {
      * Such a configuration is ignored (the size of repl-backlog-size will be used).
      * This doesn't have memory consumption implications since the replica client
      * will share the backlog buffers memory. */
-    size_t hard_limit_bytes = server.client_obuf_limits[class].hard_limit_bytes;
-    if (class == CLIENT_TYPE_REPLICA && hard_limit_bytes && (long long)hard_limit_bytes < server.repl_backlog_size)
+    unsigned long long hard_limit_bytes = server.client_obuf_limits[class].hard_limit_bytes;
+    if (class == CLIENT_TYPE_REPLICA && 
+        hard_limit_bytes && 
+        hard_limit_bytes < (unsigned long long) server.repl_backlog_size)
         hard_limit_bytes = server.repl_backlog_size;
-    if (server.client_obuf_limits[class].hard_limit_bytes && used_mem >= hard_limit_bytes) hard = 1;
-    if (server.client_obuf_limits[class].soft_limit_bytes &&
-        used_mem >= server.client_obuf_limits[class].soft_limit_bytes)
-        soft = 1;
+
+    return hard_limit_bytes;
+}
+
+/* This function checks if the client will exceed the soft or hard limit of the output
+ * buffer if it writes the incoming command.
+ *
+ * Return value: 1 if the client will exceed the limit; otherwise, 0. */
+int willClientOutputBufferExceedLimits(client *c, unsigned long long command_size) {
+    unsigned long long soft_limit_bytes = getClientOutputBufferSoftLimit(c);
+    unsigned long long hard_limit_bytes = getClientOutputBufferHardLimit(c);
+    unsigned long long used_mem = getClientOutputBufferMemoryUsage(c);
+    unsigned long long required_mem = used_mem + command_size;
+
+    if (required_mem >= hard_limit_bytes) {
+        return 1;
+    }
+    if (required_mem >= soft_limit_bytes) {
+        time_t elapsed = server.unixtime - c->obuf_soft_limit_reached_time;
+        if (c->obuf_soft_limit_reached_time == 0 || 
+            elapsed <= server.client_obuf_limits[getClientTypeForOutputBuffering(c)].soft_limit_seconds) {
+                return 0;
+            }
+        return 1;
+    }
+    return 0;
+}
+
+/* The function checks if the client reached output buffer soft or hard
+ * limit, and also update the state needed to check the soft limit as
+ * a side effect.
+ *
+ * Return value: non-zero if the client reached the soft or the hard limit.
+ *               Otherwise zero is returned. */
+int checkClientOutputBufferLimits(client *c) {
+    int soft = 0, hard = 0;
+    unsigned long used_mem = getClientOutputBufferMemoryUsage(c);
+    unsigned long long soft_limit_bytes = getClientOutputBufferSoftLimit(c);
+    unsigned long long hard_limit_bytes = getClientOutputBufferHardLimit(c);
+
+    if (used_mem >= hard_limit_bytes) hard = 1;
+    if (used_mem >= soft_limit_bytes) soft = 1;
 
     /* We need to check if the soft limit is reached continuously for the
      * specified amount of seconds. */
@@ -4555,7 +4598,7 @@ int checkClientOutputBufferLimits(client *c) {
         } else {
             time_t elapsed = server.unixtime - c->obuf_soft_limit_reached_time;
 
-            if (elapsed <= server.client_obuf_limits[class].soft_limit_seconds) {
+            if (elapsed <= server.client_obuf_limits[getClientTypeForOutputBuffering(c)].soft_limit_seconds) {
                 soft = 0; /* The client still did not reached the max number of
                              seconds for the soft limit to be considered
                              reached. */

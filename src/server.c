@@ -44,6 +44,7 @@
 #include "sds.h"
 #include "module.h"
 #include "scripting_engine.h"
+#include "networking.h"
 
 #include <time.h>
 #include <signal.h>
@@ -2059,6 +2060,7 @@ void createSharedObjects(void) {
         createObject(OBJ_STRING, sdsnew("-EXECABORT Transaction discarded because of previous errors.\r\n"));
     shared.noreplicaserr = createObject(OBJ_STRING, sdsnew("-NOREPLICAS Not enough good replicas to write.\r\n"));
     shared.busykeyerr = createObject(OBJ_STRING, sdsnew("-BUSYKEY Target key name already exists.\r\n"));
+    shared.throttlederr = createObject(OBJ_STRING, sdsnew("-THROTTLED\r\n"));
 
     /* The shared NULL depends on the protocol version. */
     shared.null[0] = NULL;
@@ -4322,6 +4324,33 @@ int processCommand(client *c) {
                              ((isPausedActions(PAUSE_ACTION_CLIENT_WRITE)) && is_may_replicate_command))) {
         blockPostponeClient(c);
         return C_OK;
+    }
+
+    /* Don't accept the write command if write throttling is enabled, we are the primary, 
+     * and the output buffer (for any replica) cannot store the incoming command. 
+     *
+     * Note that this code does not take into account the case where the command is re-written
+     * before being put into the output buffer: if it is smaller than expected, then it may 
+     * throttle erroneously; if it is larger, then it will fall-back to the behavior of client 
+     * disconnection.
+     */
+    if (server.write_throttling && is_write_command && server.primary_host == NULL) {
+        /* Size of the command to be stored in the output buffer. */
+        unsigned long long command_size = 3 + digits10(c->argc); /* 3: *[argc]\r\n */
+        for (int iarg = 0; iarg < c->argc; ++iarg) {
+            size_t arg_length = sdslen(c->argv[iarg]->ptr);
+            command_size += 5 + digits10(arg_length) + arg_length; /* 5: $[arglen]\r\n[arg]\r\n */
+        }
+
+        listIter li;
+        listNode* ln;
+        listRewind(server.replicas, &li);
+        while ((ln = listNext(&li))) {
+            if (willClientOutputBufferExceedLimits((client*)listNodeValue(ln), command_size)) {
+                rejectCommand(c, shared.throttlederr);
+                return C_OK;
+            }
+        }
     }
 
     /* Exec the command */
