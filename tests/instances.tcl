@@ -7,8 +7,6 @@
 # This software is released under the BSD License. See the COPYING file for
 # more information.
 
-package require Tcl 8.5
-
 set tcl_precision 17
 source ../support/valkey.tcl
 source ../support/util.tcl
