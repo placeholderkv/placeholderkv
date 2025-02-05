@@ -115,7 +115,7 @@ int detectAndUpdateCachedNodeHealth(void);
 client *createCachedResponseClient(int resp);
 void deleteCachedResponseClient(client *recording_client);
 void clearCachedClusterSlotsResponse(void);
-unsigned int countKeysInSlotForDb(unsigned int hashslot, serverDb*db);
+unsigned int countKeysInSlotForDb(unsigned int hashslot, serverDb *db);
 unsigned int countKeysInSlot(unsigned int hashslot);
 int getSlotOrReply(client *c, robj *o);
 
