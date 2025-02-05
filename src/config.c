@@ -2498,20 +2498,14 @@ static int updateReplBacklogSize(const char **err) {
 
 static int updateMaxmemoryReserved(const char **err) {
     if (server.maxmemory) {
-        if (server.maxmemory < server.maxmemory_reserved) {
-            *err = "The maxmemory value is smaller than the new reserved memory buffer set via CONFIG SET";
+        if (isMaxmemoryReservedLessThanMaxmemory(err) == C_ERR) {
             return 0;
         }
-        server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
-        size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
-        if (server.key_eviction_memory < used) {
-            serverLog(LL_WARNING, "WARNING: the difference between memory usage and maxmemory is less than reserved memory. "
-                                  "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
-        }
+        calculateKeyEvictionMemory();
         startEvictionTimeProc();
     } else {
         if (server.maxmemory_reserved) {
-            *err = "Current maxmemory value is 0, the new reserved memory buffer value is invalid";
+            *err = "Current maxmemory value is 0, the new reserved memory is invalid";
             return 0;
         }
         server.key_eviction_memory = 0;
@@ -2521,19 +2515,10 @@ static int updateMaxmemoryReserved(const char **err) {
 
 static int updateMaxmemory(const char **err) {
     if (server.maxmemory) {
-        if (server.maxmemory < server.maxmemory_reserved) {
-            *err = "The new maxmemory value set via CONFIG SET is smaller than the existing reserved memory buffer";
+        if (isMaxmemoryReservedLessThanMaxmemory(err) == C_ERR) {
             return 0;
         }
-        size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
-        if (server.maxmemory < used) {
-            serverLog(LL_WARNING,
-                      "WARNING: the new maxmemory value set via CONFIG SET (%llu) is smaller than the current memory "
-                      "usage (%zu). This will result in key eviction and/or the inability to accept new write commands "
-                      "depending on the maxmemory-policy.",
-                      server.maxmemory, used);
-        }
-        server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
+        calculateKeyEvictionMemory();
         startEvictionTimeProc();
     } else {
         server.maxmemory_reserved = 0;

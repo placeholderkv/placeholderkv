@@ -2786,8 +2786,9 @@ void initServer(void) {
     resetReplicationBuffer();
 
     if (server.maxmemory) {
-        if (server.maxmemory < server.maxmemory_reserved) {
-            serverLog(LL_WARNING, "Failed to config reserved memory buffer, which is greater than maxmemory.");
+        const char *err = NULL;
+        if (isMaxmemoryReservedLessThanMaxmemory(&err) == C_ERR) {
+            serverLog(LL_WARNING, "%s", err);
             exit(1);
         }
         server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
@@ -6773,6 +6774,23 @@ int validateProcTitleTemplate(const char *template) {
     if (sdslen(res) == 0) ok = 0;
     sdsfree(res);
     return ok;
+}
+
+int isMaxmemoryReservedLessThanMaxmemory(const char **err) {
+    if (server.maxmemory <= server.maxmemory_reserved) {
+        *err = "The maxmemory reserved value should be smaller than maxmemory.";
+        return C_ERR;
+    }
+    return C_OK;
+}
+
+void calculateKeyEvictionMemory(void) {
+    server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
+    size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
+    if (server.key_eviction_memory < used) {
+        serverLog(LL_WARNING, "WARNING: the difference between memory usage and maxmemory is less than reserved memory. "
+                              "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
+    }
 }
 
 int serverSetProcTitle(char *title) {

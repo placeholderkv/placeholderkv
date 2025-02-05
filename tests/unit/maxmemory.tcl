@@ -174,6 +174,7 @@ start_server {tags {"maxmemory external:skip"}} {
                 r setex [randomKey] 10000 x
             }
             assert {[s used_memory] < ($limit+4096)}
+	    r flushall
         }
     }
 
@@ -216,6 +217,7 @@ start_server {tags {"maxmemory external:skip"}} {
             } else {
                 assert {$err == 1}
             }
+	    r flushall
         }
     }
 
@@ -261,6 +263,7 @@ start_server {tags {"maxmemory external:skip"}} {
             for {set j 0} {$j < $numkeys} {incr j 2} {
                 assert {[r exists "key:$j"]}
             }
+	    r flushall
         }
     }
 

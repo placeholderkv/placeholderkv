@@ -706,7 +706,7 @@ int performEvictions(void) {
                  * across the dbAsyncDelete() call, while the thread can
                  * release the memory all the time. */
                 if (server.lazyfree_lazy_eviction) {
-                    if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.key_eviction_memory) == C_OK) {
+                    if (getMaxmemoryState(NULL, &mem_used, NULL, NULL, server.key_eviction_memory) == C_OK) {
                         break;
                     }
                 }
