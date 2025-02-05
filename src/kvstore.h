@@ -43,7 +43,7 @@ void kvstoreHashtableTrackMemUsage(hashtable *s, ssize_t delta);
 size_t kvstoreHashtableMetadataSize(void);
 
 /* kvstore iterator specific functions */
-kvstoreIterator *kvstoreIteratorInit(kvstore *kvs);
+kvstoreIterator *kvstoreIteratorInit(kvstore *kvs, uint8_t flags);
 void kvstoreIteratorRelease(kvstoreIterator *kvs_it);
 int kvstoreIteratorGetCurrentHashtableIndex(kvstoreIterator *kvs_it);
 int kvstoreIteratorNext(kvstoreIterator *kvs_it, void **next);
@@ -57,8 +57,7 @@ unsigned long kvstoreHashtableRehashingCount(kvstore *kvs);
 
 /* Specific hashtable access by hashtable-index */
 unsigned long kvstoreHashtableSize(kvstore *kvs, int didx);
-kvstoreHashtableIterator *kvstoreGetHashtableIterator(kvstore *kvs, int didx);
-kvstoreHashtableIterator *kvstoreGetHashtableSafeIterator(kvstore *kvs, int didx);
+kvstoreHashtableIterator *kvstoreGetHashtableIterator(kvstore *kvs, int didx, uint8_t flags);
 void kvstoreReleaseHashtableIterator(kvstoreHashtableIterator *kvs_id);
 int kvstoreHashtableIteratorNext(kvstoreHashtableIterator *kvs_di, void **next);
 int kvstoreHashtableRandomEntry(kvstore *kvs, int didx, void **found);

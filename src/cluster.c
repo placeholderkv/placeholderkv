@@ -162,7 +162,10 @@ int verifyDumpPayload(unsigned char *p, size_t len, uint16_t *rdbver_ptr) {
     if (rdbver_ptr) {
         *rdbver_ptr = rdbver;
     }
-    if (rdbver > RDB_VERSION) return C_ERR;
+    if ((rdbver >= RDB_FOREIGN_VERSION_MIN && rdbver <= RDB_FOREIGN_VERSION_MAX) ||
+        (rdbver > RDB_VERSION && server.rdb_version_check == RDB_VERSION_CHECK_STRICT)) {
+        return C_ERR;
+    }
 
     if (server.skip_checksum_validation) return C_OK;
 
@@ -910,7 +913,7 @@ void clusterCommand(client *c) {
         unsigned int numkeys = maxkeys > keys_in_slot ? keys_in_slot : maxkeys;
         addReplyArrayLen(c, numkeys);
         kvstoreHashtableIterator *kvs_di = NULL;
-        kvs_di = kvstoreGetHashtableIterator(server.db->keys, slot);
+        kvs_di = kvstoreGetHashtableIterator(server.db->keys, slot, 0);
         for (unsigned int i = 0; i < numkeys; i++) {
             void *next;
             serverAssert(kvstoreHashtableIteratorNext(kvs_di, &next));

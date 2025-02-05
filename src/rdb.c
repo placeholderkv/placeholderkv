@@ -42,6 +42,7 @@
 #include <math.h>
 #include <fcntl.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -887,7 +888,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key, int dbid) {
             nwritten += n;
 
             hashtableIterator iterator;
-            hashtableInitIterator(&iterator, set);
+            hashtableInitIterator(&iterator, set, 0);
             void *next;
             while (hashtableNext(&iterator, &next)) {
                 sds ele = next;
@@ -959,7 +960,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key, int dbid) {
             nwritten += n;
 
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 sds field = hashTypeEntryGetField(next);
@@ -1349,7 +1350,7 @@ ssize_t rdbSaveDb(rio *rdb, int dbid, int rdbflags, long *key_counter) {
     if ((res = rdbSaveLen(rdb, expires_size)) < 0) goto werr;
     written += res;
 
-    kvs_it = kvstoreIteratorInit(db->keys);
+    kvs_it = kvstoreIteratorInit(db->keys, HASHTABLE_ITER_SAFE | HASHTABLE_ITER_PREFETCH_VALUES);
     int last_slot = -1;
     /* Iterate this DB writing every entry */
     void *next;
@@ -1418,6 +1419,7 @@ int rdbSaveRio(int req, rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     int j;
 
     if (server.rdb_checksum) rdb->update_cksum = rioGenericUpdateChecksum;
+    /* TODO: Change this to "VALKEY%03d" next time we bump the RDB version. */
     snprintf(magic, sizeof(magic), "REDIS%04d", RDB_VERSION);
     if (rdbWriteRaw(rdb, magic, 9) == -1) goto werr;
     if (rdbSaveInfoAuxFields(rdb, rdbflags, rsi) == -1) goto werr;
@@ -3023,17 +3025,24 @@ int rdbLoadRioWithLoadingCtx(rio *rdb, int rdbflags, rdbSaveInfo *rsi, rdbLoadin
     char buf[1024];
     int error;
     long long empty_keys_skipped = 0;
+    bool is_valkey_magic;
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
     if (rioRead(rdb, buf, 9) == 0) goto eoferr;
     buf[9] = '\0';
-    if (memcmp(buf, "REDIS", 5) != 0) {
+    if (memcmp(buf, "REDIS0", 6) == 0) {
+        is_valkey_magic = false;
+    } else if (memcmp(buf, "VALKEY", 6) == 0) {
+        is_valkey_magic = true;
+    } else {
         serverLog(LL_WARNING, "Wrong signature trying to load DB from file");
         return C_ERR;
     }
-    rdbver = atoi(buf + 5);
-    if (rdbver < 1 || rdbver > RDB_VERSION) {
+    rdbver = atoi(buf + 6);
+    if (rdbver < 1 ||
+        (rdbver >= RDB_FOREIGN_VERSION_MIN && !is_valkey_magic) ||
+        (rdbver > RDB_VERSION && server.rdb_version_check == RDB_VERSION_CHECK_STRICT)) {
         serverLog(LL_WARNING, "Can't handle RDB format version %d", rdbver);
         return C_ERR;
     }
@@ -3368,7 +3377,9 @@ int rdbLoadRioWithLoadingCtx(rio *rdb, int rdbflags, rdbSaveInfo *rsi, rdbLoadin
         if (rioRead(rdb, &cksum, 8) == 0) goto eoferr;
         if (server.rdb_checksum && !server.skip_checksum_validation) {
             memrev64ifbe(&cksum);
-            if (cksum == 0) {
+            if (rdb->flags & RIO_FLAG_SKIP_RDB_CHECKSUM) {
+                serverLog(LL_NOTICE, "RDB file was saved with checksum disabled: skipped checksum for this transfer");
+            } else if (cksum == 0) {
                 serverLog(LL_NOTICE, "RDB file was saved with checksum disabled: no check performed.");
             } else if (cksum != expected) {
                 serverLog(LL_WARNING,
@@ -3559,8 +3570,14 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
         safe_to_exit_pipe = pipefds[0];          /* read end */
         server.rdb_child_exit_pipe = pipefds[1]; /* write end */
     }
+    /*
+     * For replicas with repl_state == REPLICA_STATE_WAIT_BGSAVE_END and replica_req == req:
+     * Check replica capabilities, if every replica supports skipping RDB checksum, primary should also skip checksum.
+     * Otherwise, use checksum for this RDB transfer.
+     */
+    int skip_rdb_checksum = 1;
     /* Collect the connections of the replicas we want to transfer
-     * the RDB to, which are i WAIT_BGSAVE_START state. */
+     * the RDB to, which are in WAIT_BGSAVE_START state. */
     int connsnum = 0;
     connection **conns = zmalloc(sizeof(connection *) * listLength(server.replicas));
     server.rdb_pipe_conns = NULL;
@@ -3592,6 +3609,10 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
             }
             replicationSetupReplicaForFullResync(replica, getPsyncInitialOffset());
         }
+
+        // do not skip RDB checksum on the primary if connection doesn't have integrity check or if the replica doesn't support it
+        if (!connIsIntegrityChecked(replica->conn) || !(replica->repl_data->replica_capa & REPLICA_CAPA_SKIP_RDB_CHECKSUM))
+            skip_rdb_checksum = 0;
     }
 
     /* Create the child process. */
@@ -3614,6 +3635,8 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
             serverSetProcTitle("valkey-rdb-to-replicas");
         }
         serverSetCpuAffinity(server.bgsave_cpulist);
+
+        if (skip_rdb_checksum) rdb.flags |= RIO_FLAG_SKIP_RDB_CHECKSUM;
 
         retval = rdbSaveRioWithEOFMark(req, &rdb, NULL, rsi);
         if (retval == C_OK && rioFlush(&rdb) == 0) retval = C_ERR;
@@ -3664,8 +3687,10 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
                 server.rdb_pipe_numconns_writing = 0;
             }
         } else {
-            serverLog(LL_NOTICE, "Background RDB transfer started by pid %ld to %s", (long)childpid,
-                      dual_channel ? "direct socket to replica" : "pipe through parent process");
+            serverLog(LL_NOTICE, "Background RDB transfer started by pid %ld to %s%s", (long)childpid,
+                      dual_channel ? "direct socket to replica" : "pipe through parent process",
+                      skip_rdb_checksum ? " while skipping RDB checksum for this transfer" : "");
+
             server.rdb_save_time_start = time(NULL);
             server.rdb_child_type = RDB_CHILD_TYPE_SOCKET;
             if (dual_channel) {

@@ -447,7 +447,7 @@ void sortCommandGeneric(client *c, int readonly) {
     } else if (sortval->type == OBJ_ZSET) {
         hashtable *ht = ((zset *)sortval->ptr)->ht;
         hashtableIterator iter;
-        hashtableInitIterator(&iter, ht);
+        hashtableInitIterator(&iter, ht, 0);
         void *next;
         while (hashtableNext(&iter, &next)) {
             zskiplistNode *node = next;

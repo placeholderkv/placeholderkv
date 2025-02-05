@@ -47,6 +47,8 @@ struct latencySample {
 struct latencyTimeSeries {
     int idx;                                      /* Index of the next sample to store. */
     uint32_t max;                                 /* Max latency observed for this event. */
+    uint32_t sum;                                 /* Sum latency observed for this event. */
+    uint32_t cnt;                                 /* Count observed for this event. */
     struct latencySample samples[LATENCY_TS_LEN]; /* Latest history. */
 };
 

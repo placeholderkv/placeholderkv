@@ -6668,6 +6668,147 @@ const char *COMMAND_Tips[] = {
 #define COMMAND_Keyspecs NULL
 #endif
 
+/********** COMMANDLOG GET ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG GET history */
+#define COMMANDLOG_GET_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG GET tips */
+const char *COMMANDLOG_GET_Tips[] = {
+"request_policy:all_nodes",
+"nondeterministic_output",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG GET key specs */
+#define COMMANDLOG_GET_Keyspecs NULL
+#endif
+
+/* COMMANDLOG GET type argument table */
+struct COMMAND_ARG COMMANDLOG_GET_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG GET argument table */
+struct COMMAND_ARG COMMANDLOG_GET_Args[] = {
+{MAKE_ARG("count",ARG_TYPE_INTEGER,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_GET_type_Subargs},
+};
+
+/********** COMMANDLOG HELP ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG HELP history */
+#define COMMANDLOG_HELP_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG HELP tips */
+#define COMMANDLOG_HELP_Tips NULL
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG HELP key specs */
+#define COMMANDLOG_HELP_Keyspecs NULL
+#endif
+
+/********** COMMANDLOG LEN ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG LEN history */
+#define COMMANDLOG_LEN_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG LEN tips */
+const char *COMMANDLOG_LEN_Tips[] = {
+"request_policy:all_nodes",
+"response_policy:agg_sum",
+"nondeterministic_output",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG LEN key specs */
+#define COMMANDLOG_LEN_Keyspecs NULL
+#endif
+
+/* COMMANDLOG LEN type argument table */
+struct COMMAND_ARG COMMANDLOG_LEN_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG LEN argument table */
+struct COMMAND_ARG COMMANDLOG_LEN_Args[] = {
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_LEN_type_Subargs},
+};
+
+/********** COMMANDLOG RESET ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG RESET history */
+#define COMMANDLOG_RESET_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG RESET tips */
+const char *COMMANDLOG_RESET_Tips[] = {
+"request_policy:all_nodes",
+"response_policy:all_succeeded",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG RESET key specs */
+#define COMMANDLOG_RESET_Keyspecs NULL
+#endif
+
+/* COMMANDLOG RESET type argument table */
+struct COMMAND_ARG COMMANDLOG_RESET_type_Subargs[] = {
+{MAKE_ARG("slow",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-request",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+{MAKE_ARG("large-reply",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
+/* COMMANDLOG RESET argument table */
+struct COMMAND_ARG COMMANDLOG_RESET_Args[] = {
+{MAKE_ARG("type",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_NONE,3,NULL),.subargs=COMMANDLOG_RESET_type_Subargs},
+};
+
+/* COMMANDLOG command table */
+struct COMMAND_STRUCT COMMANDLOG_Subcommands[] = {
+{MAKE_CMD("get","Returns the specified command log's entries.","O(N) where N is the number of entries returned","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_GET_History,0,COMMANDLOG_GET_Tips,2,commandlogCommand,4,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_GET_Keyspecs,0,NULL,2),.args=COMMANDLOG_GET_Args},
+{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_HELP_History,0,COMMANDLOG_HELP_Tips,0,commandlogCommand,2,CMD_LOADING|CMD_STALE,0,COMMANDLOG_HELP_Keyspecs,0,NULL,0)},
+{MAKE_CMD("len","Returns the number of entries in the specified type of command log.","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_LEN_History,0,COMMANDLOG_LEN_Tips,3,commandlogCommand,3,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_LEN_Keyspecs,0,NULL,1),.args=COMMANDLOG_LEN_Args},
+{MAKE_CMD("reset","Clears all entries from the specified type of command log.","O(N) where N is the number of entries in the commandlog","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_RESET_History,0,COMMANDLOG_RESET_Tips,2,commandlogCommand,3,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,COMMANDLOG_RESET_Keyspecs,0,NULL,1),.args=COMMANDLOG_RESET_Args},
+{0}
+};
+
+/********** COMMANDLOG ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* COMMANDLOG history */
+#define COMMANDLOG_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* COMMANDLOG tips */
+#define COMMANDLOG_Tips NULL
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* COMMANDLOG key specs */
+#define COMMANDLOG_Keyspecs NULL
+#endif
+
 /********** CONFIG GET ********************/
 
 #ifndef SKIP_CMD_HISTORY_TABLE
@@ -7831,10 +7972,10 @@ const char *SLOWLOG_RESET_Tips[] = {
 
 /* SLOWLOG command table */
 struct COMMAND_STRUCT SLOWLOG_Subcommands[] = {
-{MAKE_CMD("get","Returns the slow log's entries.","O(N) where N is the number of entries returned","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_GET_History,1,SLOWLOG_GET_Tips,2,slowlogCommand,-2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_GET_Keyspecs,0,NULL,1),.args=SLOWLOG_GET_Args},
-{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_HELP_History,0,SLOWLOG_HELP_Tips,0,slowlogCommand,2,CMD_LOADING|CMD_STALE,0,SLOWLOG_HELP_Keyspecs,0,NULL,0)},
-{MAKE_CMD("len","Returns the number of entries in the slow log.","O(1)","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_LEN_History,0,SLOWLOG_LEN_Tips,3,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_LEN_Keyspecs,0,NULL,0)},
-{MAKE_CMD("reset","Clears all entries from the slow log.","O(N) where N is the number of entries in the slowlog","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_RESET_History,0,SLOWLOG_RESET_Tips,2,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_RESET_Keyspecs,0,NULL,0)},
+{MAKE_CMD("get","Returns the slow log's entries.","O(N) where N is the number of entries returned","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG GET <count> SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_GET_History,1,SLOWLOG_GET_Tips,2,slowlogCommand,-2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_GET_Keyspecs,0,NULL,1),.args=SLOWLOG_GET_Args},
+{MAKE_CMD("help","Show helpful text about the different subcommands","O(1)","6.2.0",CMD_DOC_DEPRECATED,"`COMMANDLOG HELP`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_HELP_History,0,SLOWLOG_HELP_Tips,0,slowlogCommand,2,CMD_LOADING|CMD_STALE,0,SLOWLOG_HELP_Keyspecs,0,NULL,0)},
+{MAKE_CMD("len","Returns the number of entries in the slow log.","O(1)","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG LEN SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_LEN_History,0,SLOWLOG_LEN_Tips,3,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_LEN_Keyspecs,0,NULL,0)},
+{MAKE_CMD("reset","Clears all entries from the slow log.","O(N) where N is the number of entries in the slowlog","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG RESET SLOW`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_RESET_History,0,SLOWLOG_RESET_Tips,2,slowlogCommand,2,CMD_ADMIN|CMD_LOADING|CMD_STALE,0,SLOWLOG_RESET_Keyspecs,0,NULL,0)},
 {0}
 };
 
@@ -11043,6 +11184,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("bgrewriteaof","Asynchronously rewrites the append-only file to disk.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,BGREWRITEAOF_History,0,BGREWRITEAOF_Tips,0,bgrewriteaofCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT,0,BGREWRITEAOF_Keyspecs,0,NULL,0)},
 {MAKE_CMD("bgsave","Asynchronously saves the database(s) to disk.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,BGSAVE_History,2,BGSAVE_Tips,0,bgsaveCommand,-1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT,0,BGSAVE_Keyspecs,0,NULL,1),.args=BGSAVE_Args},
 {MAKE_CMD("command","Returns detailed information about all commands.","O(N) where N is the total number of commands","2.8.13",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMAND_History,0,COMMAND_Tips,1,commandCommand,-1,CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,COMMAND_Keyspecs,0,NULL,0),.subcommands=COMMAND_Subcommands},
+{MAKE_CMD("commandlog","A container for command log commands.","Depends on subcommand.","8.1.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,COMMANDLOG_History,0,COMMANDLOG_Tips,0,NULL,-2,0,0,COMMANDLOG_Keyspecs,0,NULL,0),.subcommands=COMMANDLOG_Subcommands},
 {MAKE_CMD("config","A container for server configuration commands.","Depends on subcommand.","2.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,CONFIG_History,0,CONFIG_Tips,0,NULL,-2,0,0,CONFIG_Keyspecs,0,NULL,0),.subcommands=CONFIG_Subcommands},
 {MAKE_CMD("dbsize","Returns the number of keys in the database.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,DBSIZE_History,0,DBSIZE_Tips,2,dbsizeCommand,1,CMD_READONLY|CMD_FAST,ACL_CATEGORY_KEYSPACE,DBSIZE_Keyspecs,0,NULL,0)},
 {MAKE_CMD("debug","A container for debugging commands.","Depends on subcommand.","1.0.0",CMD_DOC_SYSCMD,NULL,NULL,"server",COMMAND_GROUP_SERVER,DEBUG_History,0,DEBUG_Tips,0,debugCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_PROTECTED,0,DEBUG_Keyspecs,0,NULL,0)},
@@ -11064,7 +11206,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("save","Synchronously saves the database(s) to disk.","O(N) where N is the total number of keys in all databases","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SAVE_History,0,SAVE_Tips,0,saveCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT|CMD_NO_MULTI,0,SAVE_Keyspecs,0,NULL,0)},
 {MAKE_CMD("shutdown","Synchronously saves the database(s) to disk and shuts down the server.","O(N) when saving, where N is the total number of keys in all databases when saving data, otherwise O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SHUTDOWN_History,1,SHUTDOWN_Tips,0,shutdownCommand,-1,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_NO_MULTI|CMD_SENTINEL|CMD_ALLOW_BUSY,0,SHUTDOWN_Keyspecs,0,NULL,1),.args=SHUTDOWN_Args},
 {MAKE_CMD("slaveof","Sets a server as a replica of another, or promotes it to being a primary.","O(1)","1.0.0",CMD_DOC_DEPRECATED,"`REPLICAOF`","5.0.0","server",COMMAND_GROUP_SERVER,SLAVEOF_History,0,SLAVEOF_Tips,0,replicaofCommand,3,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NOSCRIPT|CMD_STALE,0,SLAVEOF_Keyspecs,0,NULL,1),.args=SLAVEOF_Args},
-{MAKE_CMD("slowlog","A container for slow log commands.","Depends on subcommand.","2.2.12",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SLOWLOG_History,0,SLOWLOG_Tips,0,NULL,-2,0,0,SLOWLOG_Keyspecs,0,NULL,0),.subcommands=SLOWLOG_Subcommands},
+{MAKE_CMD("slowlog","A container for slow log commands.","Depends on subcommand.","2.2.12",CMD_DOC_DEPRECATED,"`COMMANDLOG`","8.1.0","server",COMMAND_GROUP_SERVER,SLOWLOG_History,0,SLOWLOG_Tips,0,NULL,-2,0,0,SLOWLOG_Keyspecs,0,NULL,0),.subcommands=SLOWLOG_Subcommands},
 {MAKE_CMD("swapdb","Swaps two databases.","O(N) where N is the count of clients watching or blocking on keys from both databases.","4.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SWAPDB_History,0,SWAPDB_Tips,0,swapdbCommand,3,CMD_WRITE|CMD_FAST,ACL_CATEGORY_KEYSPACE|ACL_CATEGORY_DANGEROUS,SWAPDB_Keyspecs,0,NULL,2),.args=SWAPDB_Args},
 {MAKE_CMD("sync","An internal command used in replication.",NULL,"1.0.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,SYNC_History,0,SYNC_Tips,0,syncCommand,1,CMD_NO_ASYNC_LOADING|CMD_ADMIN|CMD_NO_MULTI|CMD_NOSCRIPT,0,SYNC_Keyspecs,0,NULL,0)},
 {MAKE_CMD("time","Returns the server time.","O(1)","2.6.0",CMD_DOC_NONE,NULL,NULL,"server",COMMAND_GROUP_SERVER,TIME_History,0,TIME_Tips,1,timeCommand,1,CMD_LOADING|CMD_STALE|CMD_FAST,0,TIME_Keyspecs,0,NULL,0)},
@@ -11163,7 +11305,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("substr","Returns a substring from a string value.","O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.","1.0.0",CMD_DOC_DEPRECATED,"`GETRANGE`","2.0.0","string",COMMAND_GROUP_STRING,SUBSTR_History,0,SUBSTR_Tips,0,getrangeCommand,4,CMD_READONLY,ACL_CATEGORY_STRING,SUBSTR_Keyspecs,1,NULL,3),.args=SUBSTR_Args},
 /* transactions */
 {MAKE_CMD("discard","Discards a transaction.","O(N), when N is the number of queued commands","2.0.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,DISCARD_History,0,DISCARD_Tips,0,discardCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,DISCARD_Keyspecs,0,NULL,0)},
-{MAKE_CMD("exec","Executes all commands in a transaction.","Depends on commands in the transaction","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,EXEC_History,0,EXEC_Tips,0,execCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SKIP_SLOWLOG,ACL_CATEGORY_TRANSACTION,EXEC_Keyspecs,0,NULL,0)},
+{MAKE_CMD("exec","Executes all commands in a transaction.","Depends on commands in the transaction","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,EXEC_History,0,EXEC_Tips,0,execCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SKIP_COMMANDLOG,ACL_CATEGORY_TRANSACTION,EXEC_Keyspecs,0,NULL,0)},
 {MAKE_CMD("multi","Starts a transaction.","O(1)","1.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,MULTI_History,0,MULTI_Tips,0,multiCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_MULTI|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,MULTI_Keyspecs,0,NULL,0)},
 {MAKE_CMD("unwatch","Forgets about watched keys of a transaction.","O(1)","2.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,UNWATCH_History,0,UNWATCH_Tips,0,unwatchCommand,1,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,UNWATCH_Keyspecs,0,NULL,0)},
 {MAKE_CMD("watch","Monitors changes to keys to determine the execution of a transaction.","O(1) for every key.","2.2.0",CMD_DOC_NONE,NULL,NULL,"transactions",COMMAND_GROUP_TRANSACTIONS,WATCH_History,0,WATCH_Tips,0,watchCommand,-2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_FAST|CMD_NO_MULTI|CMD_ALLOW_BUSY,ACL_CATEGORY_TRANSACTION,WATCH_Keyspecs,1,NULL,1),.args=WATCH_Args},

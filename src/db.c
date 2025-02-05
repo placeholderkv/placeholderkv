@@ -895,9 +895,9 @@ void keysCommand(client *c) {
     kvstoreHashtableIterator *kvs_di = NULL;
     kvstoreIterator *kvs_it = NULL;
     if (pslot != -1) {
-        kvs_di = kvstoreGetHashtableSafeIterator(c->db->keys, pslot);
+        kvs_di = kvstoreGetHashtableIterator(c->db->keys, pslot, HASHTABLE_ITER_SAFE);
     } else {
-        kvs_it = kvstoreIteratorInit(c->db->keys);
+        kvs_it = kvstoreIteratorInit(c->db->keys, HASHTABLE_ITER_SAFE);
     }
     void *next;
     while (kvs_di ? kvstoreHashtableIteratorNext(kvs_di, &next) : kvstoreIteratorNext(kvs_it, &next)) {

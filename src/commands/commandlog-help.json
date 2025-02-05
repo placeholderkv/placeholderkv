@@ -3,15 +3,10 @@
         "summary": "Show helpful text about the different subcommands",
         "complexity": "O(1)",
         "group": "server",
-        "since": "6.2.0",
+        "since": "8.1.0",
         "arity": 2,
-        "container": "SLOWLOG",
-        "function": "slowlogCommand",
-        "deprecated_since": "8.1.0",
-        "replaced_by": "`COMMANDLOG HELP`",
-        "doc_flags": [
-            "DEPRECATED"
-        ],
+        "container": "COMMANDLOG",
+        "function": "commandlogCommand",
         "command_flags": [
             "LOADING",
             "STALE"

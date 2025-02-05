@@ -630,7 +630,7 @@ void dismissSetObject(robj *o, size_t size_hint) {
          * page size, and there's a high chance we'll actually dismiss something. */
         if (size_hint / hashtableSize(ht) >= server.page_size) {
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 sds item = next;
@@ -682,7 +682,7 @@ void dismissHashObject(robj *o, size_t size_hint) {
          * a page size, and there's a high chance we'll actually dismiss something. */
         if (size_hint / hashtableSize(ht) >= server.page_size) {
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 dismissHashTypeEntry(next);
@@ -1156,7 +1156,7 @@ size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
             asize = sizeof(*o) + hashtableMemUsage(ht);
 
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
             while (hashtableNext(&iter, &next) && samples < sample_size) {
                 sds element = next;
@@ -1197,7 +1197,7 @@ size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
         } else if (o->encoding == OBJ_ENCODING_HASHTABLE) {
             hashtable *ht = o->ptr;
             hashtableIterator iter;
-            hashtableInitIterator(&iter, ht);
+            hashtableInitIterator(&iter, ht, 0);
             void *next;
 
             asize = sizeof(*o) + hashtableMemUsage(ht);

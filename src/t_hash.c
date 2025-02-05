@@ -382,7 +382,7 @@ void hashTypeInitIterator(robj *subject, hashTypeIterator *hi) {
         hi->fptr = NULL;
         hi->vptr = NULL;
     } else if (hi->encoding == OBJ_ENCODING_HASHTABLE) {
-        hashtableInitIterator(&hi->iter, subject->ptr);
+        hashtableInitIterator(&hi->iter, subject->ptr, 0);
     } else {
         serverPanic("Unknown hash encoding");
     }

@@ -207,6 +207,9 @@ static ConnectionType CT_Unix = {
     .process_pending_data = NULL,
     .postpone_update_state = NULL,
     .update_state = NULL,
+
+    /* Miscellaneous */
+    .connIntegrityChecked = NULL,
 };
 
 int RedisRegisterConnectionTypeUnix(void) {

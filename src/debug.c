@@ -207,7 +207,7 @@ void xorObjectDigest(serverDb *db, robj *keyobj, unsigned char *digest, robj *o)
         } else if (o->encoding == OBJ_ENCODING_SKIPLIST) {
             zset *zs = o->ptr;
             hashtableIterator iter;
-            hashtableInitIterator(&iter, zs->ht);
+            hashtableInitIterator(&iter, zs->ht, 0);
 
             void *next;
             while (hashtableNext(&iter, &next)) {
@@ -291,7 +291,7 @@ void computeDatasetDigest(unsigned char *final) {
     for (int j = 0; j < server.dbnum; j++) {
         serverDb *db = server.db + j;
         if (kvstoreSize(db->keys) == 0) continue;
-        kvstoreIterator *kvs_it = kvstoreIteratorInit(db->keys);
+        kvstoreIterator *kvs_it = kvstoreIteratorInit(db->keys, HASHTABLE_ITER_SAFE | HASHTABLE_ITER_PREFETCH_VALUES);
 
         /* hash the DB id, so the same dataset moved in a different DB will lead to a different digest */
         aux = htonl(j);

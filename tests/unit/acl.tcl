@@ -1244,3 +1244,65 @@ start_server {overrides {user "default on nopass ~* +@all -flushdb"} tags {acl e
     }
 }
 
+tags {acl external:skip} {
+    set renames [list rename-command "PING RainWasHere" \
+                      rename-command "RainWasHere VPING" \
+                      rename-command "INCR VINCR" \
+                      rename-command "SET VSET" \
+                      rename-command "SADD VSADD" \
+                      rename-command "HGET VHGET" \
+                      rename-command "HSET VHSET" \
+                      rename-command "CONFIG VCONFIG" ]
+    start_server [list config_lines $renames ] {
+        test {ACL still denies individual renamed commands} {
+            r ACL setuser newuser on nopass ~* +acl -ping +incr
+            r AUTH newuser anypass
+            r VINCR mycounter ; # Should not raise an error
+            assert_error {*NOPERM*ping*} {r vping}
+        }
+
+        test {ACL command classes aren't affected by command renaming} {
+            r ACL setuser newuser -@all +@set +acl
+            r VSADD myset a b c; # Should not raise an error
+            r ACL setuser newuser +@all -@string
+            r VSADD myset a b c; # Again should not raise an error
+            # String commands instead should raise an error
+            assert_error {*NOPERM*set*} {r vset foo bar}
+            r ACL setuser newuser allcommands; # Undo commands ACL
+        }
+
+        test {ACL GETUSER provides correct results when commands renamed} {
+            r ACL SETUSER adv-test
+            r ACL SETUSER adv-test +@all -@hash -@slow +hget
+            assert_equal "+@all -@hash -@slow +hget" [dict get [r ACL getuser adv-test] commands]
+
+            # Categories are re-ordered if re-added
+            r ACL SETUSER adv-test -@hash
+            assert_equal "+@all -@slow +hget -@hash" [dict get [r ACL getuser adv-test] commands]
+
+            # Inverting categories removes existing categories
+            r ACL SETUSER adv-test +@hash
+            assert_equal "+@all -@slow +hget +@hash" [dict get [r ACL getuser adv-test] commands]
+
+            # Make sure categories are case insensitive
+            r ACL SETUSER adv-test -@all +@HASH +@hash +@HaSh
+            assert_equal "-@all +@hash" [dict get [r ACL getuser adv-test] commands]
+
+            # Make sure commands are case insensitive
+            r ACL SETUSER adv-test -@all +HGET +hget +hGeT
+            assert_equal "-@all +hget" [dict get [r ACL getuser adv-test] commands]
+
+            # Arbitrary category additions and removals are handled
+            r ACL SETUSER adv-test -@all +@hash +@slow +@set +@set +@slow +@hash
+            assert_equal "-@all +@set +@slow +@hash" [dict get [r ACL getuser adv-test] commands]
+
+            # Arbitrary command additions and removals are handled
+            r ACL SETUSER adv-test -@all +hget -hset +hset -hget
+            assert_equal "-@all +hset -hget" [dict get [r ACL getuser adv-test] commands]
+
+            # Arbitrary subcommands are compacted
+            r ACL SETUSER adv-test -@all +client|list +client|list +config|get +config +acl|list -acl
+            assert_equal "-@all +client|list +config -acl" [dict get [r ACL getuser adv-test] commands]
+        }
+    }
+}

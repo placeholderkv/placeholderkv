@@ -60,6 +60,8 @@ typedef struct {
     /* Callback to free an entry when it's overwritten or deleted.
      * Optional. */
     void (*entryDestructor)(void *entry);
+    /* Callback to prefetch the value associated with a hashtable entry. */
+    void (*entryPrefetchValue)(const void *entry);
     /* Callback to control when resizing should be allowed. */
     int (*resizeAllowed)(size_t moreMem, double usedRatio);
     /* Invoked at the start of rehashing. */
@@ -90,6 +92,10 @@ typedef void (*hashtableScanFunction)(void *privdata, void *entry);
 
 /* Scan flags */
 #define HASHTABLE_SCAN_EMIT_REF (1 << 0)
+
+/* Iterator flags */
+#define HASHTABLE_ITER_SAFE (1 << 0)
+#define HASHTABLE_ITER_PREFETCH_VALUES (1 << 1)
 
 /* --- Prototypes --- */
 
@@ -144,11 +150,10 @@ int hashtableIncrementalFindGetResult(hashtableIncrementalFindState *state, void
 /* Iteration & scan */
 size_t hashtableScan(hashtable *ht, size_t cursor, hashtableScanFunction fn, void *privdata);
 size_t hashtableScanDefrag(hashtable *ht, size_t cursor, hashtableScanFunction fn, void *privdata, void *(*defragfn)(void *), int flags);
-void hashtableInitIterator(hashtableIterator *iter, hashtable *ht);
-void hashtableInitSafeIterator(hashtableIterator *iter, hashtable *ht);
+void hashtableInitIterator(hashtableIterator *iter, hashtable *ht, uint8_t flags);
+void hashtableReinitIterator(hashtableIterator *iterator, hashtable *ht);
 void hashtableResetIterator(hashtableIterator *iter);
-hashtableIterator *hashtableCreateIterator(hashtable *ht);
-hashtableIterator *hashtableCreateSafeIterator(hashtable *ht);
+hashtableIterator *hashtableCreateIterator(hashtable *ht, uint8_t flags);
 void hashtableReleaseIterator(hashtableIterator *iter);
 int hashtableNext(hashtableIterator *iter, void **elemptr);
 

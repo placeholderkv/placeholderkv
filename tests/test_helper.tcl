@@ -69,6 +69,7 @@ set ::single_tests {}
 set ::run_solo_tests {}
 set ::skip_till ""
 set ::external 0; # If "1" this means, we are running against external instance
+set ::other_server_path {}; # Used in upgrade and inter-version tests
 set ::file ""; # If set, runs only the tests in this comma separated list
 set ::curfile ""; # Hold the filename of the current suite
 set ::accurate 0; # If true runs fuzz tests with more iterations
@@ -568,26 +569,36 @@ proc send_data_packet {fd status data {elapsed 0}} {
 
 proc print_help_screen {} {
     puts [join {
-        "--cluster          Run the cluster tests, by default cluster tests run along with all tests."
-        "--moduleapi        Run the module API tests, this option should only be used in runtest-moduleapi which will build the test module."
+        # This is for terminal output, so assume default term width of 80 columns. -----|
+        "--cluster          Run the cluster tests, by default cluster tests run along"
+        "                   with all tests."
+        "--moduleapi        Run the module API tests, this option should only be used in"
+        "                   runtest-moduleapi which will build the test module."
         "--valgrind         Run the test over valgrind."
         "--durable          suppress test crashes and keep running"
         "--stack-logging    Enable OSX leaks/malloc stack logging."
         "--accurate         Run slow randomized tests for more iterations."
         "--quiet            Don't show individual tests."
-        "--single <unit>    Just execute the specified unit (see next option). This option can be repeated."
+        "--single <unit>    Just execute the specified unit (see next option). This"
+        "                   option can be repeated."
         "--verbose          Increases verbosity."
         "--list-tests       List all the available test units."
-        "--only <test>      Just execute the specified test by test name or tests that match <test> regexp (if <test> starts with '/'). This option can be repeated."
+        "--only <test>      Just execute the specified test by test name or tests that"
+        "                   match <test> regexp (if <test> starts with '/'). This option"
+        "                   can be repeated."
         "--skip-till <unit> Skip all units until (and including) the specified one."
         "--skipunit <unit>  Skip one unit."
         "--clients <num>    Number of test clients (default 16)."
         "--timeout <sec>    Test timeout in seconds (default 20 min)."
         "--force-failure    Force the execution of a test that always fails."
         "--config <k> <v>   Extra config file argument."
-        "--skipfile <file>  Name of a file containing test names or regexp patterns (if <test> starts with '/') that should be skipped (one per line). This option can be repeated."
-        "--skiptest <test>  Test name or regexp pattern (if <test> starts with '/') to skip. This option can be repeated."
-        "--tags <tags>      Run only tests having specified tags or not having '-' prefixed tags."
+        "--skipfile <file>  Name of a file containing test names or regexp patterns (if"
+        "                   <test> starts with '/') that should be skipped (one per"
+        "                   line). This option can be repeated."
+        "--skiptest <test>  Test name or regexp pattern (if <test> starts with '/') to"
+        "                   skip. This option can be repeated."
+        "--tags <tags>      Run only tests having specified tags or not having '-'"
+        "                   prefixed tags."
         "--dont-clean       Don't delete valkey log files after the run."
         "--dont-pre-clean   Don't delete existing valkey log files before the run."
         "--no-latency       Skip latency measurements and validation by some tests."
@@ -595,13 +606,17 @@ proc print_help_screen {} {
         "--stop             Blocks once the first test fails."
         "--loop             Execute the specified set of tests forever."
         "--loops <count>    Execute the specified set of tests several times."
-        "--wait-server      Wait after server is started (so that you can attach a debugger)."
+        "--wait-server      Wait after server is started (so that you can attach a"
+        "                   debugger)."
         "--dump-logs        Dump server log on test failure."
         "--io-threads       Run tests with IO threads."
         "--tls              Run tests in TLS mode."
         "--tls-module       Run tests in TLS mode with Valkey module."
         "--host <addr>      Run tests against an external host."
         "--port <port>      TCP port to use against external host."
+        "--other-server-path <path>"
+        "                   Path to another version of valkey-server, used for inter-"
+        "                   version compatibility testing."
         "--baseport <port>  Initial port number for spawned valkey servers."
         "--portcount <num>  Port range for spawned valkey servers."
         "--singledb         Use a single database, avoid SELECT."
@@ -675,6 +690,9 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
         incr j
     } elseif {$opt eq {--port}} {
         set ::port $arg
+        incr j
+    } elseif {$opt eq {--other-server-path}} {
+        set ::other_server_path $arg
         incr j
     } elseif {$opt eq {--baseport}} {
         set ::baseport $arg

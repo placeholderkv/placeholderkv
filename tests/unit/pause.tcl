@@ -7,7 +7,7 @@ start_server {tags {"pause network"}} {
         assert_equal [s paused_actions] "write"
         after 1000
         set timeout [s paused_timeout_milliseconds]
-        assert {$timeout > 0 && $timeout < 9000}
+        assert {$timeout > 0 && $timeout <= 9000}
         r client unpause
 
         r multi

@@ -86,11 +86,15 @@ void latencyAddSample(const char *event, mstime_t latency) {
         ts = zmalloc(sizeof(*ts));
         ts->idx = 0;
         ts->max = 0;
+        ts->sum = 0;
+        ts->cnt = 0;
         memset(ts->samples, 0, sizeof(ts->samples));
         dictAdd(server.latency_events, zstrdup(event), ts);
     }
 
     if (latency > ts->max) ts->max = latency;
+    ts->sum += latency;
+    ts->cnt++;
 
     /* If the previous sample is in the same second, we update our old sample
      * if this latency is > of the old one, or just return. */
@@ -266,10 +270,10 @@ sds createLatencyReport(void) {
 
         /* Potentially commands. */
         if (!strcasecmp(event, "command")) {
-            if (server.slowlog_log_slower_than < 0 || server.slowlog_max_len == 0) {
+            if (server.commandlog[COMMANDLOG_TYPE_SLOW].threshold < 0 || server.commandlog[COMMANDLOG_TYPE_SLOW].max_len == 0) {
                 advise_slowlog_enabled = 1;
                 advices++;
-            } else if (server.slowlog_log_slower_than / 1000 > server.latency_monitor_threshold) {
+            } else if (server.commandlog[COMMANDLOG_TYPE_SLOW].threshold / 1000 > server.latency_monitor_threshold) {
                 advise_slowlog_tuning = 1;
                 advices++;
             }
@@ -528,7 +532,7 @@ void fillCommandCDF(client *c, struct hdr_histogram *histogram) {
  * a per command cumulative distribution of latencies. */
 void latencyAllCommandsFillCDF(client *c, hashtable *commands, int *command_with_data) {
     hashtableIterator iter;
-    hashtableInitSafeIterator(&iter, commands);
+    hashtableInitIterator(&iter, commands, HASHTABLE_ITER_SAFE);
     void *next;
     while (hashtableNext(&iter, &next)) {
         struct serverCommand *cmd = next;
@@ -565,7 +569,7 @@ void latencySpecificCommandsFillCDF(client *c) {
 
         if (cmd->subcommands_ht) {
             hashtableIterator iter;
-            hashtableInitSafeIterator(&iter, cmd->subcommands_ht);
+            hashtableInitIterator(&iter, cmd->subcommands_ht, HASHTABLE_ITER_SAFE);
             void *next;
             while (hashtableNext(&iter, &next)) {
                 struct serverCommand *sub = next;
@@ -612,11 +616,13 @@ void latencyCommandReplyWithLatestEvents(client *c) {
         struct latencyTimeSeries *ts = dictGetVal(de);
         int last = (ts->idx + LATENCY_TS_LEN - 1) % LATENCY_TS_LEN;
 
-        addReplyArrayLen(c, 4);
+        addReplyArrayLen(c, 6);
         addReplyBulkCString(c, event);
         addReplyLongLong(c, ts->samples[last].time);
         addReplyLongLong(c, ts->samples[last].latency);
         addReplyLongLong(c, ts->max);
+        addReplyLongLong(c, ts->sum);
+        addReplyLongLong(c, ts->cnt);
     }
     dictReleaseIterator(di);
 }

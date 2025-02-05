@@ -754,8 +754,6 @@ test {diskless loading short read} {
             $replica config set repl-diskless-load swapdb
             $master config set hz 500
             $replica config set hz 500
-            $master config set dynamic-hz no
-            $replica config set dynamic-hz no
             # Try to fill the master with all types of data types / encodings
             set start [clock clicks -milliseconds]
 

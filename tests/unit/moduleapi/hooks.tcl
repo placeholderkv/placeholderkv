@@ -59,7 +59,6 @@ tags "modules" {
             }
             # set some configs that will cause many loading progress events during aof loading
             r config set key-load-delay 500
-            r config set dynamic-hz no
             r config set hz 500
             r DEBUG LOADAOF
             assert_equal [r hooks.event_last loading-aof-start] 0
@@ -73,7 +72,6 @@ tags "modules" {
             }
         }
         # undo configs before next test
-        r config set dynamic-hz yes
         r config set key-load-delay 0
 
         test {Test module rdb save hook} {

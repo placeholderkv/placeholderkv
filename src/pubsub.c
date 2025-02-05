@@ -366,7 +366,7 @@ int pubsubUnsubscribeChannel(client *c, robj *channel, int notify, pubsubtype ty
 void pubsubShardUnsubscribeAllChannelsInSlot(unsigned int slot) {
     if (!kvstoreHashtableSize(server.pubsubshard_channels, slot)) return;
 
-    kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableSafeIterator(server.pubsubshard_channels, slot);
+    kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(server.pubsubshard_channels, slot, HASHTABLE_ITER_SAFE);
     void *element;
     while (kvstoreHashtableIteratorNext(kvs_di, &element)) {
         dict *clients = element;
@@ -730,7 +730,7 @@ void channelList(client *c, sds pat, kvstore *pubsub_channels) {
     replylen = addReplyDeferredLen(c);
     for (unsigned int i = 0; i < slot_cnt; i++) {
         if (!kvstoreHashtableSize(pubsub_channels, i)) continue;
-        kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(pubsub_channels, i);
+        kvstoreHashtableIterator *kvs_di = kvstoreGetHashtableIterator(pubsub_channels, i, 0);
         void *next;
         while (kvstoreHashtableIteratorNext(kvs_di, &next)) {
             dict *clients = next;

@@ -110,8 +110,8 @@ proc waitForBgrewriteaof r {
     }
 }
 
-proc wait_for_sync r {
-    wait_for_condition 50 100 {
+proc wait_for_sync {r {maxtries 50} {delay 100}} {
+    wait_for_condition $maxtries $delay {
         [status $r master_link_status] eq "up"
     } else {
         fail "replica didn't sync in time"

@@ -814,6 +814,10 @@ static int connTLSListen(connListener *listener) {
     return listenToPort(listener);
 }
 
+static int connTLSIsIntegrityChecked(void) {
+    return 1;
+}
+
 static void connTLSCloseListener(connListener *listener) {
     connectionTypeTcp()->closeListener(listener);
 }
@@ -1186,6 +1190,9 @@ static ConnectionType CT_TLS = {
 
     /* TLS specified methods */
     .get_peer_cert = connTLSGetPeerCert,
+
+    /* Miscellaneous */
+    .connIntegrityChecked = connTLSIsIntegrityChecked,
 };
 
 int RedisRegisterConnectionTypeTLS(void) {

@@ -2092,7 +2092,7 @@ static void zuiInitIterator(zsetopsrc *op) {
             it->is.is = op->subject->ptr;
             it->is.ii = 0;
         } else if (op->encoding == OBJ_ENCODING_HASHTABLE) {
-            it->ht.iter = hashtableCreateIterator(op->subject->ptr);
+            it->ht.iter = hashtableCreateIterator(op->subject->ptr, 0);
         } else if (op->encoding == OBJ_ENCODING_LISTPACK) {
             it->lp.lp = op->subject->ptr;
             it->lp.p = lpFirst(it->lp.lp);
@@ -2349,7 +2349,7 @@ static size_t zsetHashtableGetMaxElementLength(hashtable *ht, size_t *totallen) 
     size_t maxelelen = 0;
 
     hashtableIterator iter;
-    hashtableInitIterator(&iter, ht);
+    hashtableInitIterator(&iter, ht, 0);
     void *next;
     while (hashtableNext(&iter, &next)) {
         zskiplistNode *node = next;
@@ -2749,7 +2749,7 @@ static void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIn
 
         /* Step 2: Create the skiplist using final score ordering */
         hashtableIterator iter;
-        hashtableInitIterator(&iter, dstzset->ht);
+        hashtableInitIterator(&iter, dstzset->ht, 0);
 
         void *next;
         while (hashtableNext(&iter, &next)) {

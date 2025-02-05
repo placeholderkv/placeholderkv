@@ -1314,11 +1314,13 @@ void freeClientReplicationData(client *c) {
  * the primary can accurately lists replicas and their listening ports in the
  * INFO output.
  *
- * - capa <eof|psync2|dual-channel>
+ * - capa <eof|psync2|dual-channel|skip-rdb-checksum>
  * What is the capabilities of this instance.
  * eof: supports EOF-style RDB transfer for diskless replication.
  * psync2: supports PSYNC v2, so understands +CONTINUE <new repl ID>.
  * dual-channel: supports full sync using rdb channel.
+ * skip-rdb-checksum: supports skipping RDB checksum calculations during diskless sync using
+ *                    a connection that has integrity checks (such as TLS).
  *
  * - ack <offset> [fack <aofofs>]
  * Replica informs the primary the amount of replication stream that it
@@ -1386,7 +1388,8 @@ void replconfCommand(client *c) {
                 /* If dual-channel is disable on this primary, treat this command as unrecognized
                  * replconf option. */
                 c->repl_data->replica_capa |= REPLICA_CAPA_DUAL_CHANNEL;
-            }
+            } else if (!strcasecmp(c->argv[j + 1]->ptr, REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR))
+                c->repl_data->replica_capa |= REPLICA_CAPA_SKIP_RDB_CHECKSUM;
         } else if (!strcasecmp(c->argv[j]->ptr, "ack")) {
             /* REPLCONF ACK is used by replica to inform the primary the amount
              * of replication stream that it processed so far. It is an
@@ -2045,6 +2048,12 @@ static int useDisklessLoad(void) {
     return enabled;
 }
 
+/* Returns 1 if the node can skip RDB checksum during full sync.
+ * We can RDB checksum when data is transmitted through a verified stream. */
+int replicationSupportSkipRDBChecksum(connection *conn, int is_replica_stream_verified, int is_primary_stream_verified) {
+    return is_replica_stream_verified && is_primary_stream_verified && connIsIntegrityChecked(conn);
+}
+
 /* Helper function for readSyncBulkPayload() to initialize tempDb
  * before socket-loading the new db from primary. The tempDb may be populated
  * by swapMainDbWithTempDb or freed by disklessLoadDiscardTempDb later. */
@@ -2324,7 +2333,7 @@ void readSyncBulkPayload(connection *conn) {
 
         serverLog(LL_NOTICE, "PRIMARY <-> REPLICA sync: Loading DB in memory");
         startLoading(server.repl_transfer_size, RDBFLAGS_REPLICATION, asyncLoading);
-
+        if (replicationSupportSkipRDBChecksum(conn, use_diskless_load, usemark)) rdb.flags |= RIO_FLAG_SKIP_RDB_CHECKSUM;
         int loadingFailed = 0;
         rdbLoadingCtx loadingCtx = {.dbarray = dbarray, .functions_lib_ctx = functions_lib_ctx};
         if (rdbLoadRioWithLoadingCtxScopedRdb(&rdb, RDBFLAGS_REPLICATION, &rsi, &loadingCtx) != C_OK) {
@@ -3583,11 +3592,34 @@ void syncWithPrimary(connection *conn) {
          *
          * EOF: supports EOF-style RDB transfer for diskless replication.
          * PSYNC2: supports PSYNC v2, so understands +CONTINUE <new repl ID>.
+         * skip-rdb-checksum: supports skipping RDB checksum during full sync.
+         *                    Inform the primary of this capa only during diskless sync
+         *                    using a connection that has integrity checks (such as TLS).
+         *                    In non-diskless sync, or non-integrity-checked connection, there is more
+         *                    concern for data corruprion so we keep this extra layer of detection.
          *
          * The primary will ignore capabilities it does not understand. */
-        err = sendCommand(conn, "REPLCONF", "capa", "eof", "capa", "psync2",
-                          server.dual_channel_replication ? "capa" : NULL,
-                          server.dual_channel_replication ? "dual-channel" : NULL, NULL);
+        int send_skip_rdb_checksum_capa = replicationSupportSkipRDBChecksum(conn, useDisklessLoad(), 1); // we can ignore primary's conditions when sending capa (is_primary_stream_verified=1)
+        char *argv[9] = {"REPLCONF", "capa", "eof", "capa", "psync2", NULL, NULL, NULL, NULL};
+        size_t lens[9] = {8, 4, 3, 4, 6, 0, 0, 0, 0};
+        int argc = 5;
+        if (send_skip_rdb_checksum_capa) {
+            argv[argc] = "capa";
+            lens[argc] = strlen("capa");
+            argc++;
+            argv[argc] = REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR;
+            lens[argc] = strlen(REPLICA_CAPA_SKIP_RDB_CHECKSUM_STR);
+            argc++;
+        }
+        if (server.dual_channel_replication) {
+            argv[argc] = "capa";
+            lens[argc] = strlen("capa");
+            argc++;
+            argv[argc] = "dual-channel";
+            lens[argc] = strlen("dual-channel");
+            argc++;
+        }
+        err = sendCommandArgv(conn, argc, argv, lens);
         if (err) goto write_error;
 
         /* Inform the primary of our (replica) version. */

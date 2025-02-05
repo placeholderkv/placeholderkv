@@ -4297,7 +4297,7 @@ void securityWarningCommand(client *c) {
     freeClientAsync(c);
 }
 
-/* This function preserves the original command arguments for accurate slowlog recording.
+/* This function preserves the original command arguments for accurate commandlog recording.
  *
  * It performs the following operations:
  * - Stores the initial command vector if not already saved
@@ -4348,7 +4348,7 @@ static void backupAndUpdateClientArgv(client *c, int new_argc, robj **new_argv) 
 }
 
 /* Redact a given argument to prevent it from being shown
- * in the slowlog. This information is stored in the
+ * in the commandlog. This information is stored in the
  * original_argv array. */
 void redactClientCommandArgument(client *c, int argc) {
     backupAndUpdateClientArgv(c, c->argc, NULL);
