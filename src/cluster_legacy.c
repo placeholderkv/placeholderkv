@@ -1254,6 +1254,7 @@ void clusterInitLast(void) {
 void clusterHandleServerShutdown(void) {
     if (nodeIsPrimary(myself) && server.auto_failover_on_shutdown) {
         /* Find the first best replica, that is, the replica with the largest offset. */
+        int old_replica = 0;
         client *best_replica = NULL;
         listIter replicas_iter;
         listNode *replicas_list_node;
@@ -1261,13 +1262,16 @@ void clusterHandleServerShutdown(void) {
         while ((replicas_list_node = listNext(&replicas_iter)) != NULL) {
             client *replica = listNodeValue(replicas_list_node);
             /* This is done only when the replica offset is caught up, to avoid data loss.
-             * And 0x800ff is 8.0.255, we only support new versions for this feature. */
+             * And 0x80100 is 8.1.0, we only support this feature in this version. */
+            if (replica->repl_data->replica_version < 0x80100) {
+                old_replica = 1;
+                best_replica = NULL;
+                break;
+            }
             if (replica->repl_data->repl_state == REPLICA_STATE_ONLINE &&
-                // replica->repl_data->replica_version > 0x800ff &&
                 replica->name && sdslen(replica->name->ptr) == CLUSTER_NAMELEN &&
                 replica->repl_data->repl_ack_off == server.primary_repl_offset) {
                 best_replica = replica;
-                break;
             }
         }
 
@@ -1289,8 +1293,13 @@ void clusterHandleServerShutdown(void) {
              * replication stream. */
             prepareReplicasToWrite();
             feedReplicationBuffer(buf, buflen);
+            serverLog(LL_NOTICE, "Perform auto failover to replica %s on shutdown.", (char *)best_replica->name->ptr);
         } else {
-            serverLog(LL_NOTICE, "Unable to find a replica to perform an auto failover on shutdown.");
+            if (old_replica) {
+                serverLog(LL_NOTICE, "Unable to perform auto failover on shutdown since there are old replicas.");
+            } else {
+                serverLog(LL_NOTICE, "Unable to find a replica to perform the auto failover on shutdown.");
+            }
         }
     }
 
@@ -7152,20 +7161,19 @@ int clusterCommandSpecial(client *c) {
         /* Check if it should be executed by myself. */
         if (replicaid != NULL && memcmp(replicaid->ptr, myself->name, CLUSTER_NAMELEN) != 0) {
             /* Ignore this command, including the sanity check and the process. */
-            serverLog(LL_NOTICE, "return ok");
             addReply(c, shared.ok);
             return 1;
         }
 
         /* Check preconditions. */
         if (clusterNodeIsPrimary(myself)) {
-            if (replicaid == NULL) addReplyError(c, "You should send CLUSTER FAILOVER to a replica");
+            addReplyError(c, "You should send CLUSTER FAILOVER to a replica");
             return 1;
         } else if (myself->replicaof == NULL) {
-            if (replicaid == NULL) addReplyError(c, "I'm a replica but my master is unknown to me");
+            addReplyError(c, "I'm a replica but my master is unknown to me");
             return 1;
         } else if (!force && (nodeFailed(myself->replicaof) || myself->replicaof->link == NULL)) {
-            if (replicaid == NULL) addReplyError(c, "Master is down or failed, please use CLUSTER FAILOVER FORCE");
+            addReplyError(c, "Master is down or failed, please use CLUSTER FAILOVER FORCE");
             return 1;
         }
         resetManualFailover();

@@ -9,7 +9,7 @@ proc shutdown_how {srv_id how} {
 # We will start a cluster with 3 primary nodes and 4 replicas, the primary 1 will have 2 replicas.
 # We will pause the replica 1, and then shutdown the primary 1, and making replica 2 to become
 # the new primary.
-proc test_main {how shutdown_timeout} {
+proc test_auto_failover {how shutdown_timeout} {
     test "auto-failover-on-shutdown will always pick a best replica and send CLUSTER FAILOVER - $how - shutdown-timeout: $shutdown_timeout" {
         set primary [srv 0 client]
         set replica1 [srv -3 client]
@@ -69,24 +69,24 @@ proc test_main {how shutdown_timeout} {
         $primary config set auto-failover-on-shutdown yes
         $primary client kill type replica
         shutdown_how 6 $how
-        wait_for_log_messages -6 {"*Unable to find a replica to perform an auto failover on shutdown*"} 0 1000 10
+        wait_for_log_messages -6 {"*Unable to find a replica to perform the auto failover on shutdown*"} 0 1000 10
 
         resume_process $replica1_pid
     }
 }
 
 start_cluster 3 4 {tags {external:skip cluster}} {
-    test_main "shutdown" 0
+    test_auto_failover "shutdown" 0
 }
 
 start_cluster 3 4 {tags {external:skip cluster}} {
-    test_main "sigterm" 0
+    test_auto_failover "sigterm" 0
 }
 
 start_cluster 3 4 {tags {external:skip cluster}} {
-    test_main "shutdown" 10
+    test_auto_failover "shutdown" 10
 }
 
 start_cluster 3 4 {tags {external:skip cluster}} {
-    test_main "sigterm" 10
+    test_auto_failover "sigterm" 10
 }
