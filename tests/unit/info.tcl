@@ -337,7 +337,7 @@ start_server {tags {"info" "external:skip" "debug_defrag:skip"}} {
             r config set hz 100
             set retries 0
             for {set retries 1} {$retries < 4} {incr retries} {
-                after 1600 ;# Wait for at least 160 cron tick so that sample array is filled
+                after 2000 ;# Wait for at least 160 cron tick so that sample array is filled
                 set value [s instantaneous_eventloop_cycles_per_sec]
                 if {$value > 0} break
             }
