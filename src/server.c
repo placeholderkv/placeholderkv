@@ -5728,7 +5728,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         char used_memory_scripts_hmem[64];
         char used_memory_rss_hmem[64];
         char maxmemory_hmem[64];
-        char key_eviction_memory_hmem[64];
+        char maxmemory_reserved_hmem[64];
         size_t zmalloc_used = zmalloc_used_memory();
         size_t total_system_mem = server.system_memory_size;
         const char *evict_policy = evictPolicyToString();
@@ -5750,7 +5750,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         bytesToHuman(used_memory_scripts_hmem, sizeof(used_memory_scripts_hmem), mh->lua_caches + mh->functions_caches);
         bytesToHuman(used_memory_rss_hmem, sizeof(used_memory_rss_hmem), server.cron_malloc_stats.process_rss);
         bytesToHuman(maxmemory_hmem, sizeof(maxmemory_hmem), server.maxmemory);
-        bytesToHuman(key_eviction_memory_hmem, sizeof(key_eviction_memory_hmem), server.key_eviction_memory);
+        bytesToHuman(maxmemory_reserved_hmem, sizeof(maxmemory_reserved_hmem), server.maxmemory_reserved);
 
         if (sections++) info = sdscat(info, "\r\n");
         info = sdscatprintf(
@@ -5789,8 +5789,8 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "maxmemory:%lld\r\n", server.maxmemory,
                 "maxmemory_human:%s\r\n", maxmemory_hmem,
                 "maxmemory_policy:%s\r\n", evict_policy,
-                "key_eviction_memory:%lld\r\n", server.key_eviction_memory,
-                "key_eviction_memory_human:%s\r\n", key_eviction_memory_hmem,
+                "maxmemory_reserved:%lld\r\n", server.maxmemory_reserved,
+                "maxmemory_reserved_human:%s\r\n", maxmemory_reserved_hmem,
                 "allocator_frag_ratio:%.2f\r\n", mh->allocator_frag,
                 "allocator_frag_bytes:%zu\r\n", mh->allocator_frag_bytes,
                 "allocator_rss_ratio:%.2f\r\n", mh->allocator_rss,

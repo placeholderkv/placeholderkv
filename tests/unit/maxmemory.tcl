@@ -174,7 +174,6 @@ start_server {tags {"maxmemory external:skip"}} {
                 r setex [randomKey] 10000 x
             }
             assert {[s used_memory] < ($limit+4096)}
-	    r flushall
         }
     }
 
@@ -217,7 +216,6 @@ start_server {tags {"maxmemory external:skip"}} {
             } else {
                 assert {$err == 1}
             }
-	    r flushall
         }
     }
 
@@ -263,30 +261,28 @@ start_server {tags {"maxmemory external:skip"}} {
             for {set j 0} {$j < $numkeys} {incr j 2} {
                 assert {[r exists "key:$j"]}
             }
-	    r flushall
         }
     }
 
-    test "enable maxmemory-reserved, available memory could change with maxmemory update" {
+    test "enable maxmemory-reserved, test maxmemory-reserved with maxmemory update" {
          # make sure to start with a blank instance
          r flushall
          # we set maxmemory as 0, and we expect maxmemory-reserved as 0 too.
          r config set maxmemory 0
          assert_equal 0 [lindex [r config get maxmemory] 1]
          assert_equal 0 [lindex [r config get maxmemory-reserved] 1]
-         # we increase maxmemory, and we expect more memory available (key_eviction_memory field value increases too).
+         # we increase maxmemory and maxmemory-reserved both
          r config set maxmemory 10000000
-         assert_equal 0 [lindex [r config get maxmemory-reserved] 1]
-         set info_memory [r info memory]
-         assert_equal [getInfoProperty $info_memory key_eviction_memory] 10000000
-         # we set maxmemory-reserved as non-zero value first
          r config set maxmemory-reserved 4000000
-         set info_memory [r info memory]
-         assert_equal [getInfoProperty $info_memory key_eviction_memory] 6000000
-         # we decrease maxmemory, and we expect less memory available (key_eviction_memory field value decreases too).
-         r config set maxmemory 8000000
-         set info_memory [r info memory]
-         assert_equal [getInfoProperty $info_memory key_eviction_memory] 4000000
+         assert_equal 10000000 [lindex [r config get maxmemory] 1]
+         assert_equal 4000000 [lindex [r config get maxmemory-reserved] 1]
+         # we decrease maxmemory and maxmemory-reserved no change
+         r config set maxmemory 6000000
+         r config set maxmemory-reserved 4000000
+         assert_equal 6000000 [lindex [r config get maxmemory] 1]
+         assert_equal 4000000 [lindex [r config get maxmemory-reserved] 1]
+	 catch {r config set maxmemory 3000000} err
+	 assert_match "*maxmemory reserved value should be smaller than maxmemory*" $err
     }
 
     foreach policy {
