@@ -4326,12 +4326,12 @@ int processCommand(client *c) {
         return C_OK;
     }
 
-    /* Don't accept the write command if write throttling is enabled, we are the primary, 
-     * and the output buffer (for any replica) cannot store the incoming command. 
+    /* Don't accept the write command if write throttling is enabled, we are the primary,
+     * and the output buffer (for any replica) cannot store the incoming command.
      *
      * Note that this code does not take into account the case where the command is re-written
-     * before being put into the output buffer: if it is smaller than expected, then it may 
-     * throttle erroneously; if it is larger, then it will fall-back to the behavior of client 
+     * before being put into the output buffer: if it is smaller than expected, then it may
+     * throttle erroneously; if it is larger, then it will fall-back to the behavior of client
      * disconnection.
      */
     if (server.write_throttling && is_write_command && server.primary_host == NULL) {
@@ -4343,10 +4343,10 @@ int processCommand(client *c) {
         }
 
         listIter li;
-        listNode* ln;
+        listNode *ln;
         listRewind(server.replicas, &li);
         while ((ln = listNext(&li))) {
-            if (willClientOutputBufferExceedLimits((client*)listNodeValue(ln), command_size)) {
+            if (willClientOutputBufferExceedLimits((client *)listNodeValue(ln), command_size)) {
                 rejectCommand(c, shared.throttlederr);
                 return C_OK;
             }

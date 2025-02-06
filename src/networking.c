@@ -4519,20 +4519,20 @@ char *getClientTypeName(int class) {
 
 /* Returns the client type for output buffer limits calculation 
  * (i.e., primaries are treated as normal). */
-int getClientTypeForOutputBuffering(client* c) {
+int getClientTypeForOutputBuffering(client *c) {
     int class = getClientType(c);
     if (class == CLIENT_TYPE_PRIMARY) class = CLIENT_TYPE_NORMAL;
     return class;
 }
 
 /* Returns the client's output buffer soft limit in bytes. */
-unsigned long long getClientOutputBufferSoftLimit(client* c) {
+unsigned long long getClientOutputBufferSoftLimit(client *c) {
     int class = getClientTypeForOutputBuffering(c);
     return server.client_obuf_limits[class].soft_limit_bytes;
 }
 
 /* Returns the client's output buffer hard limit in bytes. */
-unsigned long long getClientOutputBufferHardLimit(client* c) {
+unsigned long long getClientOutputBufferHardLimit(client *c) {
     int class = getClientTypeForOutputBuffering(c);
 
     /* Note that it doesn't make sense to set the replica clients output buffer
@@ -4542,9 +4542,9 @@ unsigned long long getClientOutputBufferHardLimit(client* c) {
      * This doesn't have memory consumption implications since the replica client
      * will share the backlog buffers memory. */
     unsigned long long hard_limit_bytes = server.client_obuf_limits[class].hard_limit_bytes;
-    if (class == CLIENT_TYPE_REPLICA && 
-        hard_limit_bytes && 
-        hard_limit_bytes < (unsigned long long) server.repl_backlog_size)
+    if (class == CLIENT_TYPE_REPLICA &&
+        hard_limit_bytes &&
+        hard_limit_bytes < (unsigned long long)server.repl_backlog_size)
         hard_limit_bytes = server.repl_backlog_size;
 
     return hard_limit_bytes;
@@ -4565,10 +4565,10 @@ int willClientOutputBufferExceedLimits(client *c, unsigned long long command_siz
     }
     if (required_mem >= soft_limit_bytes) {
         time_t elapsed = server.unixtime - c->obuf_soft_limit_reached_time;
-        if (c->obuf_soft_limit_reached_time == 0 || 
+        if (c->obuf_soft_limit_reached_time == 0 ||
             elapsed <= server.client_obuf_limits[getClientTypeForOutputBuffering(c)].soft_limit_seconds) {
-                return 0;
-            }
+            return 0;
+        }
         return 1;
     }
     return 0;
