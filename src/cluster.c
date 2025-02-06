@@ -778,6 +778,33 @@ int isValidAuxString(char *s, unsigned int length) {
     return 1;
 }
 
+int verifyPortNumber(client *c, long long *port, long long *cport) {
+    if (getLongLongFromObject(c->argv[3], port) != C_OK) {
+        addReplyErrorFormat(c, "Invalid base port specified: %s", (char *)c->argv[3]->ptr);
+        return C_ERR;
+    }
+    if (*port <= 0 || *port > 65535) {
+        addReplyErrorFormat(c, "Port number is out of range");
+        return C_ERR;
+    }
+
+    if (c->argc == 5) {
+        if (getLongLongFromObject(c->argv[4], cport) != C_OK) {
+            addReplyErrorFormat(c, "Invalid bus port specified: %s", (char *)c->argv[4]->ptr);
+            return C_ERR;
+        }
+    } else {
+        *cport = *port + CLUSTER_PORT_INCR;
+    }
+
+    if (*cport <= 0 || *cport > 65535) {
+        addReplyErrorFormat(c, "Cport number is out of range");
+        return C_ERR;
+    }
+
+    return C_OK;
+}
+
 void clusterCommandMyId(client *c) {
     char *name = clusterNodeGetName(getMyClusterNode());
     if (name) {
