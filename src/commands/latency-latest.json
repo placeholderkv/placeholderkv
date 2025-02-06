@@ -20,7 +20,7 @@
         ],
         "reply_schema": {
             "type": "array",
-            "description": "An array where each element is a n elements array representing the event name and information about the event latency.",
+            "description": "An array where each element is an array representing the event name, timestamp, latest and all-time latency measurements.",
             "items": {
                 "type": "array",
                 "minItems": 6,
