@@ -10,7 +10,6 @@
 #include "../connection.h"
 #include "../adlist.h"
 #include "../server.h"
-#include "../scripting_engine.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -471,132 +470,185 @@ static void ldbMaxlen(robj **argv, int argc) {
     }
 }
 
+#define CONTINUE_SCRIPT_EXECUTION 0
+#define CONTINUE_READ_NEXT_COMMAND 1
+
+static int stepCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+    ldb.step = 1;
+    return CONTINUE_SCRIPT_EXECUTION;
+}
+
+static int continueCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+    return CONTINUE_SCRIPT_EXECUTION;
+}
+
+static int listCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(context);
+    int around = ldb.currentline, ctx = 5;
+    if (argc > 1) {
+        int num = atoi(argv[1]->ptr);
+        if (num > 0) around = num;
+    }
+    if (argc > 2) ctx = atoi(argv[2]->ptr);
+    ldbList(around, ctx);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int wholeCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+    ldbList(1, 1000000);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int printCommandHandler(robj **argv, size_t argc, void *context) {
+    serverAssert(context != NULL);
+    lua_State *lua = context;
+    if (argc == 2) {
+        ldbPrint(lua, argv[1]->ptr);
+    } else {
+        ldbPrintAll(lua);
+    }
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int breakCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(context);
+    ldbBreak(argv, argc);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int traceCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+    lua_State *lua = context;
+    ldbTrace(lua);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int evalCommandHandler(robj **argv, size_t argc, void *context) {
+    serverAssert(context != NULL);
+    lua_State *lua = context;
+    ldbEval(lua, argv, argc);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int valkeyCommandHandler(robj **argv, size_t argc, void *context) {
+    serverAssert(context != NULL);
+    lua_State *lua = context;
+    ldbServer(lua, argv, argc);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int maxlenCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(context);
+    ldbMaxlen(argv, argc);
+    scriptingEngineDebuggerFlushLogs();
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int abortCommandHandler(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+    serverAssert(context != NULL);
+    lua_State *lua = context;
+    luaPushError(lua, "script aborted for user request");
+    luaError(lua);
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static debuggerCommand *commands_def_cache = NULL;
+
+void ldbGenerateDebuggerCommandsArray(lua_State *lua,
+                                      const debuggerCommand **commands,
+                                      size_t *commands_len) {
+    static debuggerCommandParam list_params[] = {
+        {.name = "line", .optional = 1},
+        {.name = "ctx", .optional = 1},
+    };
+
+    static debuggerCommandParam print_params[] = {
+        {.name = "var", .optional = 1},
+    };
+
+    static debuggerCommandParam break_params[] = {
+        {.name = "line|-line", .optional = 1},
+    };
+
+    static debuggerCommandParam eval_params[] = {
+        {.name = "code", .optional = 0, .variadic = 1},
+    };
+
+    static debuggerCommandParam valkey_params[] = {
+        {.name = "cmd", .optional = 0, .variadic = 1},
+    };
+
+    static debuggerCommandParam maxlen_params[] = {
+        {.name = "len", .optional = 1},
+    };
+
+    if (commands_def_cache == NULL) {
+        debuggerCommand commands_def[14] = {
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("step", 1, NULL, 0, "Run current line and stop again.", 0, stepCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("next", 1, NULL, 0, "Alias for step.", 0, stepCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("continue", 1, NULL, 0, "Run till next breakpoint.", 0, continueCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("list", 1, list_params, 2, "List source code around a specific line. If no line is specified the list is printed around the current line. [ctx] specifies how many lines to show before/after [line].", 0, listCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("whole", 1, NULL, 0, "List all source code. Alias for 'list 1 1000000'.", 0, wholeCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("print", 1, print_params, 1, "Show the value of the specified variable [var]. Can also show global vars KEYS and ARGV. If no [var] is specidied, shows the value of all local variables.", 0, printCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("break", 1, break_params, 1, "Add/Remove a breakpoint to the specified line. If no [line] is specified, it shows all breakpoints. When line = 0, it removes all breakpoints.", 0, breakCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("trace", 1, NULL, 0, "Show a backtrace.", 0, traceCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("eval", 1, eval_params, 1, "Execute some Lua code (in a different callframe).", 0, evalCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("valkey", 1, valkey_params, 1, "Execute a command.", 0, valkeyCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("redis", 1, valkey_params, 1, NULL, 1, valkeyCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND(SERVER_API_NAME, 0, valkey_params, 1, NULL, 1, valkeyCommandHandler, lua),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("maxlen", 1, maxlen_params, 1, "Trim logged replies and Lua var dumps to len. Specifying zero as <len> means unlimited.", 0, maxlenCommandHandler),
+            VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("abort", 1, NULL, 0, "Stop the execution of the script. In sync mode dataset changes will be retained.", 0, abortCommandHandler, lua),
+        };
+
+        commands_def_cache = zmalloc(sizeof(debuggerCommand) * 14);
+        memcpy(commands_def_cache, &commands_def, sizeof(commands_def));
+    }
+
+    *commands = commands_def_cache;
+    *commands_len = 14;
+}
+
 /* Read debugging commands from client.
  * Return C_OK if the debugging session is continuing, otherwise
  * C_ERR if the client closed the connection or is timing out. */
 int ldbRepl(lua_State *lua) {
-    robj **argv;
-    size_t argc;
     int client_disconnected = 0;
     robj *err = NULL;
 
-    /* We continue processing commands until a command that should return
-     * to the Lua interpreter is found. */
-    while (1) {
-        while ((argv = scriptingEngineDebuggerReadCommand(&argc, &client_disconnected, &err)) == NULL) {
-            if (err) {
-                luaPushError(lua, err->ptr);
-                decrRefCount(err);
-                luaError(lua);
-            } else if (client_disconnected) {
-                /* Make sure the script runs without user input since the
-                 * client is no longer connected. */
-                ldb.step = 0;
-                ldb.bpcount = 0;
-                return C_ERR;
-            }
-        }
+    scriptingEngineDebuggerProcessCommands(&client_disconnected, &err);
 
-        serverAssert(argv != NULL);
-
-        /* Execute the command. */
-        if (!strcasecmp(argv[0]->ptr, "h") || !strcasecmp(argv[0]->ptr, "help")) {
-            ldbLog(sdsnew("Lua debugger help:"));
-            ldbLog(sdsnew("[h]elp               Show this help."));
-            ldbLog(sdsnew("[s]tep               Run current line and stop again."));
-            ldbLog(sdsnew("[n]ext               Alias for step."));
-            ldbLog(sdsnew("[c]ontinue           Run till next breakpoint."));
-            ldbLog(sdsnew("[l]ist               List source code around current line."));
-            ldbLog(sdsnew("[l]ist [line]        List source code around [line]."));
-            ldbLog(sdsnew("                     line = 0 means: current position."));
-            ldbLog(sdsnew("[l]ist [line] [ctx]  In this form [ctx] specifies how many lines"));
-            ldbLog(sdsnew("                     to show before/after [line]."));
-            ldbLog(sdsnew("[w]hole              List all source code. Alias for 'list 1 1000000'."));
-            ldbLog(sdsnew("[p]rint              Show all the local variables."));
-            ldbLog(sdsnew("[p]rint <var>        Show the value of the specified variable."));
-            ldbLog(sdsnew("                     Can also show global vars KEYS and ARGV."));
-            ldbLog(sdsnew("[b]reak              Show all breakpoints."));
-            ldbLog(sdsnew("[b]reak <line>       Add a breakpoint to the specified line."));
-            ldbLog(sdsnew("[b]reak -<line>      Remove breakpoint from the specified line."));
-            ldbLog(sdsnew("[b]reak 0            Remove all breakpoints."));
-            ldbLog(sdsnew("[t]race              Show a backtrace."));
-            ldbLog(sdsnew("[e]val <code>        Execute some Lua code (in a different callframe)."));
-            ldbLog(sdsnew("[v]alkey <cmd>       Execute a command."));
-            ldbLog(sdsnew("[m]axlen [len]       Trim logged replies and Lua var dumps to len."));
-            ldbLog(sdsnew("                     Specifying zero as <len> means unlimited."));
-            ldbLog(sdsnew("[a]bort              Stop the execution of the script. In sync"));
-            ldbLog(sdsnew("                     mode dataset changes will be retained."));
-            ldbLog(sdsnew(""));
-            ldbLog(sdsnew("Debugger functions you can call from Lua scripts:"));
-            ldbLog(sdsnew("server.debug()       Produce logs in the debugger console."));
-            ldbLog(sdsnew("server.breakpoint()  Stop execution like if there was a breakpoint in the"));
-            ldbLog(sdsnew("                     next line of code."));
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "s") || !strcasecmp(argv[0]->ptr, "step") || !strcasecmp(argv[0]->ptr, "n") ||
-                   !strcasecmp(argv[0]->ptr, "next")) {
-            ldb.step = 1;
-            break;
-        } else if (!strcasecmp(argv[0]->ptr, "c") || !strcasecmp(argv[0]->ptr, "continue")) {
-            break;
-        } else if (!strcasecmp(argv[0]->ptr, "t") || !strcasecmp(argv[0]->ptr, "trace")) {
-            ldbTrace(lua);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "m") || !strcasecmp(argv[0]->ptr, "maxlen")) {
-            ldbMaxlen(argv, argc);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "b") || !strcasecmp(argv[0]->ptr, "break")) {
-            ldbBreak(argv, argc);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "e") || !strcasecmp(argv[0]->ptr, "eval")) {
-            ldbEval(lua, argv, argc);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "a") || !strcasecmp(argv[0]->ptr, "abort")) {
-            luaPushError(lua, "script aborted for user request");
-            luaError(lua);
-        } else if (argc > 1 && ((!strcasecmp(argv[0]->ptr, "r") || !strcasecmp(argv[0]->ptr, "redis")) ||
-                                (!strcasecmp(argv[0]->ptr, "v") || !strcasecmp(argv[0]->ptr, "valkey")) ||
-                                !strcasecmp(argv[0]->ptr, SERVER_API_NAME))) {
-            /* [r]redis or [v]alkey calls a command. We accept "server" too, but
-             * not "s" because that's "step". Neither can we use [c]all because
-             * "c" is continue. */
-            ldbServer(lua, argv, argc);
-            scriptingEngineDebuggerFlushLogs();
-        } else if ((!strcasecmp(argv[0]->ptr, "p") || !strcasecmp(argv[0]->ptr, "print"))) {
-            if (argc == 2)
-                ldbPrint(lua, argv[1]->ptr);
-            else
-                ldbPrintAll(lua);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "l") || !strcasecmp(argv[0]->ptr, "list")) {
-            int around = ldb.currentline, ctx = 5;
-            if (argc > 1) {
-                int num = atoi(argv[1]->ptr);
-                if (num > 0) around = num;
-            }
-            if (argc > 2) ctx = atoi(argv[2]->ptr);
-            ldbList(around, ctx);
-            scriptingEngineDebuggerFlushLogs();
-        } else if (!strcasecmp(argv[0]->ptr, "w") || !strcasecmp(argv[0]->ptr, "whole")) {
-            ldbList(1, 1000000);
-            scriptingEngineDebuggerFlushLogs();
-        } else {
-            ldbLog(sdsnew("<error> Unknown Lua debugger command or "
-                          "wrong number of arguments."));
-            scriptingEngineDebuggerFlushLogs();
-        }
-
-        /* Free the command vector. */
-        for (size_t i = 0; i < argc; i++) {
-            decrRefCount(argv[i]);
-        }
-        zfree(argv);
+    if (err) {
+        luaPushError(lua, err->ptr);
+        decrRefCount(err);
+        luaError(lua);
+    } else if (client_disconnected) {
+        /* Make sure the script runs without user input since the
+         * client is no longer connected. */
+        ldb.step = 0;
+        ldb.bpcount = 0;
+        return C_ERR;
     }
-
-    /* Free the current command argv if we break inside the while loop. */
-    for (size_t i = 0; i < argc; i++) {
-        decrRefCount(argv[i]);
-    }
-    zfree(argv);
 
     return C_OK;
 }

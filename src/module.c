@@ -13227,10 +13227,9 @@ void VM_ScriptingEngineDebuggerFlushLogs(void) {
     scriptingEngineDebuggerFlushLogs();
 }
 
-ValkeyModuleString **VM_ScriptingEngineDebuggerReadCommand(size_t *argc,
-                                                           int *client_disconnected,
-                                                           ValkeyModuleString **err) {
-    return scriptingEngineDebuggerReadCommand(argc, client_disconnected, err);
+void VM_ScriptingEngineDebuggerProcessCommands(int *client_disconnected,
+                                               ValkeyModuleString **err) {
+    scriptingEngineDebuggerProcessCommands(client_disconnected, err);
 }
 
 /* MODULE command.
@@ -14109,5 +14108,5 @@ void moduleRegisterCoreAPI(void) {
     REGISTER_API(ScriptingEngineDebuggerLog);
     REGISTER_API(ScriptingEngineDebuggerLogRespReplyStr);
     REGISTER_API(ScriptingEngineDebuggerFlushLogs);
-    REGISTER_API(ScriptingEngineDebuggerReadCommand);
+    REGISTER_API(ScriptingEngineDebuggerProcessCommands);
 }

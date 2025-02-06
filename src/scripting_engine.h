@@ -15,6 +15,8 @@ typedef ValkeyModuleScriptingEngineSubsystemType subsystemType;
 typedef ValkeyModuleScriptingEngineMemoryInfo engineMemoryInfo;
 typedef ValkeyModuleScriptingEngineCallableLazyEvalReset callableLazyEvalReset;
 typedef ValkeyModuleScriptingEngineDebuggerEnableRet debuggerEnableRet;
+typedef ValkeyModuleScriptingEngineDebuggerCommand debuggerCommand;
+typedef ValkeyModuleScriptingEngineDebuggerCommandParam debuggerCommandParam;
 typedef ValkeyModuleScriptingEngineMethods engineMethods;
 
 /*
@@ -84,7 +86,9 @@ engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine,
                                                   subsystemType type);
 
 debuggerEnableRet scriptingEngineCallDebuggerEnable(scriptingEngine *engine,
-                                                    subsystemType type);
+                                                    subsystemType type,
+                                                    const debuggerCommand **commands,
+                                                    size_t *commands_len);
 
 void scriptingEngineCallDebuggerDisable(scriptingEngine *engine,
                                         subsystemType type);
@@ -119,9 +123,7 @@ size_t scriptingEngineDebuggerGetMaxlen(void);
 
 void scriptingEngineDebuggerFlushLogs(void);
 
-robj **scriptingEngineDebuggerReadCommand(size_t *argc,
-                                          int *client_disconnected,
-                                          robj **err);
+void scriptingEngineDebuggerProcessCommands(int *client_disconnected, robj **err);
 
 void scriptingEngineDebuggerLogRespReplyStr(const char *reply);
 

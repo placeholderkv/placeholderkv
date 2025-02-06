@@ -1547,13 +1547,13 @@ start_server {tags {"scripting needs:debug external:skip"}} {
         r script debug sync
         r eval {return 'hello'} 0
         catch {r 'hello\0world'} e
-        assert_match {*Unknown Lua debugger command*} $e
+        assert_match {*Unknown debugger command*} $e
         catch {r 'hello\0'} e
-        assert_match {*Unknown Lua debugger command*} $e
+        assert_match {*Unknown debugger command*} $e
         catch {r '\0hello'} e
-        assert_match {*Unknown Lua debugger command*} $e
+        assert_match {*Unknown debugger command*} $e
         catch {r '\0hello\0'} e
-        assert_match {*Unknown Lua debugger command*} $e
+        assert_match {*Unknown debugger command*} $e
     }
 
     test {Test scripting debug lua stack overflow} {

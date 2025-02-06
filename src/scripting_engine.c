@@ -312,7 +312,9 @@ engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine,
 }
 
 debuggerEnableRet scriptingEngineCallDebuggerEnable(scriptingEngine *engine,
-                                                    subsystemType type) {
+                                                    subsystemType type,
+                                                    const debuggerCommand **commands,
+                                                    size_t *commands_len) {
     if (engine->impl.methods.debugger_enable == NULL ||
         engine->impl.methods.debugger_disable == NULL ||
         engine->impl.methods.debugger_start == NULL ||
@@ -324,7 +326,9 @@ debuggerEnableRet scriptingEngineCallDebuggerEnable(scriptingEngine *engine,
     debuggerEnableRet ret = engine->impl.methods.debugger_enable(
         engine->module_ctx,
         engine->impl.ctx,
-        type);
+        type,
+        commands,
+        commands_len);
     engineTeardownModuleCtx(engine);
     return ret;
 }
@@ -364,16 +368,18 @@ void scriptingEngineCallDebuggerEnd(scriptingEngine *engine,
 #define DS_MAX_LEN_DEFAULT 256 /* Default len limit for replies / var dumps. */
 
 typedef struct debugState {
-    scriptingEngine *engine; /* The scripting engine. */
-    connection *conn;        /* Connection of the debugging client. */
-    int active;              /* Are we debugging EVAL right now? */
-    int forked;              /* Is this a fork()ed debugging session? */
-    list *logs;              /* List of messages to send to the client. */
-    list *traces;            /* Messages about commands executed since last stop.*/
-    list *children;          /* All forked debugging sessions pids. */
-    sds cbuf;                /* Debugger client command buffer. */
-    size_t maxlen;           /* Max var dump / reply length. */
-    int maxlen_hint_sent;    /* Did we already hint about "set maxlen"? */
+    scriptingEngine *engine;         /* The scripting engine. */
+    const debuggerCommand *commands; /* The array of debugger commands exported by the scripting engine. */
+    size_t commands_len;             /* The length of the commands array. */
+    connection *conn;                /* Connection of the debugging client. */
+    int active;                      /* Are we debugging EVAL right now? */
+    int forked;                      /* Is this a fork()ed debugging session? */
+    list *logs;                      /* List of messages to send to the client. */
+    list *traces;                    /* Messages about commands executed since last stop.*/
+    list *children;                  /* All forked debugging sessions pids. */
+    sds cbuf;                        /* Debugger client command buffer. */
+    size_t maxlen;                   /* Max var dump / reply length. */
+    int maxlen_hint_sent;            /* Did we already hint about "set maxlen"? */
 } debugState;
 
 static debugState ds;
@@ -398,7 +404,12 @@ void debugScriptFlushLog(list *log) {
 
 /* Enable debug mode of scripts for this client. */
 int scriptingEngineDebuggerEnable(client *c, scriptingEngine *engine, sds *err) {
-    debuggerEnableRet ret = scriptingEngineCallDebuggerEnable(engine, VMSE_EVAL);
+    debuggerEnableRet ret = scriptingEngineCallDebuggerEnable(
+        engine,
+        VMSE_EVAL,
+        &ds.commands,
+        &ds.commands_len);
+
     if (ret == VMSE_DEBUG_NOT_SUPPORTED) {
         *err = sdscatfmt(sdsempty(),
                          "The scripting engine '%s' does not support interactive script debugging",
@@ -425,6 +436,8 @@ int scriptingEngineDebuggerEnable(client *c, scriptingEngine *engine, sds *err) 
  * to properly shut down a client debugging session, see scriptingEngineDebuggerEndSession()
  * for more information. */
 void scriptingEngineDebuggerDisable(client *c) {
+    ds.commands = NULL;
+    ds.commands_len = 0;
     c->flag.lua_debug = 0;
     c->flag.lua_debug_sync = 0;
     scriptingEngineCallDebuggerDisable(ds.engine, VMSE_EVAL);
@@ -604,6 +617,8 @@ void scriptingEngineDebuggerKillForkedSessions(void) {
  * otherwise NULL is returned and there is to read more buffer. */
 static robj **readReadCommandInternal(size_t *argc, robj **err) {
     static const char *protocol_error = "protocol error";
+    serverAssert(err != NULL && *err == NULL);
+    serverAssert(argc != NULL && *argc == 0);
     robj **argv = NULL;
     size_t largc = 0;
     if (sdslen(ds.cbuf) == 0) return NULL;
@@ -663,43 +678,236 @@ keep_reading:
     return NULL;
 }
 
-robj **scriptingEngineDebuggerReadCommand(size_t *argc,
-                                          int *client_disconnected,
-                                          robj **err) {
+static sds *wrapText(const char *text, size_t max_len, size_t *count) {
+    sds *lines = NULL;
+    *count = 0;
+
+    const char *p = text;
+    size_t text_len = strlen(p);
+
+    while ((size_t)(p - text) < text_len) {
+        size_t len = strlen(p);
+        char *line = zmalloc(sizeof(char) * (max_len + 1));
+        line[max_len] = 0;
+
+        strncpy(line, p, max_len);
+
+        if (len > max_len) {
+            char *lastspace = strrchr(line, ' ');
+            if (lastspace != NULL) {
+                *lastspace = 0;
+            }
+
+            p += (lastspace - line) + 1;
+        } else {
+            p += len;
+        }
+
+        lines = zrealloc(lines, sizeof(sds) * (*count + 1));
+        lines[*count] = sdsnew(line);
+        zfree(line);
+        (*count)++;
+    }
+
+    return lines;
+}
+
+static void printCommandHelp(const debuggerCommand *command,
+                             int name_width,
+                             int line_width) {
+    sds msg = sdsempty();
+
+    /* Format the command name according to the prefix length. */
+    if (command->prefix_len > 0 && command->prefix_len < strlen(command->name)) {
+        sds prefix = sdsnewlen(command->name, command->prefix_len);
+        msg = sdscatfmt(msg, "[%S]%s", prefix, command->name + command->prefix_len);
+    } else {
+        msg = sdscatfmt(msg, "%s", command->name);
+    }
+
+    /* Format the command parameters. */
+    for (size_t i = 0; i < command->params_len; i++) {
+        if (command->params[i].optional) {
+            msg = sdscatfmt(msg, " [%s]", command->params[i].name);
+        } else {
+            msg = sdscatfmt(msg, " <%s>", command->params[i].name);
+        }
+    }
+
+    msg = sdscatprintf(msg, "%*s ", -(name_width - (int)sdslen(msg) - 1), "");
+
+    /* If the command name plus the parameters don't fit in the respective
+     * space slot, then start the description of the command in the next line.*/
+    int breakline = (int)sdslen(msg) > name_width;
+    if (breakline) {
+        scriptingEngineDebuggerLog(msg);
+    }
+
+    size_t count = 0;
+    sds *lines = wrapText(command->desc, line_width - name_width, &count);
+    for (size_t i = 0; i < count; i++) {
+        if (i == 0 && !breakline) {
+            msg = sdscatsds(msg, lines[i]);
+        } else {
+            msg = sdscatprintf(sdsempty(), "%*s%s", name_width, "", lines[i]);
+        }
+        scriptingEngineDebuggerLog(msg);
+        sdsfree(lines[i]);
+    }
+    zfree(lines);
+}
+
+#define HELP_LINE_WIDTH 70
+#define HELP_CMD_NAME_WIDTH 21
+
+#define CONTINUE_SCRIPT_EXECUTION 0
+#define CONTINUE_READ_NEXT_COMMAND 1
+
+static int printHelpMessage(robj **argv, size_t argc, void *context);
+
+static debuggerCommand helpCommand = {
+    .name = "help",
+    .prefix_len = 1,
+    .desc = "Show this help.",
+    .handler = printHelpMessage,
+};
+
+static int printHelpMessage(robj **argv, size_t argc, void *context) {
+    UNUSED(argv);
+    UNUSED(argc);
+    UNUSED(context);
+
+    scriptingEngineDebuggerLog(sdscatfmt(sdsempty(), "%s debugger help:", scriptingEngineGetName(ds.engine)));
+
+    printCommandHelp(&helpCommand, HELP_CMD_NAME_WIDTH, HELP_LINE_WIDTH);
+
+    for (size_t i = 0; i < ds.commands_len; i++) {
+        if (!ds.commands[i].invisible) {
+            printCommandHelp(&ds.commands[i], HELP_CMD_NAME_WIDTH, HELP_LINE_WIDTH);
+        }
+    }
+
+    scriptingEngineDebuggerFlushLogs();
+
+    return CONTINUE_READ_NEXT_COMMAND;
+}
+
+static int checkCommandParameters(const debuggerCommand *cmd, size_t argc) {
+    size_t args_count = argc - 1;
+    size_t mandatory_params_count = 0;
+    int has_variadic_param = 0;
+
+    for (size_t i = 0; i < cmd->params_len; i++) {
+        if (!cmd->params[i].optional) {
+            mandatory_params_count++;
+        }
+        if (cmd->params[i].variadic) {
+            has_variadic_param = 1;
+        }
+    }
+
+    if (has_variadic_param && args_count > 0) {
+        /* If command has a variadic parameter then we just require at least
+         * one argument present. */
+        return 1;
+    }
+
+    if (args_count < mandatory_params_count) {
+        /* Reject command because there is not enough arguments passed. */
+        return 0;
+    }
+
+    if (args_count > cmd->params_len) {
+        /* Reject command because there are more arguments than parameters. */
+        return 0;
+    }
+
+    return 1;
+}
+
+static const debuggerCommand *findCommand(robj **argv, size_t argc) {
+    if ((sdslen(argv[0]->ptr) == helpCommand.prefix_len &&
+         strncasecmp(helpCommand.name, argv[0]->ptr, helpCommand.prefix_len) == 0) ||
+        strcasecmp(helpCommand.name, argv[0]->ptr) == 0) {
+        return &helpCommand;
+    }
+
+    for (size_t i = 0; i < ds.commands_len; i++) {
+        const debuggerCommand *cmd = &ds.commands[i];
+        if ((sdslen(argv[0]->ptr) == cmd->prefix_len &&
+             strncasecmp(cmd->name, argv[0]->ptr, cmd->prefix_len) == 0) ||
+            strcasecmp(cmd->name, argv[0]->ptr) == 0) {
+            if (checkCommandParameters(cmd, argc)) {
+                return cmd;
+            }
+        }
+    }
+    return NULL;
+}
+
+static int findAndExecuteCommand(robj **argv, size_t argc) {
+    const debuggerCommand *cmd = findCommand(argv, argc);
+    if (cmd == NULL) {
+        scriptingEngineDebuggerLog(sdsnew("<error> Unknown debugger command or "
+                                          "wrong number of arguments."));
+        scriptingEngineDebuggerFlushLogs();
+        return CONTINUE_READ_NEXT_COMMAND;
+    }
+
+    return cmd->handler(argv, argc, cmd->context);
+}
+
+void scriptingEngineDebuggerProcessCommands(int *client_disconnected, robj **err) {
     static const char *max_buffer_error = "max client buffer reached";
 
     serverAssert(err != NULL);
     robj **argv = NULL;
     *client_disconnected = 0;
+    *err = NULL;
 
-    while ((argv = readReadCommandInternal(argc, err)) == NULL) {
-        if (*err) {
-            break;
+    while (1) {
+        size_t argc = 0;
+        while ((argv = readReadCommandInternal(&argc, err)) == NULL) {
+            if (*err) {
+                break;
+            }
+
+            char buf[1024];
+            int nread = connRead(ds.conn, buf, sizeof(buf));
+            if (nread <= 0) {
+                *client_disconnected = 1;
+                break;
+            }
+
+            ds.cbuf = sdscatlen(ds.cbuf, buf, nread);
+            /* after 1M we will exit with an error
+             * so that the client will not blow the memory
+             */
+            if (sdslen(ds.cbuf) > 1 << 20) {
+                *err = createStringObject(max_buffer_error, strlen(max_buffer_error));
+                return;
+            }
         }
 
-        char buf[1024];
-        int nread = connRead(ds.conn, buf, sizeof(buf));
-        if (nread <= 0) {
-            *client_disconnected = 1;
-            break;
+        serverAssert(argv != NULL || *err || *client_disconnected);
+
+        sdsfree(ds.cbuf);
+        ds.cbuf = sdsempty();
+
+        if (*err || *client_disconnected) {
+            return;
         }
 
-        ds.cbuf = sdscatlen(ds.cbuf, buf, nread);
-        /* after 1M we will exit with an error
-         * so that the client will not blow the memory
-         */
-        if (sdslen(ds.cbuf) > 1 << 20) {
-            *err = createStringObject(max_buffer_error, strlen(max_buffer_error));
-            return NULL;
+        if (findAndExecuteCommand(argv, argc) != CONTINUE_READ_NEXT_COMMAND) {
+            return;
         }
+
+        /* Free the command vector. */
+        for (size_t i = 0; i < argc; i++) {
+            decrRefCount(argv[i]);
+        }
+        zfree(argv);
     }
-
-    serverAssert(argv != NULL || *err || *client_disconnected);
-
-    sdsfree(ds.cbuf);
-    ds.cbuf = sdsempty();
-
-    return argv;
 }
 
 static const char *debugScriptRespToHuman_Int(sds *o, const char *reply);

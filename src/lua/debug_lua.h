@@ -1,6 +1,8 @@
 #ifndef _LUA_DEBUG_H_
 #define _LUA_DEBUG_H_
 
+#include "../scripting_engine.h"
+
 typedef char *sds;
 typedef struct serverObject robj;
 typedef struct lua_State lua_State;
@@ -28,5 +30,8 @@ int ldbIsStepEnabled(void);
 void ldbSetStepMode(int enable);
 
 int ldbRepl(lua_State *lua);
+void ldbGenerateDebuggerCommandsArray(lua_State *lua,
+                                      const debuggerCommand **commands,
+                                      size_t *commands_len);
 
 #endif /* _LUA_DEBUG_H_ */

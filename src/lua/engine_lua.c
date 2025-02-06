@@ -374,15 +374,22 @@ static void luaEngineFreeFunction(ValkeyModuleCtx *module_ctx,
 
 static debuggerEnableRet luaEngineDebuggerEnable(ValkeyModuleCtx *module_ctx,
                                                  engineCtx *engine_ctx,
-                                                 subsystemType type) {
+                                                 subsystemType type,
+                                                 const debuggerCommand **commands,
+                                                 size_t *commands_len) {
     UNUSED(module_ctx);
-    UNUSED(engine_ctx);
 
     if (type != VMSE_EVAL) {
         return VMSE_DEBUG_NOT_SUPPORTED;
     }
 
     ldbEnable();
+
+    luaEngineCtx *lua_engine_ctx = engine_ctx;
+    ldbGenerateDebuggerCommandsArray(lua_engine_ctx->eval_lua,
+                                     commands,
+                                     commands_len);
+
     return VMSE_DEBUG_ENABLED;
 }
 
