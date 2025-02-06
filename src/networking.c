@@ -2149,8 +2149,8 @@ void writeToReplica(client *c) {
 
 /* This struct is used by writevToClient to prepare iovec array for submitting to connWritev */
 typedef struct replyIOV {
-    int iovcnt;              /* number of elements in iov array */
-    int iovsize;             /* capacity of iov array */
+    int iovcnt;  /* number of elements in iov array */
+    int iovsize; /* capacity of iov array */
     struct iovec *iov;
     ssize_t iov_len_total;   /* Total length of data pointed by iov array */
     size_t last_written_len; /* Length of data in the last written buffer
