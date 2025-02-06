@@ -27,7 +27,7 @@
                 "maxItems": 6,
                 "items": [
                     {
-                        "type": "string",
+                        "type": "string1",
                         "description": "Event name."
                     },
                     {
