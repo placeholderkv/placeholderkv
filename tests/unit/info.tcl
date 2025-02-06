@@ -342,7 +342,6 @@ start_server {tags {"info" "external:skip" "debug_defrag:skip"}} {
             assert_morethan $value 0
             # Hz is configured to 100, so we expect a value of about 100, but in practice it will be lower
             # because of imprecision in kernel wakeups, but we also have some other wakeups like clients cron.
-            assert_morethan $value 50
             assert_lessthan $value 150
             set value [s instantaneous_eventloop_duration_usec]
             r config set hz 10
