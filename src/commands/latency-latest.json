@@ -20,11 +20,11 @@
         ],
         "reply_schema": {
             "type": "array",
-            "description": "An array where each element is a four elements array representing the event's name, timestamp, latest and all-time latency measurements.",
+            "description": "An array where each element is a n elements array representing the event name and information about the event latency.",
             "items": {
                 "type": "array",
-                "minItems": 4,
-                "maxItems": 4,
+                "minItems": 6,
+                "maxItems": 6,
                 "items": [
                     {
                         "type": "string",
