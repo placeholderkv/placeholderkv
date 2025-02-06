@@ -728,11 +728,8 @@ int performEvictions(void) {
     if (mem_freed >= (long long)(mem_used - server.key_eviction_memory)) {
         /* at this point, the memory is OK, or we have reached the time limit */
         result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
-    } else {
-        goto cant_free;
     }
 
-cant_free:
     if (result == EVICT_FAIL) {
         /* At this point, we have run out of evictable items.  It's possible
          * that some items are being freed in the lazyfree thread.  Perform a
