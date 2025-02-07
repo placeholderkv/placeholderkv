@@ -340,9 +340,10 @@ start_server {tags {"info" "external:skip" "debug_defrag:skip"}} {
 
             if {$::verbose} { puts "instantaneous metrics instantaneous_eventloop_cycles_per_sec: $value" }
             assert_morethan $value 0
-            # Hz is configured to 100, so we expect a value of about 100, but in practice it will be lower
-            # because of imprecision in kernel wakeups, but we also have some other wakeups like clients cron.
-            assert_lessthan $value 150
+            # Hz is configured to 100, so we expect a value around 200 since there will be 100 wakeups for
+            # both the server and the clients cron. In practice it will be lower because of imprecision in
+            # kernel wakeups.
+            assert_lessthan $value 200
             set value [s instantaneous_eventloop_duration_usec]
             r config set hz 10
             if {$::verbose} { puts "instantaneous metrics instantaneous_eventloop_duration_usec: $value" }
