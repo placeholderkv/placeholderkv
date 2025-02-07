@@ -4335,18 +4335,11 @@ int processCommand(client *c) {
      * disconnection.
      */
     if (server.write_throttling && is_write_command && server.primary_host == NULL) {
-        /* Size of the command to be stored in the output buffer. */
-        unsigned long long command_size = 3 + digits10(c->argc); /* 3: *[argc]\r\n */
-        for (int iarg = 0; iarg < c->argc; ++iarg) {
-            size_t arg_length = sdslen(c->argv[iarg]->ptr);
-            command_size += 5 + digits10(arg_length) + arg_length; /* 5: $[arglen]\r\n[arg]\r\n */
-        }
-
         listIter li;
         listNode *ln;
         listRewind(server.replicas, &li);
         while ((ln = listNext(&li))) {
-            if (willClientOutputBufferExceedLimits((client *)listNodeValue(ln), command_size)) {
+            if (willClientOutputBufferExceedLimits((client *)listNodeValue(ln), c->net_input_bytes_curr_cmd)) {
                 rejectCommand(c, shared.throttlederr);
                 return C_OK;
             }
