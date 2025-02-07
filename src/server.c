@@ -389,10 +389,6 @@ int hashtableSdsKeyCompare(const void *key1, const void *key2) {
     return sdslen(sds1) != sdslen(sds2) || sdscmp(sds1, sds2);
 }
 
-size_t dictSdsEmbedKey(unsigned char *buf, size_t buf_len, const void *key, uint8_t *key_offset) {
-    return sdscopytobuffer(buf, buf_len, (sds)key, key_offset);
-}
-
 /* A case insensitive version used for the command lookup table and other
  * places where case insensitive non binary-safe comparison is needed. */
 int dictSdsKeyCaseCompare(const void *key1, const void *key2) {
@@ -1167,6 +1163,9 @@ void getExpensiveClientsInfo(size_t *in_usage, size_t *out_usage) {
  * of them need to be processed every second.
  */
 static void clientsCron(int clients_this_cycle) {
+    /* for debug purposes: skip actual cron work if pause_cron is on */
+    if (server.pause_cron) return;
+
     mstime_t now = mstime();
 
     int curr_peak_mem_usage_slot = server.unixtime % CLIENTS_PEAK_MEM_USAGE_SLOTS;
@@ -1220,7 +1219,7 @@ static void clientsCron(int clients_this_cycle) {
  * This cron task follows the following rules:
  *  - To manage latency, we don't check more than MAX_CLIENTS_PER_CLOCK_TICK at a time
  *  - The minimum rate will be defined by server.hz
- *  - The maxmum rate will be defined by CONFIG_MAX_HZ
+ *  - The maximum rate will be defined by CONFIG_MAX_HZ
  *  - At least CLIENTS_CRON_MIN_ITERATIONS will be performed each cycle
  *  - All clients need to be checked (at least) once per second (if possible given other constraints)
  */
@@ -5692,14 +5691,18 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         getExpensiveClientsInfo(&maxin, &maxout);
         totalNumberOfStatefulKeys(&blocking_keys, &blocking_keys_on_nokey, &watched_keys);
 
+        pause_purpose purpose;
+        char *paused_reason = "none";
         char *paused_actions = "none";
         long long paused_timeout = 0;
         if (server.paused_actions & PAUSE_ACTION_CLIENT_ALL) {
             paused_actions = "all";
-            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_ALL);
+            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_ALL, &purpose);
+            paused_reason = getPausedReason(purpose);
         } else if (server.paused_actions & PAUSE_ACTION_CLIENT_WRITE) {
             paused_actions = "write";
-            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_WRITE);
+            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_WRITE, &purpose);
+            paused_reason = getPausedReason(purpose);
         }
 
         if (sections++) info = sdscat(info, "\r\n");
@@ -5719,6 +5722,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "total_watched_keys:%lu\r\n", watched_keys,
                 "total_blocking_keys:%lu\r\n", blocking_keys,
                 "total_blocking_keys_on_nokey:%lu\r\n", blocking_keys_on_nokey,
+                "paused_reason:%s\r\n", paused_reason,
                 "paused_actions:%s\r\n", paused_actions,
                 "paused_timeout_milliseconds:%lld\r\n", paused_timeout));
     }

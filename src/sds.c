@@ -41,7 +41,7 @@
 
 const char *SDS_NOINIT = "SDS_NOINIT";
 
-static inline int sdsHdrSize(char type) {
+int sdsHdrSize(char type) {
     switch (type & SDS_TYPE_MASK) {
     case SDS_TYPE_5: return sizeof(struct sdshdr5);
     case SDS_TYPE_8: return sizeof(struct sdshdr8);
@@ -52,7 +52,8 @@ static inline int sdsHdrSize(char type) {
     return 0;
 }
 
-static inline char sdsReqType(size_t string_size) {
+/* Returns the minimum SDS type required to store a string of the given length. */
+char sdsReqType(size_t string_size) {
     if (string_size < 1 << 5) return SDS_TYPE_5;
     if (string_size <= (1 << 8) - sizeof(struct sdshdr8) - 1) return SDS_TYPE_8;
     if (string_size <= (1 << 16) - sizeof(struct sdshdr16) - 1) return SDS_TYPE_16;
@@ -64,6 +65,7 @@ static inline char sdsReqType(size_t string_size) {
 #endif
 }
 
+/* The maximum length of a string that can be stored with the given SDS type. */
 static inline size_t sdsTypeMaxSize(char type) {
     if (type == SDS_TYPE_5) return (1 << 5) - 1;
     if (type == SDS_TYPE_8) return (1 << 8) - 1;
@@ -99,29 +101,33 @@ static inline int adjustTypeIfNeeded(char *type, int *hdrlen, size_t bufsize) {
  * \0 characters in the middle, as the length is stored in the sds header. */
 sds _sdsnewlen(const void *init, size_t initlen, int trymalloc) {
     void *sh;
-    sds s;
     char type = sdsReqType(initlen);
     /* Empty strings are usually created in order to append. Use type 8
      * since type 5 is not good at this. */
     if (type == SDS_TYPE_5 && initlen == 0) type = SDS_TYPE_8;
     int hdrlen = sdsHdrSize(type);
-    unsigned char *fp; /* flags pointer. */
-    size_t bufsize, usable;
+    size_t bufsize;
 
     assert(initlen + hdrlen + 1 > initlen); /* Catch size_t overflow */
     sh = trymalloc ? s_trymalloc_usable(hdrlen + initlen + 1, &bufsize)
                    : s_malloc_usable(hdrlen + initlen + 1, &bufsize);
     if (sh == NULL) return NULL;
-    if (init == SDS_NOINIT)
-        init = NULL;
-    else if (!init)
-        memset(sh, 0, hdrlen + initlen + 1);
 
     adjustTypeIfNeeded(&type, &hdrlen, bufsize);
-    usable = bufsize - hdrlen - 1;
+    return sdswrite(sh, bufsize, type, init, initlen);
+}
 
-    s = (char *)sh + hdrlen;
-    fp = ((unsigned char *)s) - 1;
+/* Writes an sds with type `type` into a buffer `buf` of size `bufsize`. Returns
+ * an sds handle to the string within the buffer. Use `sdsReqType(length)` to
+ * compute the type and `sdsReqSize(length, type)` to compute the required
+ * buffer size. You can use a larger `bufsize` than required, but usable size
+ * can't be greater than `sdsTypeMaxSize(type)`. */
+sds sdswrite(char *buf, size_t bufsize, char type, const char *init, size_t initlen) {
+    assert(bufsize >= sdsReqSize(initlen, type));
+    int hdrlen = sdsHdrSize(type);
+    size_t usable = bufsize - hdrlen - 1;
+    sds s = buf + hdrlen;
+    unsigned char *fp = ((unsigned char *)s) - 1; /* flags pointer. */
 
     switch (type) {
     case SDS_TYPE_5: {
@@ -161,6 +167,10 @@ sds _sdsnewlen(const void *init, size_t initlen, int trymalloc) {
         break;
     }
     }
+    if (init == SDS_NOINIT)
+        init = NULL;
+    else if (!init)
+        memset(s, 0, initlen);
     if (initlen && init) memcpy(s, init, initlen);
     s[initlen] = '\0';
     return s;
@@ -189,25 +199,6 @@ sds sdsnew(const char *init) {
 /* Duplicate an sds string. */
 sds sdsdup(const_sds s) {
     return sdsnewlen(s, sdslen(s));
-}
-
-/*
- * This method returns the minimum amount of bytes required to store the sds (header + data + NULL terminator).
- */
-static inline size_t sdsminlen(const_sds s) {
-    return sdslen(s) + sdsHdrSize(s[-1]) + 1;
-}
-
-/* This method copies the sds `s` into `buf` which is the target character buffer. */
-size_t sdscopytobuffer(unsigned char *buf, size_t buf_len, const_sds s, uint8_t *hdr_size) {
-    size_t required_keylen = sdsminlen(s);
-    if (buf == NULL) {
-        return required_keylen;
-    }
-    assert(buf_len >= required_keylen);
-    memcpy(buf, sdsAllocPtr(s), required_keylen);
-    *hdr_size = sdsHdrSize(s[-1]);
-    return required_keylen;
 }
 
 /* Free an sds string. No operation is performed if 's' is NULL. */
@@ -267,7 +258,7 @@ sds _sdsMakeRoomFor(sds s, size_t addlen, int greedy) {
     void *sh, *newsh;
     size_t avail = sdsavail(s);
     size_t len, newlen, reqlen;
-    char type, oldtype = s[-1] & SDS_TYPE_MASK;
+    char type, oldtype = sdsType(s);
     int hdrlen;
     size_t bufsize, usable;
     int use_realloc;
@@ -353,7 +344,7 @@ sds sdsRemoveFreeSpace(sds s, int would_regrow) {
  * SDS_TYPE_5, which is desired when the sds is likely to be changed again. */
 sds sdsResize(sds s, size_t size, int would_regrow) {
     void *sh, *newsh = NULL;
-    char type, oldtype = s[-1] & SDS_TYPE_MASK;
+    char type, oldtype = sdsType(s);
     int hdrlen, oldhdrlen = sdsHdrSize(oldtype);
     size_t len = sdslen(s);
     sh = (char *)s - oldhdrlen;
@@ -433,7 +424,7 @@ sds sdsResize(sds s, size_t size, int would_regrow) {
  * 4) The implicit null term.
  */
 size_t sdsAllocSize(const_sds s) {
-    char type = s[-1] & SDS_TYPE_MASK;
+    char type = sdsType(s);
     /* SDS_TYPE_5 header doesn't contain the size of the allocation */
     if (type == SDS_TYPE_5) {
         return s_malloc_usable_size(sdsAllocPtr(s));
@@ -445,7 +436,7 @@ size_t sdsAllocSize(const_sds s) {
 /* Return the pointer of the actual SDS allocation (normally SDS strings
  * are referenced by the start of the string buffer). */
 void *sdsAllocPtr(const_sds s) {
-    return (void *)(s - sdsHdrSize(s[-1]));
+    return (void *)(s - sdsHdrSize(sdsType(s)));
 }
 
 /* Increment the sds length and decrements the left free space at the
@@ -472,12 +463,11 @@ void *sdsAllocPtr(const_sds s) {
  * sdsIncrLen(s, nread);
  */
 void sdsIncrLen(sds s, ssize_t incr) {
-    unsigned char flags = s[-1];
     size_t len;
-    switch (flags & SDS_TYPE_MASK) {
+    switch (sdsType(s)) {
     case SDS_TYPE_5: {
         unsigned char *fp = ((unsigned char *)s) - 1;
-        unsigned char oldlen = SDS_TYPE_5_LEN(flags);
+        unsigned char oldlen = SDS_TYPE_5_LEN(*fp);
         assert((incr > 0 && oldlen + incr < 32) || (incr < 0 && oldlen >= (unsigned int)(-incr)));
         *fp = SDS_TYPE_5 | ((oldlen + incr) << SDS_TYPE_BITS);
         len = oldlen + incr;

@@ -52,16 +52,18 @@
  * and expire fields can be omitted by passing NULL and -1, respectively. */
 robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long expire) {
     /* Calculate sizes */
+    int has_embkey = key != NULL;
     int has_expire = (expire != -1 ||
-                      (key != NULL && sdslen(key) >= KEY_SIZE_TO_INCLUDE_EXPIRE_THRESHOLD));
-    size_t key_sds_size = 0;
+                      (has_embkey && sdslen(key) >= KEY_SIZE_TO_INCLUDE_EXPIRE_THRESHOLD));
+    size_t key_sds_len = has_embkey ? sdslen(key) : 0;
+    char key_sds_type = has_embkey ? sdsReqType(key_sds_len) : 0;
+    size_t key_sds_size = has_embkey ? sdsReqSize(key_sds_len, key_sds_type) : 0;
     size_t min_size = sizeof(robj);
     if (has_expire) {
         min_size += sizeof(long long);
     }
-    if (key != NULL) {
+    if (has_embkey) {
         /* Size of embedded key, incl. 1 byte for prefixed sds hdr size. */
-        key_sds_size = sdscopytobuffer(NULL, 0, key, NULL);
         min_size += 1 + key_sds_size;
     }
     /* Allocate and set the declared fields. */
@@ -72,18 +74,18 @@ robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long
     o->ptr = ptr;
     o->refcount = 1;
     o->lru = 0;
-    o->hasembkey = (key != NULL);
+    o->hasembkey = has_embkey;
 
     /* If the allocation has enough space for an expire field, add it even if we
      * don't need it now. Then we don't need to realloc if it's needed later. */
-    if (key != NULL && !has_expire && bufsize >= min_size + sizeof(long long)) {
+    if (has_embkey && !has_expire && bufsize >= min_size + sizeof(long long)) {
         has_expire = 1;
         min_size += sizeof(long long);
     }
     o->hasexpire = has_expire;
 
     /* The memory after the struct where we embedded data. */
-    unsigned char *data = (void *)(o + 1);
+    char *data = (void *)(o + 1);
 
     /* Set the expire field. */
     if (o->hasexpire) {
@@ -93,8 +95,8 @@ robj *createObjectWithKeyAndExpire(int type, void *ptr, const sds key, long long
 
     /* Copy embedded key. */
     if (o->hasembkey) {
-        sdscopytobuffer(data + 1, key_sds_size, key, data);
-        data += 1 + key_sds_size;
+        *data++ = sdsHdrSize(key_sds_type);
+        sdswrite(data, key_sds_size, key_sds_type, key, key_sds_len);
     }
 
     return o;
@@ -146,18 +148,19 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
                                                         const sds key,
                                                         long long expire) {
     /* Calculate sizes */
-    size_t key_sds_size = 0;
-    size_t min_size = sizeof(robj);
+    int has_embkey = (key != NULL);
+    size_t key_sds_len = has_embkey ? sdslen(key) : 0;
+    char key_sds_type = has_embkey ? sdsReqType(key_sds_len) : 0;
+    size_t key_sds_size = has_embkey ? sdsReqSize(key_sds_len, key_sds_type) : 0;
+    size_t val_sds_size = sdsReqSize(val_len, SDS_TYPE_8);
+    size_t min_size = sizeof(robj) + val_sds_size;
     if (expire != -1) {
         min_size += sizeof(long long);
     }
-    if (key != NULL) {
+    if (has_embkey) {
         /* Size of embedded key, incl. 1 byte for prefixed sds hdr size. */
-        key_sds_size = sdscopytobuffer(NULL, 0, key, NULL);
         min_size += 1 + key_sds_size;
     }
-    /* Size of embedded value (EMBSTR) including \0 term. */
-    min_size += sizeof(struct sdshdr8) + val_len + 1;
 
     /* Allocate and set the declared fields. */
     size_t bufsize = 0;
@@ -167,7 +170,7 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
     o->refcount = 1;
     o->lru = 0;
     o->hasexpire = (expire != -1);
-    o->hasembkey = (key != NULL);
+    o->hasembkey = has_embkey;
 
     /* If the allocation has enough space for an expire field, add it even if we
      * don't need it now. Then we don't need to realloc if it's needed later. */
@@ -177,7 +180,7 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
     }
 
     /* The memory after the struct where we embedded data. */
-    unsigned char *data = (void *)(o + 1);
+    char *data = (void *)(o + 1);
 
     /* Set the expire field. */
     if (o->hasexpire) {
@@ -187,26 +190,13 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
 
     /* Copy embedded key. */
     if (o->hasembkey) {
-        sdscopytobuffer(data + 1, key_sds_size, key, data);
-        data += 1 + key_sds_size;
+        *data++ = sdsHdrSize(key_sds_type);
+        sdswrite(data, key_sds_size, key_sds_type, key, key_sds_len);
+        data += key_sds_size;
     }
 
-    /* Copy embedded value (EMBSTR). */
-    struct sdshdr8 *sh = (void *)data;
-    sh->flags = SDS_TYPE_8;
-    sh->len = val_len;
-    size_t capacity = bufsize - (min_size - val_len);
-    sh->alloc = capacity;
-    serverAssert(capacity == sh->alloc); /* Overflow check. */
-    if (val_ptr == SDS_NOINIT) {
-        sh->buf[val_len] = '\0';
-    } else if (val_ptr != NULL) {
-        memcpy(sh->buf, val_ptr, val_len);
-        sh->buf[val_len] = '\0';
-    } else {
-        memset(sh->buf, 0, val_len + 1);
-    }
-    o->ptr = sh->buf;
+    /* Copy embedded value (EMBSTR) always as SDS TYPE 8. */
+    o->ptr = sdswrite(data, val_sds_size, SDS_TYPE_8, val_ptr, val_len);
 
     return o;
 }

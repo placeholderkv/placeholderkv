@@ -334,21 +334,20 @@ start_server {tags {"info" "external:skip" "debug_defrag:skip"}} {
 
         test {stats: instantaneous metrics} {
             r config resetstat
-            set retries 0
-            for {set retries 1} {$retries < 4} {incr retries} {
-                after 1600 ;# hz is 10, wait for 16 cron tick so that sample array is fulfilled
-                set value [s instantaneous_eventloop_cycles_per_sec]
-                if {$value > 0} break
-            }
+            r config set hz 100
+            after 2000 ;# Wait for at least 160 cron tick so that sample array is filled
+            set value [s instantaneous_eventloop_cycles_per_sec]
 
-            assert_lessthan $retries 4
             if {$::verbose} { puts "instantaneous metrics instantaneous_eventloop_cycles_per_sec: $value" }
             assert_morethan $value 0
-            assert_lessthan $value [expr $retries*15] ;# default hz is 10
+            # Hz is configured to 100, so we expect a value of about 100, but in practice it will be lower
+            # because of imprecision in kernel wakeups, but we also have some other wakeups like clients cron.
+            assert_lessthan $value 150
             set value [s instantaneous_eventloop_duration_usec]
+            r config set hz 10
             if {$::verbose} { puts "instantaneous metrics instantaneous_eventloop_duration_usec: $value" }
             assert_morethan $value 0
-            assert_lessthan $value [expr $retries*22000] ;# default hz is 10, so duration < 1000 / 10, allow some tolerance
+            assert_lessthan $value 22000 ;# Sanity check to make sure the duration is within a couple of ms
         } {} {io-threads:skip} ; # skip with io-threads as the eventloop metrics are different in that case.
         
 
