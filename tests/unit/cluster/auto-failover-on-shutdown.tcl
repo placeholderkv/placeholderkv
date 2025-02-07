@@ -15,7 +15,7 @@ proc test_auto_failover {how shutdown_timeout} {
         set replica1 [srv -3 client]
         set replica1_pid [s -3 process_id]
         set replica2 [srv -6 client]
-        set replica2_ip [srv -6 host]
+        set replica2_host [srv -6 host]
         set replica2_port [srv -6 port]
 
         $primary config set auto-failover-on-shutdown yes
@@ -36,7 +36,7 @@ proc test_auto_failover {how shutdown_timeout} {
         if {$shutdown_timeout == 0} {
             # Wait the replica2 catch up with the offset
             wait_for_ofs_sync $primary $replica2
-            wait_replica_acked_ofs $primary $replica2 $replica2_ip $replica2_port
+            wait_replica_acked_ofs $primary $replica2 $replica2_host $replica2_port
         } else {
             # If shutdown-timeout is enable, we expect the primary to pause writing
             # and wait for the replica to catch up with the offset.
