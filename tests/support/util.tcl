@@ -129,7 +129,7 @@ proc wait_replica_online r {
 proc check_replica_acked_ofs {primary replica_host replica_port} {
     set infostr [$primary info replication]
     set master_repl_offset [getInfoProperty $infostr master_repl_offset]
-    if {[regexp -lineanchor "^slave\\d:ip=$replica_host,port=$replica_port,.*,offset=(\\d+).*\r\n" $infostr _ offset]} {
+    if {[regexp -lineanchor "^slave\\d+:ip=$replica_host,port=$replica_port,state=online,offset=(\\d+).*\r\n" $infostr _ offset]} {
         if {$master_repl_offset == $offset} {
             return 1
         }
