@@ -2030,14 +2030,14 @@ int main(int argc, char **argv) {
 
             char **cmd_argv = zmalloc(sizeof(char *) * (config.num_keys_in_fcall + 3));
             int ret = asprintf(&(cmd_argv[0]), "fcall");
-            assert(ret != -1);
+            UNUSED(ret);
             ret = asprintf(&(cmd_argv[1]), "foo1");
-            assert(ret != -1);
+            UNUSED(ret);
             ret = asprintf(&(cmd_argv[2]), "%d", config.num_keys_in_fcall);
-            assert(ret != -1);
+            UNUSED(ret);
             for (int i = 0; i < config.num_keys_in_fcall; i++) {
                 ret = asprintf(&(cmd_argv[3 + i]), "key%d", i + 1);
-                assert(ret != -1);
+                UNUSED(ret);
             }
             len = redisFormatCommandArgv(&cmd, config.num_keys_in_fcall + 3, (const char **)cmd_argv, NULL);
             for (int i = 0; i < config.num_keys_in_fcall + 3; i++) {
