@@ -1,10 +1,10 @@
 {
     "REPLICATE": {
-        "summary": "Configure a node as replica of a primary node.",
+        "summary": "Configure a node as replica of a primary node or detaches replica from primary.",
         "complexity": "O(1)",
         "group": "cluster",
         "since": "3.0.0",
-        "arity": 3,
+        "arity": -3,
         "container": "CLUSTER",
         "function": "clusterCommand",
         "command_flags": [
@@ -14,8 +14,30 @@
         ],
         "arguments": [
             {
-                "name": "node-id",
-                "type": "string"
+                "name": "args",
+                "type": "oneof",
+                "arguments": [
+                    {
+                        "name": "node-id",
+                        "type": "string"
+                    },
+                    {
+                        "name": "no-one",
+                        "type": "block",
+                        "arguments": [
+                            {
+                                "name": "no",
+                                "type": "pure-token",
+                                "token": "NO"
+                            },
+                            {
+                                "name": "one",
+                                "type": "pure-token",
+                                "token": "ONE"
+                            }
+                        ]
+                    }
+                ]
             }
         ],
         "reply_schema": {
