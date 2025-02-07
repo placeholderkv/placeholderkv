@@ -1559,7 +1559,7 @@ usage:
         " -I                 Idle mode. Just open N idle connections and wait.\n"
         " -x                 Read last argument from STDIN.\n"
         " --seed <num>       Set the seed for random number generator. Default seed is based on time.\n"
-        " --num-functions-in-script <num> Sets the number of functions present in the Lua script\n"
+        " --num-functions-in-script <num> Sets the number of functions present in the Lua lib\n"
         "                                 that is loaded when running the 'function_load' test.\n"
         "                                 (default 10).\n"
         " --num-keys-in-fcall <num>       Sets the number of keys passed to FCALL command when\n"
@@ -1637,19 +1637,26 @@ char *generateFunctionScript(uint32_t num_functions, int with_keys) {
     int written = snprintf(buffer, buffer_len, "#!lua name=benchlib\n");
     while (num_functions > 0) {
         assert(buffer_len - written > 0);
+        int n = 0;
         if (with_keys) {
-            written += snprintf(buffer + written, buffer_len - written,
-                                "local function foo%u(keys, args)\nreturn keys[0]\nend\n",
-                                num_functions);
+            n = snprintf(buffer + written, buffer_len - written,
+                         "local function foo%u(keys, args)\nreturn keys[0]\nend\n",
+                         num_functions);
         } else {
-            written += snprintf(buffer + written, buffer_len - written,
-                                "local function foo%u()\nreturn 0\nend\n",
-                                num_functions);
+            n = snprintf(buffer + written, buffer_len - written,
+                         "local function foo%u()\nreturn 0\nend\n",
+                         num_functions);
         }
-        written += snprintf(buffer + written, buffer_len - written,
-                            "server.register_function('foo%u', foo%u)\n",
-                            num_functions,
-                            num_functions);
+        assert(n > 0 && n < buffer_len - written);
+        written += n;
+
+        n = snprintf(buffer + written, buffer_len - written,
+                     "server.register_function('foo%u', foo%u)\n",
+                     num_functions,
+                     num_functions);
+        assert(n > 0 && n < buffer_len - written);
+        written += n;
+
         num_functions--;
     }
 
@@ -2021,11 +2028,15 @@ int main(int argc, char **argv) {
             zfree(script);
 
             char **cmd_argv = zmalloc(sizeof(char *) * (config.num_keys_in_fcall + 3));
-            asprintf(&(cmd_argv[0]), "fcall");
-            asprintf(&(cmd_argv[1]), "foo1");
-            asprintf(&(cmd_argv[2]), "%d", config.num_keys_in_fcall);
+            int ret = asprintf(&(cmd_argv[0]), "fcall");
+            assert(ret != -1);
+            ret = asprintf(&(cmd_argv[1]), "foo1");
+            assert(ret != -1);
+            ret = asprintf(&(cmd_argv[2]), "%d", config.num_keys_in_fcall);
+            assert(ret != -1);
             for (int i = 0; i < config.num_keys_in_fcall; i++) {
-                asprintf(&(cmd_argv[3 + i]), "key%d", i + 1);
+                ret = asprintf(&(cmd_argv[3 + i]), "key%d", i + 1);
+                assert(ret != -1);
             }
             len = redisFormatCommandArgv(&cmd, config.num_keys_in_fcall + 3, (const char **)cmd_argv, NULL);
             for (int i = 0; i < config.num_keys_in_fcall + 3; i++) {
