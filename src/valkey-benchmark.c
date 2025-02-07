@@ -1635,9 +1635,9 @@ char *generateFunctionScript(uint32_t num_functions, int with_keys) {
     memset(buffer, 0, buffer_len);
 
     int written = snprintf(buffer, buffer_len, "#!lua name=benchlib\n");
-    while (num_functions > 0) {
+    while (num_functions > 0 && (buffer_len - written) > 0) {
         assert(buffer_len - written > 0);
-        int n = 0;
+        size_t n = 0;
         if (with_keys) {
             n = snprintf(buffer + written, buffer_len - written,
                          "local function foo%u(keys, args)\nreturn keys[0]\nend\n",
@@ -1647,14 +1647,16 @@ char *generateFunctionScript(uint32_t num_functions, int with_keys) {
                          "local function foo%u()\nreturn 0\nend\n",
                          num_functions);
         }
-        assert(n > 0 && n < buffer_len - written);
+
+        if (n < 0 || n >= buffer_len - written) {
+            break;
+        }
         written += n;
 
         n = snprintf(buffer + written, buffer_len - written,
                      "server.register_function('foo%u', foo%u)\n",
                      num_functions,
                      num_functions);
-        assert(n > 0 && n < buffer_len - written);
         written += n;
 
         num_functions--;
