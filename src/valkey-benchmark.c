@@ -129,7 +129,7 @@ static struct config {
     _Atomic int is_updating_slots;
     _Atomic int slots_last_update;
     int enable_tracking;
-    int num_functions_in_script;
+    int num_functions;
     int num_keys_in_fcall;
     pthread_mutex_t liveclients_mutex;
     pthread_mutex_t is_updating_slots_mutex;
@@ -1428,8 +1428,8 @@ int parseOptions(int argc, char **argv) {
                 goto invalid;
         } else if (!strcmp(argv[i], "--enable-tracking")) {
             config.enable_tracking = 1;
-        } else if (!strcmp(argv[i], "--num-functions-in-script")) {
-            config.num_functions_in_script = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--num-functions")) {
+            config.num_functions = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--num-keys-in-fcall")) {
             config.num_keys_in_fcall = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--help")) {
@@ -1559,11 +1559,10 @@ usage:
         " -I                 Idle mode. Just open N idle connections and wait.\n"
         " -x                 Read last argument from STDIN.\n"
         " --seed <num>       Set the seed for random number generator. Default seed is based on time.\n"
-        " --num-functions-in-script <num> Sets the number of functions present in the Lua lib\n"
-        "                                 that is loaded when running the 'function_load' test.\n"
-        "                                 (default 10).\n"
-        " --num-keys-in-fcall <num>       Sets the number of keys passed to FCALL command when\n"
-        "                                 when running the 'fcall' test. (default 1)\n",
+        " --num-functions <num>     Sets the number of functions present in the Lua lib that is\n"
+        "                           loaded when running the 'function_load' test. (default 10).\n"
+        " --num-keys-in-fcall <num> Sets the number of keys passed to FCALL command when running\n"
+        "                           the 'fcall' test. (default 1)\n",
         tls_usage,
         " --help             Output this help and exit.\n"
         " --version          Output version and exit.\n\n"
@@ -1637,7 +1636,7 @@ char *generateFunctionScript(uint32_t num_functions, int with_keys) {
     int written = snprintf(buffer, buffer_len, "#!lua name=benchlib\n");
     while (num_functions > 0 && (buffer_len - written) > 0) {
         assert(buffer_len - written > 0);
-        size_t n = 0;
+        int n = 0;
         if (with_keys) {
             n = snprintf(buffer + written, buffer_len - written,
                          "local function foo%u(keys, args)\nreturn keys[0]\nend\n",
@@ -1648,7 +1647,7 @@ char *generateFunctionScript(uint32_t num_functions, int with_keys) {
                          num_functions);
         }
 
-        if (n < 0 || n >= buffer_len - written) {
+        if (n < 0 || (size_t)n >= buffer_len - written) {
             break;
         }
         written += n;
@@ -1726,7 +1725,7 @@ int main(int argc, char **argv) {
     config.is_updating_slots = 0;
     config.slots_last_update = 0;
     config.enable_tracking = 0;
-    config.num_functions_in_script = 10;
+    config.num_functions = 10;
     config.num_keys_in_fcall = 1;
     config.resp3 = 0;
 
@@ -2009,7 +2008,7 @@ int main(int argc, char **argv) {
         }
 
         if (test_is_selected("function_load")) {
-            char *script = generateFunctionScript(config.num_functions_in_script, 0);
+            char *script = generateFunctionScript(config.num_functions, 0);
             len = redisFormatCommand(&cmd, "function load replace %s", script);
             benchmark("FUNCTION LOAD", cmd, len);
             zfree(script);
