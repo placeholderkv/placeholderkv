@@ -39,8 +39,8 @@
  * in the field SDS header. Field type SDS_TYPE_5 doesn't have any spare bits to
  * encode this so we use it only for the first layout type.
  *
- * ENTRY_ENC_EMB_VALUE, used when it fits in a cache line. The value is always
- * stored as SDS_TYPE_8. The field can use any SDS type.
+ * ENTRY_ENC_EMB_VALUE, used when it fits in a cache line. The value is stored
+ * as SDS_TYPE_8. The field can use any SDS type.
  *
  *     +--------------+---------------+
  *     | field        | value         |
@@ -107,9 +107,7 @@ hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
         sdswrite(buf, field_size, field_sds_type, field, field_len);
         sdswrite(buf + field_size, buf_size - field_size, SDS_TYPE_8, value, value_len);
         embedded_field_sds = (sds)(buf + sdsHdrSize(field_sds_type));
-        /* Unused space in the field sds is zero. We use this to encode that the
-         * entry is an embedded-value entry. For sds5, there is no unused space,
-         * which is why the value of ENTRY_ENC_EMB_VALUE was chosen to be 0. */
+        /* Field sds aux bits are zero, which we use for this entry encoding. */
         serverAssert(entryGetEncoding(embedded_field_sds) == ENTRY_ENC_EMB_VALUE);
         sdsfree(value);
     } else {
@@ -129,7 +127,7 @@ hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
         entry->value = value;
         sdswrite(entry->field_data, field_size, field_sds_type, field, field_len);
         embedded_field_sds = (sds)(entry->field_data + sdsHdrSize(field_sds_type));
-        /* Flag that this is an entry with a value-pointer, not embedded value. */
+        /* Store the entry encoding type in sds aux bits. */
         sdsSetAuxBits(embedded_field_sds, ENTRY_ENC_PTR_VALUE);
     }
     return (void *)embedded_field_sds;
