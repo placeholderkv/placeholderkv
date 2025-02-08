@@ -1192,7 +1192,7 @@ size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid) {
 
             asize = sizeof(*o) + hashtableMemUsage(ht);
             while (hashtableNext(&iter, &next) && samples < sample_size) {
-                elesize += hashTypeEntryAllocSize(next);
+                elesize += hashTypeEntryMemUsage(next);
                 samples++;
             }
             hashtableResetIterator(&iter);
