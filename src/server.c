@@ -1540,7 +1540,7 @@ long long serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDa
             for (j = 0; j < server.dbnum; j++) {
                 long long size, used, vkeys;
 
-                size = kvstoreBuckets(server.db[j].keys);
+                size = kvstoreBuckets(server.db[j].keys) * hashtableEntriesPerBucket();
                 used = kvstoreSize(server.db[j].keys);
                 vkeys = kvstoreSize(server.db[j].expires);
                 if (used || vkeys) {

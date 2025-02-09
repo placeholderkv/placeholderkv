@@ -1534,6 +1534,9 @@ void disconnectReplicas(void) {
 void unlinkClient(client *c) {
     listNode *ln;
 
+    /* Wait for IO operations to be done before unlinking the client. */
+    waitForClientIO(c);
+
     /* If this is marked as current client unset it. */
     if (c->conn && server.current_client == c) server.current_client = NULL;
 
@@ -1934,36 +1937,122 @@ client *lookupClientByID(uint64_t id) {
     return c;
 }
 
-void writeToReplica(client *c) {
-    /* Can be called from main-thread only as replica write offload is not supported yet */
-    serverAssert(inMainThread());
-    int nwritten = 0;
-    serverAssert(c->bufpos == 0 && listLength(c->reply) == 0);
-    while (clientHasPendingReplies(c)) {
-        replBufBlock *o = listNodeValue(c->repl_data->ref_repl_buf_node);
-        serverAssert(o->used >= c->repl_data->ref_block_pos);
+static void postWriteToReplica(client *c) {
+    if (c->nwritten <= 0) return;
 
-        /* Send current block if it is not fully sent. */
-        if (o->used > c->repl_data->ref_block_pos) {
-            nwritten = connWrite(c->conn, o->buf + c->repl_data->ref_block_pos, o->used - c->repl_data->ref_block_pos);
-            if (nwritten <= 0) {
-                c->write_flags |= WRITE_FLAGS_WRITE_ERROR;
-                return;
-            }
-            c->nwritten += nwritten;
-            c->repl_data->ref_block_pos += nwritten;
+    server.stat_net_repl_output_bytes += c->nwritten;
+
+    /* Locate the last node which has leftover data and
+     * decrement reference counts of all nodes in front of it.
+     * Set c->ref_repl_buf_node to point to the last node and
+     * c->ref_block_pos to the offset within that node  */
+    listNode *curr = c->repl_data->ref_repl_buf_node;
+    listNode *next = NULL;
+    size_t nwritten = c->nwritten + c->repl_data->ref_block_pos;
+    replBufBlock *o = listNodeValue(curr);
+
+    while (nwritten >= o->used) {
+        next = listNextNode(curr);
+        if (!next) break; /* End of list */
+
+        nwritten -= o->used;
+        o->refcount--;
+
+        curr = next;
+        o = listNodeValue(curr);
+        o->refcount++;
+    }
+
+    serverAssert(nwritten <= o->used);
+    c->repl_data->ref_repl_buf_node = curr;
+    c->repl_data->ref_block_pos = nwritten;
+
+    incrementalTrimReplicationBacklog(REPL_BACKLOG_TRIM_BLOCKS_PER_CALL);
+}
+
+static void writeToReplica(client *c) {
+    listNode *last_node;
+    size_t bufpos;
+
+    serverAssert(c->bufpos == 0 && listLength(c->reply) == 0);
+    /* Determine the last block and buffer position based on thread context */
+    if (inMainThread()) {
+        last_node = listLast(server.repl_buffer_blocks);
+        if (!last_node) return;
+        bufpos = ((replBufBlock *)listNodeValue(last_node))->used;
+    } else {
+        last_node = c->io_last_reply_block;
+        serverAssert(last_node != NULL);
+        bufpos = c->io_last_bufpos;
+    }
+
+    listNode *first_node = c->repl_data->ref_repl_buf_node;
+
+    /* Handle the single block case */
+    if (first_node == last_node) {
+        replBufBlock *b = listNodeValue(first_node);
+        c->nwritten = connWrite(c->conn, b->buf + c->repl_data->ref_block_pos, bufpos - c->repl_data->ref_block_pos);
+        if (c->nwritten <= 0) {
+            c->write_flags |= WRITE_FLAGS_WRITE_ERROR;
+        }
+        return;
+    }
+
+    /* Multiple blocks case */
+    ssize_t total_bytes = 0;
+    int iovcnt = 0;
+    struct iovec iov_arr[IOV_MAX];
+    struct iovec *iov = iov_arr;
+    int iovmax = min(IOV_MAX, c->conn->iovcnt);
+
+    for (listNode *cur_node = first_node; cur_node != NULL && iovcnt < iovmax; cur_node = listNextNode(cur_node)) {
+        replBufBlock *cur_block = listNodeValue(cur_node);
+        size_t start = (cur_node == first_node) ? c->repl_data->ref_block_pos : 0;
+        size_t len = (cur_node == last_node) ? bufpos : cur_block->used;
+        len -= start;
+
+        iov[iovcnt].iov_base = cur_block->buf + start;
+        iov[iovcnt].iov_len = len;
+        total_bytes += len;
+        iovcnt++;
+        if (cur_node == last_node) break;
+    }
+
+    if (total_bytes == 0) return;
+
+    ssize_t totwritten = 0;
+    while (iovcnt > 0) {
+        int nwritten = connWritev(c->conn, iov, iovcnt);
+
+        if (nwritten <= 0) {
+            c->write_flags |= WRITE_FLAGS_WRITE_ERROR;
+            c->nwritten = (totwritten > 0) ? totwritten : nwritten;
+            return;
         }
 
-        /* If we fully sent the object on head, go to the next one. */
-        listNode *next = listNextNode(c->repl_data->ref_repl_buf_node);
-        if (next && c->repl_data->ref_block_pos == o->used) {
-            o->refcount--;
-            ((replBufBlock *)(listNodeValue(next)))->refcount++;
-            c->repl_data->ref_repl_buf_node = next;
-            c->repl_data->ref_block_pos = 0;
-            incrementalTrimReplicationBacklog(REPL_BACKLOG_TRIM_BLOCKS_PER_CALL);
+        totwritten += nwritten;
+
+        if (totwritten == total_bytes) {
+            break;
+        }
+
+        /* Update iov array */
+        while (nwritten > 0) {
+            if ((size_t)nwritten < iov[0].iov_len) {
+                /* partial block written */
+                iov[0].iov_base = (char *)iov[0].iov_base + nwritten;
+                iov[0].iov_len -= nwritten;
+                break;
+            }
+
+            /* full block written */
+            nwritten -= iov[0].iov_len;
+            iov++;
+            iovcnt--;
         }
     }
+
+    c->nwritten = totwritten;
 }
 
 /* This function should be called from _writeToClient when the reply list is not empty,
@@ -2158,7 +2247,7 @@ int postWriteToClient(client *c) {
     if (getClientType(c) != CLIENT_TYPE_REPLICA) {
         _postWriteToClient(c);
     } else {
-        server.stat_net_repl_output_bytes += c->nwritten > 0 ? c->nwritten : 0;
+        postWriteToReplica(c);
     }
 
     if (c->write_flags & WRITE_FLAGS_WRITE_ERROR) {
@@ -2718,7 +2807,7 @@ void processMultibulkBuffer(client *c) {
         serverAssertWithInfo(c, NULL, c->argc == 0);
 
         /* Multi bulk length cannot be read without a \r\n */
-        newline = strchr(c->querybuf + c->qb_pos, '\r');
+        newline = memchr(c->querybuf + c->qb_pos, '\r', sdslen(c->querybuf) - c->qb_pos);
         if (newline == NULL) {
             if (sdslen(c->querybuf) - c->qb_pos > PROTO_INLINE_MAX_SIZE) {
                 c->read_flags |= READ_FLAGS_ERROR_BIG_MULTIBULK;
@@ -2795,7 +2884,7 @@ void processMultibulkBuffer(client *c) {
     while (c->multibulklen) {
         /* Read bulk length if unknown */
         if (c->bulklen == -1) {
-            newline = strchr(c->querybuf + c->qb_pos, '\r');
+            newline = memchr(c->querybuf + c->qb_pos, '\r', sdslen(c->querybuf) - c->qb_pos);
             if (newline == NULL) {
                 if (sdslen(c->querybuf) - c->qb_pos > PROTO_INLINE_MAX_SIZE) {
                     c->read_flags |= READ_FLAGS_ERROR_BIG_BULK_COUNT;
@@ -5042,7 +5131,12 @@ void ioThreadWriteToClient(void *data) {
     client *c = data;
     serverAssert(c->io_write_state == CLIENT_PENDING_IO);
     c->nwritten = 0;
-    _writeToClient(c);
+    if (c->write_flags & WRITE_FLAGS_IS_REPLICA) {
+        writeToReplica(c);
+    } else {
+        _writeToClient(c);
+    }
+
     atomic_thread_fence(memory_order_release);
     c->io_write_state = CLIENT_COMPLETED_IO;
 }
