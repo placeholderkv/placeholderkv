@@ -2210,8 +2210,8 @@ int rewriteAppendOnlyFileRio(rio *aof) {
 
     for (j = 0; j < server.dbnum; j++) {
         char selectcmd[] = "*2\r\n$6\r\nSELECT\r\n";
-        serverDb *db = server.db + j;
-        if (kvstoreSize(db->keys) == 0) continue;
+        if (dbHasNoKeys(j)) continue;
+        serverDb *db = server.db[j];
 
         /* SELECT the new DB */
         if (rioWrite(aof, selectcmd, sizeof(selectcmd) - 1) == 0) goto werr;

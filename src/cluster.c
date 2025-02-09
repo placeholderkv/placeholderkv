@@ -815,7 +815,7 @@ static int shouldReturnTlsInfo(void) {
 }
 
 unsigned int countKeysInSlot(unsigned int slot) {
-    return kvstoreHashtableSize(server.db->keys, slot);
+    return kvstoreHashtableSize(server.db[0]->keys, slot);
 }
 
 void clusterCommandHelp(client *c) {
@@ -913,7 +913,7 @@ void clusterCommand(client *c) {
         unsigned int numkeys = maxkeys > keys_in_slot ? keys_in_slot : maxkeys;
         addReplyArrayLen(c, numkeys);
         kvstoreHashtableIterator *kvs_di = NULL;
-        kvs_di = kvstoreGetHashtableIterator(server.db->keys, slot, 0);
+        kvs_di = kvstoreGetHashtableIterator(server.db[0]->keys, slot, 0);
         for (unsigned int i = 0; i < numkeys; i++) {
             void *next;
             serverAssert(kvstoreHashtableIteratorNext(kvs_di, &next));
@@ -1102,7 +1102,7 @@ getNodeByQuery(client *c, struct serverCommand *cmd, robj **argv, int argc, int 
              * NODE <node-id>. */
             int flags = LOOKUP_NOTOUCH | LOOKUP_NOSTATS | LOOKUP_NONOTIFY | LOOKUP_NOEXPIRE;
             if ((migrating_slot || importing_slot) && !pubsubshard_included) {
-                if (lookupKeyReadWithFlags(&server.db[0], thiskey, flags) == NULL)
+                if (lookupKeyReadWithFlags(server.db[0], thiskey, flags) == NULL)
                     missing_keys++;
                 else
                     existing_keys++;

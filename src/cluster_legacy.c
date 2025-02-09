@@ -5796,7 +5796,7 @@ int verifyClusterConfigWithData(void) {
 
     /* Make sure we only have keys in DB0. */
     for (j = 1; j < server.dbnum; j++) {
-        if (kvstoreSize(server.db[j].keys)) return C_ERR;
+        if (!dbHasNoKeys(j)) return C_ERR;
     }
 
     /* Check that all the slots we see populated memory have a corresponding
@@ -6432,19 +6432,20 @@ unsigned int delKeysInSlot(unsigned int hashslot) {
 
     kvstoreHashtableIterator *kvs_di = NULL;
     void *next;
-    kvs_di = kvstoreGetHashtableIterator(server.db->keys, hashslot, HASHTABLE_ITER_SAFE);
+    serverDb *db = server.db[0];
+    kvs_di = kvstoreGetHashtableIterator(db->keys, hashslot, HASHTABLE_ITER_SAFE);
     while (kvstoreHashtableIteratorNext(kvs_di, &next)) {
         robj *valkey = next;
         enterExecutionUnit(1, 0);
         sds sdskey = objectGetKey(valkey);
         robj *key = createStringObject(sdskey, sdslen(sdskey));
-        dbDelete(&server.db[0], key);
-        propagateDeletion(&server.db[0], key, server.lazyfree_lazy_server_del);
-        signalModifiedKey(NULL, &server.db[0], key);
+        dbDelete(db, key);
+        propagateDeletion(db, key, server.lazyfree_lazy_server_del);
+        signalModifiedKey(NULL, db, key);
         /* The keys are not actually logically deleted from the database, just moved to another node.
          * The modules needs to know that these keys are no longer available locally, so just send the
          * keyspace notification to the modules, but not to clients. */
-        moduleNotifyKeyspaceEvent(NOTIFY_GENERIC, "del", key, server.db[0].id);
+        moduleNotifyKeyspaceEvent(NOTIFY_GENERIC, "del", key, db->id);
         exitExecutionUnit();
         postExecutionUnitOperations();
         decrRefCount(key);
@@ -6912,7 +6913,7 @@ int clusterCommandSpecial(client *c) {
         }
     } else if (!strcasecmp(c->argv[1]->ptr, "flushslots") && c->argc == 2) {
         /* CLUSTER FLUSHSLOTS */
-        if (kvstoreSize(server.db[0].keys) != 0) {
+        if (!dbHasNoKeys(0)) {
             addReplyError(c, "DB must be empty to perform CLUSTER FLUSHSLOTS.");
             return 1;
         }
@@ -7053,7 +7054,7 @@ int clusterCommandSpecial(client *c) {
         /* If the instance is currently a primary, it should have no assigned
          * slots nor keys to accept to replicate some other node.
          * Replicas can switch to another primary without issues. */
-        if (clusterNodeIsPrimary(myself) && (myself->numslots != 0 || kvstoreSize(server.db[0].keys) != 0)) {
+        if (clusterNodeIsPrimary(myself) && (myself->numslots != 0 || !dbHasNoKeys(0))) {
             addReplyError(c, "To set a master the node must be empty and "
                              "without assigned slots.");
             return 1;

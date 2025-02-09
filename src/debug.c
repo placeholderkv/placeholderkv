@@ -289,8 +289,8 @@ void computeDatasetDigest(unsigned char *final) {
     memset(final, 0, 20); /* Start with a clean result */
 
     for (int j = 0; j < server.dbnum; j++) {
-        serverDb *db = server.db + j;
-        if (kvstoreSize(db->keys) == 0) continue;
+        serverDb *db = server.db[j];
+        if (db == NULL || kvstoreSize(db->keys) == 0) continue;
         kvstoreIterator *kvs_it = kvstoreIteratorInit(db->keys, HASHTABLE_ITER_SAFE | HASHTABLE_ITER_PREFETCH_VALUES);
 
         /* hash the DB id, so the same dataset moved in a different DB will lead to a different digest */
@@ -911,14 +911,20 @@ void debugCommand(client *c) {
         if (c->argc >= 4 && !strcasecmp(c->argv[3]->ptr, "full")) full = 1;
 
         stats = sdscatprintf(stats, "[Dictionary HT]\n");
-        kvstoreGetStats(server.db[dbid].keys, buf, sizeof(buf), full);
-        stats = sdscat(stats, buf);
+        serverDb *db = server.db[dbid];
+        if (db) {
+            kvstoreGetStats(db->keys, buf, sizeof(buf), full);
+            stats = sdscat(stats, buf);
+        }
 
         stats = sdscatprintf(stats, "[Expires HT]\n");
-        kvstoreGetStats(server.db[dbid].expires, buf, sizeof(buf), full);
-        stats = sdscat(stats, buf);
+        if (db) {
+            kvstoreGetStats(db->expires, buf, sizeof(buf), full);
+            stats = sdscat(stats, buf);
+        }
 
         addReplyVerbatim(c, stats, sdslen(stats), "txt");
+
         sdsfree(stats);
     } else if (!strcasecmp(c->argv[1]->ptr, "htstats-key") && c->argc >= 3) {
         int full = 0;
