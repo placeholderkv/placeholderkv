@@ -69,6 +69,16 @@ start_server {tags {"cli logreqres:skip"}} {
         set _ [format_output [read_cli $fd]]
     }
 
+    # Extract a specific field's value from a CLIENT INFO string
+    proc get_client_info_field {client_string field} {
+        set pattern [format {%s=([^ ]+)} $field]
+        if {[regexp -nocase $pattern $client_string match value]} {
+            return $value
+        }
+        return "Field '$field' not found"
+    }
+
+
     proc test_interactive_cli {name code} {
         set ::env(FAKETTY) 1
         set fd [open_cli]
@@ -832,6 +842,37 @@ if {!$::tls} { ;# fake_redis_node doesn't support TLS
 
         close_cli $fd
     }
+
+    test "valkey-cli make sure selected db survives connection drops" {    
+        set fd [open_cli]
+        
+        # Target database
+        set db 9
+
+        # Select the database        
+        assert_equal "OK" [run_command $fd "select $db"]
+
+        # Kill all normal clients, to disconnect vlakey-cli client
+        r client kill type normal
+        after 10
+
+        # Trigger reconnect
+        write_cli $fd "ping"
+
+        assert_equal "OK" [run_command $fd "set x 1"]        
+        assert_equal "OK" [r select $db]        
+        assert_equal "1" [r get x]
+        
+        set client_info [run_command $fd "client info"]
+
+        # set actual_db [get_client_info_field $client_info "db"]
+
+        # # Validate that the selected DB matches the reported DB
+        # assert_equal $db $actual_db
+        
+        # r flushall
+        # r select 0
+    } {undefined} {cluster:skip}
 
     test "Valid Connection Scheme: redis://" {
         set cmdline [valkeycliuri "redis://" [srv host] [srv port]]

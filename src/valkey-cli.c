@@ -1610,17 +1610,23 @@ static int cliSwitchProto(void) {
     return result;
 }
 
+static void resetConfig(void) {
+    config.dbnum = 0;
+    config.in_multi = 0;
+    config.pubsub_mode = 0;
+}
+
 /* Connect to the server. It is possible to pass certain flags to the function:
  *      CC_FORCE: The connection is performed even if there is already
  *                a connected socket.
  *      CC_QUIET: Don't print errors if connection fails. */
 static int cliConnect(int flags) {
+    resetConfig();
+
     if (context == NULL || flags & CC_FORCE) {
         if (context != NULL) {
             redisFree(context);
-            config.dbnum = 0;
-            config.in_multi = 0;
-            config.pubsub_mode = 0;
+            resetConfig();
             cliRefreshPrompt();
         }
 
