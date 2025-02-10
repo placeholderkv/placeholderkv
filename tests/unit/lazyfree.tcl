@@ -5,7 +5,7 @@ start_server {tags {"lazyfree"}} {
         # Old ones are lazily freed by BIO, causing transient memory fluctuations.  
         # In cluster mode with multi-DB, this affects this test reliability. 
         # A short delay is needed as wait_lazyfree_done only counts keys.          
-        after 20
+        after 100
         
         set orig_mem [s used_memory]
         set args {}
