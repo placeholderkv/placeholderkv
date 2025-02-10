@@ -918,7 +918,7 @@ typedef void (*ValkeyModuleScriptingEngineFreeFunctionFunc)(
  * - `engine_ctx`: the scripting engine runtime context.
  *
  * - `server_ctx`: the context opaque structure that represents the server-side
- * runtime context for the function.
+ *   runtime context for the function.
  *
  * - `compiled_function`: pointer to the compiled function registered by the
  *   engine.

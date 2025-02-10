@@ -2921,9 +2921,8 @@ void initServer(void) {
         serverPanic("Scripting engine manager initialization failed, check the server logs.");
     }
 
-    // Since we initialized the scripting engine manager, we need to ensure
-    // that commands with `CMD_NOSCRIPT` flag are not allowed to run in scripts.
-    //
+    /* Since we initialized the scripting engine manager, we need to ensure that
+     * commands with `CMD_NOSCRIPT` flag are not allowed to run in scripts. */
     server.script_disable_deny_script = 0;
 
     /* Initialize the LUA scripting engine. */
