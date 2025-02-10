@@ -3346,7 +3346,7 @@ int isClientConnIpV6(client *c) {
  * readable format, into the sds string 's'. */
 sds catClientInfoString(sds s, client *client, int hide_user_data) {
     if (!server.crashed) waitForClientIO(client);
-    char flags[17], events[3], conninfo[CONN_INFO_LEN], *p;
+    char flags[17], events[3], capa[9], conninfo[CONN_INFO_LEN], *p;
 
     p = flags;
     if (client->flag.replica) {
@@ -3382,6 +3382,10 @@ sds catClientInfoString(sds s, client *client, int hide_user_data) {
     }
     *p = '\0';
 
+    p = capa;
+    if (client->capa & CLIENT_CAPA_REDIRECT) *p++ = 'r';
+    *p = '\0';
+
     /* Compute the total memory consumed by this client. */
     size_t obufmem, total_mem = getClientMemoryUsage(client, &obufmem);
 
@@ -3402,6 +3406,7 @@ sds catClientInfoString(sds s, client *client, int hide_user_data) {
             " age=%I", (long long)(commandTimeSnapshot() / 1000 - client->ctime),
             " idle=%I", (long long)(server.unixtime - client->last_interaction),
             " flags=%s", flags,
+            " capa=%s", capa,
             " db=%i", client->db->id,
             " sub=%i", client->pubsub_data ? (int)dictSize(client->pubsub_data->pubsub_channels) : 0,
             " psub=%i", client->pubsub_data ? (int)dictSize(client->pubsub_data->pubsub_patterns) : 0,
