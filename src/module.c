@@ -12275,11 +12275,13 @@ int moduleLoad(const char *path, void **module_argv, int module_argc, int is_loa
     }
 
     int dlopen_flags = RTLD_NOW | RTLD_LOCAL;
-#ifndef __SANITIZE_ADDRESS__
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__APPLE__)
     /* RTLD_DEEPBIND, which is required for loading modules that contains the
      * same symbols, does not work with ASAN. Therefore, we exclude
      * RTLD_DEEPBIND when doing test builds with ASAN.
-     * See https://github.com/google/sanitizers/issues/611 for more details.*/
+     * See https://github.com/google/sanitizers/issues/611 for more details.
+     * This flag is also not available in OSX, but the default symbol resolution
+     * behavior in OSX is the same as when we use DEEPBIND in Linux. */
     dlopen_flags |= RTLD_DEEPBIND;
 #endif
 
