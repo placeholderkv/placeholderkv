@@ -6880,7 +6880,7 @@ int clusterCommandSpecial(client *c) {
         /* CLUSTER MEET <ip> <port> [cport] */
         long long port, cport;
 
-        if (verifyPortNumber(c, &port, &cport) == C_ERR) {
+        if (parseAndValidateConnectionPorts(c, &port, &cport) == C_ERR) {
             return 1;
         }
 

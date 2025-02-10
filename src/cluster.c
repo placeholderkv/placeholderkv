@@ -778,7 +778,7 @@ int isValidAuxString(char *s, unsigned int length) {
     return 1;
 }
 
-int verifyPortNumber(client *c, long long *port, long long *cport) {
+int parseAndValidateConnectionPorts(client *c, long long *port, long long *cport) {
     if (getLongLongFromObject(c->argv[3], port) != C_OK) {
         addReplyErrorFormat(c, "Invalid base port specified: %s", (char *)c->argv[3]->ptr);
         return C_ERR;
