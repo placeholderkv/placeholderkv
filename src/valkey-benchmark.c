@@ -138,6 +138,7 @@ typedef struct _client {
     redisContext *context;
     sds obuf;
     char **randptr;     /* Pointers to :rand: strings inside the command buf */
+    bool *randlast;     /* Pointer to flag indicating whether :rand: should be last used or new */
     size_t randlen;     /* Number of pointers in client->randptr */
     size_t randfree;    /* Number of unused pointers in client->randptr */
     char **stagptr;     /* Pointers to slot hashtags (cluster mode only) */
@@ -361,6 +362,7 @@ static void freeClient(client c) {
     redisFree(c->context);
     sdsfree(c->obuf);
     zfree(c->randptr);
+    zfree(c->randlast);
     zfree(c->stagptr);
     zfree(c);
     if (config.num_threads) pthread_mutex_lock(&(config.liveclients_mutex));
@@ -392,11 +394,18 @@ static void resetClient(client c) {
 
 static void randomizeClientKey(client c) {
     size_t i;
+    size_t last_rand = 0;
 
     for (i = 0; i < c->randlen; i++) {
         char *p = c->randptr[i] + 11;
         size_t r = 0;
-        if (config.randomkeys_keyspacelen != 0) r = random() % config.randomkeys_keyspacelen;
+        // If last random is requested then use the last random
+        if(c->randlast[i]) {
+            r = last_rand;
+        } else if (config.randomkeys_keyspacelen != 0) {
+            r = random() % config.randomkeys_keyspacelen;
+            last_rand = r;
+        }
         size_t j;
 
         for (j = 0; j < 12; j++) {
@@ -741,6 +750,7 @@ static client createClient(char *cmd, size_t len, client from, int thread_id) {
     c->written = 0;
     c->pending = config.pipeline + c->prefix_pending;
     c->randptr = NULL;
+    c->randlast = NULL;
     c->randlen = 0;
     c->stagptr = NULL;
     c->staglen = 0;
@@ -751,11 +761,13 @@ static client createClient(char *cmd, size_t len, client from, int thread_id) {
             c->randlen = from->randlen;
             c->randfree = 0;
             c->randptr = zmalloc(sizeof(char *) * c->randlen);
+            c->randlast = zmalloc(sizeof(bool) * c->randlen);
             /* copy the offsets. */
             for (j = 0; j < (int)c->randlen; j++) {
                 c->randptr[j] = c->obuf + (from->randptr[j] - from->obuf);
                 /* Adjust for the different select prefix length. */
                 c->randptr[j] += c->prefixlen - from->prefixlen;
+                c->randlast[j] = from->randlast[j];
             }
         } else {
             char *p = c->obuf;
@@ -763,14 +775,23 @@ static client createClient(char *cmd, size_t len, client from, int thread_id) {
             c->randlen = 0;
             c->randfree = RANDPTR_INITIAL_SIZE;
             c->randptr = zmalloc(sizeof(char *) * c->randfree);
-            while ((p = strstr(p, "__rand_int__")) != NULL) {
+            c->randlast = zmalloc(sizeof(bool) * c->randfree);
+            while ((p = strstr(p, "__rand_")) != NULL) {
+                bool rand_int = !(bool)strncmp("__rand_int__", p, 12);
+                bool rand_last = !(bool)strncmp("__rand_lst__", p, 12);
+                if(!rand_int && ! rand_last)
+                    continue;
+
                 if (c->randfree == 0) {
                     c->randptr = zrealloc(c->randptr, sizeof(char *) * c->randlen * 2);
+                    c->randlast = zrealloc(c->randlast, sizeof(bool) * c->randlen * 2);
                     c->randfree += c->randlen;
                 }
-                c->randptr[c->randlen++] = p;
+                c->randptr[c->randlen] = p;
+                c->randlast[c->randlen] = rand_last;
+                c->randlen++;
                 c->randfree--;
-                p += 12; /* 12 is strlen("__rand_int__). */
+                p += 12; /* 12 is strlen("__rand_int__), same for "__rand_lst__". */
             }
         }
     }
@@ -1569,8 +1590,10 @@ usage:
         "   $ valkey-benchmark -r 10000 -n 10000 eval 'return redis.call(\"ping\")' 0\n\n"
         " Fill a list with 10000 random elements:\n"
         "   $ valkey-benchmark -r 10000 -n 10000 lpush mylist __rand_int__\n\n"
-        " On user specified command lines __rand_int__ is replaced with a random integer\n"
-        " with a range of values selected by the -r option.\n");
+        " On user-specified command lines __rand_int__ is replaced with a random integer\n"
+        " with a range of values selected by the -r option.\n"
+        " On user-specified command lines __rand_lst__ is replaced with the last value\n"
+        " of __rand_int__ or zero if no such value is available.\n");
     exit(exit_status);
 }
 
@@ -1956,6 +1979,39 @@ int main(int argc, char **argv) {
             len = redisFormatCommand(&cmd, "XADD mystream%s * myfield %s", tag, data);
             benchmark("XADD", cmd, len);
             free(cmd);
+        }
+
+        if (test_is_selected("set_pxat")) {
+            len = redisFormatCommand(&cmd, "SET key%s:__rand_int__ %s PXAT 17344823940230", tag, data);
+            benchmark("SET w/ PXAT", cmd, len);
+            free(cmd);
+        }
+
+        if (test_is_selected("getpxt")) {
+            len = redisFormatCommand(&cmd, "GETPXT key%s:__rand_int__", tag);
+            benchmark("GETPXT", cmd, len);
+            free(cmd);
+        }
+
+        if (test_is_selected("getpxt_simulated")) {
+            redisFormatCommand(&cmd, "MULTI");
+            sds pipeline = sdscatprintf(sdsempty(), "%s", cmd);
+            free(cmd);
+
+            redisFormatCommand(&cmd, "GET key%s:__rand_int__", tag);
+            pipeline = sdscatprintf(pipeline, "%s", cmd);
+            free(cmd);
+
+            redisFormatCommand(&cmd, "PEXPIRETIME key%s:__rand_lst__", tag);
+            pipeline = sdscatprintf(pipeline, "%s", cmd);
+            free(cmd);
+
+            redisFormatCommand(&cmd, "EXEC");
+            pipeline = sdscatprintf(pipeline, "%s", cmd);
+            free(cmd);
+
+            benchmark("GETPXT Simulated", pipeline, sdslen(pipeline));
+            sdsfree(pipeline);
         }
 
         if (!config.csv) printf("\n");

@@ -10509,6 +10509,30 @@ struct COMMAND_ARG GETEX_Args[] = {
 {MAKE_ARG("expiration",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_OPTIONAL,5,NULL),.subargs=GETEX_expiration_Subargs},
 };
 
+/********** GETPXT ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* GETPXT history */
+#define GETPXT_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* GETPXT tips */
+#define GETPXT_Tips NULL
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* GETPXT key specs */
+keySpec GETPXT_Keyspecs[1] = {
+{NULL,CMD_KEY_RO|CMD_KEY_ACCESS,KSPEC_BS_INDEX,.bs.index={1},KSPEC_FK_RANGE,.fk.range={0,1,0}}
+};
+#endif
+
+/* GETPXT argument table */
+struct COMMAND_ARG GETPXT_Args[] = {
+{MAKE_ARG("key",ARG_TYPE_KEY,0,NULL,NULL,NULL,CMD_ARG_NONE,0,NULL)},
+};
+
 /********** GETRANGE ********************/
 
 #ifndef SKIP_CMD_HISTORY_TABLE
@@ -10686,6 +10710,32 @@ keySpec MGET_Keyspecs[1] = {
 
 /* MGET argument table */
 struct COMMAND_ARG MGET_Args[] = {
+{MAKE_ARG("key",ARG_TYPE_KEY,0,NULL,NULL,NULL,CMD_ARG_MULTIPLE,0,NULL)},
+};
+
+/********** MGETPXT ********************/
+
+#ifndef SKIP_CMD_HISTORY_TABLE
+/* MGETPXT history */
+#define MGETPXT_History NULL
+#endif
+
+#ifndef SKIP_CMD_TIPS_TABLE
+/* MGETPXT tips */
+const char *MGETPXT_Tips[] = {
+"request_policy:multi_shard",
+};
+#endif
+
+#ifndef SKIP_CMD_KEY_SPECS_TABLE
+/* MGETPXT key specs */
+keySpec MGETPXT_Keyspecs[1] = {
+{NULL,CMD_KEY_RO|CMD_KEY_ACCESS,KSPEC_BS_INDEX,.bs.index={1},KSPEC_FK_RANGE,.fk.range={-1,1,0}}
+};
+#endif
+
+/* MGETPXT argument table */
+struct COMMAND_ARG MGETPXT_Args[] = {
 {MAKE_ARG("key",ARG_TYPE_KEY,0,NULL,NULL,NULL,CMD_ARG_MULTIPLE,0,NULL)},
 };
 
@@ -11287,6 +11337,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("get","Returns the string value of a key.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,GET_History,0,GET_Tips,0,getCommand,2,CMD_READONLY|CMD_FAST,ACL_CATEGORY_STRING,GET_Keyspecs,1,NULL,1),.args=GET_Args},
 {MAKE_CMD("getdel","Returns the string value of a key after deleting the key.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,GETDEL_History,0,GETDEL_Tips,0,getdelCommand,2,CMD_WRITE|CMD_FAST,ACL_CATEGORY_STRING,GETDEL_Keyspecs,1,NULL,1),.args=GETDEL_Args},
 {MAKE_CMD("getex","Returns the string value of a key after setting its expiration time.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,GETEX_History,0,GETEX_Tips,0,getexCommand,-2,CMD_WRITE|CMD_FAST,ACL_CATEGORY_STRING,GETEX_Keyspecs,1,NULL,2),.args=GETEX_Args},
+{MAKE_CMD("getpxt","Returns the string value of a key and the expiration time as a Unix milliseconds timestamp, if set.","O(1)","8.0.2",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,GETPXT_History,0,GETPXT_Tips,0,getpxtCommand,2,CMD_READONLY|CMD_FAST,ACL_CATEGORY_STRING|ACL_CATEGORY_KEYSPACE,GETPXT_Keyspecs,1,NULL,1),.args=GETPXT_Args},
 {MAKE_CMD("getrange","Returns a substring of the string stored at a key.","O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.","2.4.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,GETRANGE_History,0,GETRANGE_Tips,0,getrangeCommand,4,CMD_READONLY,ACL_CATEGORY_STRING,GETRANGE_Keyspecs,1,NULL,3),.args=GETRANGE_Args},
 {MAKE_CMD("getset","Returns the previous string value of a key after setting it to a new value.","O(1)","1.0.0",CMD_DOC_DEPRECATED,"`SET` with the `!GET` argument","6.2.0","string",COMMAND_GROUP_STRING,GETSET_History,0,GETSET_Tips,0,getsetCommand,3,CMD_WRITE|CMD_DENYOOM|CMD_FAST,ACL_CATEGORY_STRING,GETSET_Keyspecs,1,NULL,2),.args=GETSET_Args},
 {MAKE_CMD("incr","Increments the integer value of a key by one. Uses 0 as initial value if the key doesn't exist.","O(1)","1.0.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,INCR_History,0,INCR_Tips,0,incrCommand,2,CMD_WRITE|CMD_DENYOOM|CMD_FAST,ACL_CATEGORY_STRING,INCR_Keyspecs,1,NULL,1),.args=INCR_Args},
@@ -11294,6 +11345,7 @@ struct COMMAND_STRUCT serverCommandTable[] = {
 {MAKE_CMD("incrbyfloat","Increment the floating point value of a key by a number. Uses 0 as initial value if the key doesn't exist.","O(1)","2.6.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,INCRBYFLOAT_History,0,INCRBYFLOAT_Tips,0,incrbyfloatCommand,3,CMD_WRITE|CMD_DENYOOM|CMD_FAST,ACL_CATEGORY_STRING,INCRBYFLOAT_Keyspecs,1,NULL,2),.args=INCRBYFLOAT_Args},
 {MAKE_CMD("lcs","Finds the longest common substring.","O(N*M) where N and M are the lengths of s1 and s2, respectively","7.0.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,LCS_History,0,LCS_Tips,0,lcsCommand,-3,CMD_READONLY,ACL_CATEGORY_STRING,LCS_Keyspecs,1,NULL,6),.args=LCS_Args},
 {MAKE_CMD("mget","Atomically returns the string values of one or more keys.","O(N) where N is the number of keys to retrieve.","1.0.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,MGET_History,0,MGET_Tips,1,mgetCommand,-2,CMD_READONLY|CMD_FAST,ACL_CATEGORY_STRING,MGET_Keyspecs,1,NULL,1),.args=MGET_Args},
+{MAKE_CMD("mgetpxt","Atomically returns the string values of one or more keys and their millisecond expiration, if available.","O(N) where N is the number of keys to retrieve.","1.0.0",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,MGETPXT_History,0,MGETPXT_Tips,1,mgetpxtCommand,-2,CMD_READONLY|CMD_FAST,ACL_CATEGORY_STRING|ACL_CATEGORY_KEYSPACE,MGETPXT_Keyspecs,1,NULL,1),.args=MGETPXT_Args},
 {MAKE_CMD("mset","Atomically creates or modifies the string values of one or more keys.","O(N) where N is the number of keys to set.","1.0.1",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,MSET_History,0,MSET_Tips,2,msetCommand,-3,CMD_WRITE|CMD_DENYOOM,ACL_CATEGORY_STRING,MSET_Keyspecs,1,NULL,1),.args=MSET_Args},
 {MAKE_CMD("msetnx","Atomically modifies the string values of one or more keys only when all keys don't exist.","O(N) where N is the number of keys to set.","1.0.1",CMD_DOC_NONE,NULL,NULL,"string",COMMAND_GROUP_STRING,MSETNX_History,0,MSETNX_Tips,0,msetnxCommand,-3,CMD_WRITE|CMD_DENYOOM,ACL_CATEGORY_STRING,MSETNX_Keyspecs,1,NULL,1),.args=MSETNX_Args},
 {MAKE_CMD("psetex","Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn't exist.","O(1)","2.6.0",CMD_DOC_DEPRECATED,"`SET` with the `PX` argument","2.6.12","string",COMMAND_GROUP_STRING,PSETEX_History,0,PSETEX_Tips,0,psetexCommand,4,CMD_WRITE|CMD_DENYOOM,ACL_CATEGORY_STRING,PSETEX_Keyspecs,1,NULL,3),.args=PSETEX_Args},

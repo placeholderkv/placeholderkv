@@ -214,6 +214,28 @@ start_server {tags {"string"}} {
         r mget foo{t} baazz{t} bar{t} myset{t}
     } {BAR {} FOO {}}
 
+    test {MGETPXT} {
+        r flushdb
+        r set foo{t} BAR pxat 17344823940230
+        r set bar{t} FOO pxat 17344823940231
+        r mgetpxt foo{t} bar{t}
+    } {{BAR 17344823940230} {FOO 17344823940231}}
+
+    test {MGETPXT against non existing key} {
+        r mgetpxt foo{t} baazz{t} bar{t}
+    } {{BAR 17344823940230} {} {FOO 17344823940231}}
+
+    test {MGETPXT against non-string key} {
+        r sadd myset{t} ciao
+        r sadd myset{t} bau
+        r mgetpxt foo{t} baazz{t} bar{t} myset{t}
+    } {{BAR 17344823940230} {} {FOO 17344823940231} {}}
+
+    test {MGETPXT against a key with no expiration} {
+        r set baz{t} BAZ
+        r mgetpxt foo{t} baz{t} bar{t}
+    } {{BAR 17344823940230} {BAZ -1} {FOO 17344823940231}}
+
     test {GETSET (set new value)} {
         r del foo
         list [r getset foo xyz] [r get foo]
@@ -657,6 +679,23 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
         r set foo bar pxat [expr [clock milliseconds] + 10000]
         assert_range [r ttl foo] 5 10
     }
+
+    test "GETPXT after SET PXAT" {
+        r del foo
+        r set foo bar pxat 17344823940230
+        r getpxt foo
+    } {bar 17344823940230}
+
+    test "GETPXT after SET with no expiration" {
+        r del foo
+        r set foo bar
+        r getpxt foo
+    } {bar -1}
+
+    test "GETPXT with no entry" {
+        r del foo
+        r getpxt foo
+    } {}
 
     test "SET EXAT / PXAT Expiration time is expired" {
         r debug set-active-expire 0

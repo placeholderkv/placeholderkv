@@ -1,0 +1,80 @@
+{
+    "GETPXT": {
+        "summary": "Returns the string value of a key and the expiration time as a Unix milliseconds timestamp, if set.",
+        "complexity": "O(1)",
+        "group": "string",
+        "since": "8.0.2",
+        "arity": 2,
+        "function": "getpxtCommand",
+        "command_flags": [
+            "READONLY",
+            "FAST"
+        ],
+        "acl_categories": [
+            "STRING",
+            "KEYSPACE"
+        ],
+        "key_specs": [
+            {
+                "flags": [
+                    "RO",
+                    "ACCESS"
+                ],
+                "begin_search": {
+                    "index": {
+                        "pos": 1
+                    }
+                },
+                "find_keys": {
+                    "range": {
+                        "lastkey": 0,
+                        "step": 1,
+                        "limit": 0
+                    }
+                }
+            }
+        ],
+        "reply_schema": {
+            "oneOf": [
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": [
+                            {
+                                "description": "The value of the key.",
+                                "type": "string"
+                            },
+                            {
+                                "oneOf": [
+                                    {
+                                        "type": "integer",
+                                        "description": "Expiration Unix timestamp in milliseconds.",
+                                        "minimum": 0
+                                    },
+                                    {
+                                        "const": -1,
+                                        "description": "The key exists but has no associated expiration time."
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                },
+                {
+                    "description": "Key does not exist.",
+                    "type": "null"
+                }
+            ]
+        },
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "key_spec_index": 0
+            }
+        ]
+    }
+}
