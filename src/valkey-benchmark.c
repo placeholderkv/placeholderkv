@@ -1559,10 +1559,12 @@ usage:
         " -I                 Idle mode. Just open N idle connections and wait.\n"
         " -x                 Read last argument from STDIN.\n"
         " --seed <num>       Set the seed for random number generator. Default seed is based on time.\n"
-        " --num-functions <num>     Sets the number of functions present in the Lua lib that is\n"
-        "                           loaded when running the 'function_load' test. (default 10).\n"
-        " --num-keys-in-fcall <num> Sets the number of keys passed to FCALL command when running\n"
-        "                           the 'fcall' test. (default 1)\n",
+        " --num-functions <num>\n"
+        "                    Sets the number of functions present in the Lua lib that is\n"
+        "                    loaded when running the 'function_load' test. (default 10).\n"
+        " --num-keys-in-fcall <num>\n"
+        "                    Sets the number of keys passed to FCALL command when running\n"
+        "                    the 'fcall' test. (default 1)\n",
         tls_usage,
         " --help             Output this help and exit.\n"
         " --version          Output version and exit.\n\n"
@@ -2047,9 +2049,6 @@ int main(int argc, char **argv) {
 
             benchmark("FCALL", cmd, len);
             free(cmd);
-        }
-
-        if (test_is_selected("fcall")) {
         }
 
         if (!config.csv) printf("\n");
