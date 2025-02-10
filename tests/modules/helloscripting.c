@@ -96,11 +96,21 @@ typedef struct HelloProgram {
     uint32_t num_functions;
 } HelloProgram;
 
+
+typedef struct HelloDebugCtx {
+    int enabled;
+    int stop_on_next_instr;
+    int abort;
+    const uint32_t *stack;
+    uint32_t sp;
+} HelloDebugCtx;
+
 /*
  * Struct that represents the runtime context of an HELLO program.
  */
 typedef struct HelloLangCtx {
     HelloProgram *program;
+    HelloDebugCtx debug;
 } HelloLangCtx;
 
 
@@ -241,10 +251,60 @@ static ValkeyModuleScriptingEngineExecutionState executeSleepInst(ValkeyModuleSc
     return state;
 }
 
+static void helloDebuggerLogCurrentInstr(uint32_t pc, HelloInst *instr) {
+    ValkeyModuleString *msg = NULL;
+    switch (instr->kind) {
+    case CONSTI:
+    case ARGS:
+        msg = ValkeyModule_CreateStringPrintf(NULL, ">>> %3u: %s %u", pc, HelloInstKindStr[instr->kind], instr->param.integer);
+        break;
+    case SLEEP:
+    case RETURN:
+        msg = ValkeyModule_CreateStringPrintf(NULL, ">>> %3u: %s", pc, HelloInstKindStr[instr->kind]);
+        break;
+    case FUNCTION:
+    case _NUM_INSTRUCTIONS:
+        ValkeyModule_Assert(0);
+    }
+
+    ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+}
+
+static int helloDebuggerInstrHook(uint32_t pc, HelloInst *instr) {
+    helloDebuggerLogCurrentInstr(pc, instr);
+    ValkeyModule_ScriptingEngineDebuggerFlushLogs();
+
+    int client_disconnected = 0;
+    ValkeyModuleString *err;
+    ValkeyModule_ScriptingEngineDebuggerProcessCommands(&client_disconnected, &err);
+
+    if (err) {
+        ValkeyModule_ScriptingEngineDebuggerLog(err, 0);
+        goto error;
+    } else if (client_disconnected) {
+        ValkeyModuleString *msg = ValkeyModule_CreateStringPrintf(NULL, "ERROR: Client socket disconnected");
+        ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+        goto error;
+    }
+
+    return 1;
+
+error:
+    ValkeyModule_ScriptingEngineDebuggerFlushLogs();
+    return 0;
+}
+
+typedef enum {
+    FINISHED,
+    KILLED,
+    ABORTED,
+} HelloExecutionState;
+
 /*
  * Executes an HELLO function.
  */
-static ValkeyModuleScriptingEngineExecutionState executeHelloLangFunction(ValkeyModuleScriptingEngineServerRuntimeCtx *server_ctx,
+static HelloExecutionState executeHelloLangFunction(ValkeyModuleScriptingEngineServerRuntimeCtx *server_ctx,
+                                                                          HelloDebugCtx *debug_ctx,
                                                                           HelloFunc *func,
                                                                           ValkeyModuleString **args,
                                                                           int nargs,
@@ -253,10 +313,19 @@ static ValkeyModuleScriptingEngineExecutionState executeHelloLangFunction(Valkey
     uint32_t stack[64];
     uint32_t val = 0;
     int sp = 0;
-    ValkeyModuleScriptingEngineExecutionState state = VMSE_STATE_EXECUTING;
 
     for (uint32_t pc = 0; pc < func->num_instructions; pc++) {
         HelloInst instr = func->instructions[pc];
+        if (debug_ctx->enabled && debug_ctx->stop_on_next_instr) {
+            debug_ctx->stack = stack;
+            debug_ctx->sp = sp;
+            if (!helloDebuggerInstrHook(pc, &instr)) {
+                return ABORTED;
+            }
+            if (debug_ctx->abort) {
+                return ABORTED;
+            }
+        }
         switch (instr.kind) {
         case CONSTI:
             stack[sp++] = instr.param.integer;
@@ -271,8 +340,11 @@ static ValkeyModuleScriptingEngineExecutionState executeHelloLangFunction(Valkey
             break;
 	    }
         case SLEEP: {
+            ValkeyModule_Assert(sp > 0);
             val = stack[--sp];
-            state = executeSleepInst(server_ctx, val);
+            if (executeSleepInst(server_ctx, val) == VMSE_STATE_KILLED) {
+                return KILLED;
+            }
             break;
 	    }
         case RETURN: {
@@ -280,7 +352,7 @@ static ValkeyModuleScriptingEngineExecutionState executeHelloLangFunction(Valkey
             val = stack[--sp];
             ValkeyModule_Assert(sp == 0);
             *result = val;
-            return state;
+            return FINISHED;
 	    }
         case FUNCTION:
         case _NUM_INSTRUCTIONS:
@@ -289,7 +361,7 @@ static ValkeyModuleScriptingEngineExecutionState executeHelloLangFunction(Valkey
     }
 
     ValkeyModule_Assert(0);
-    return state;
+    return ABORTED;
 }
 
 static ValkeyModuleScriptingEngineMemoryInfo engineGetMemoryInfo(ValkeyModuleCtx *module_ctx,
@@ -410,18 +482,24 @@ callHelloLangFunction(ValkeyModuleCtx *module_ctx,
                       ValkeyModuleScriptingEngineSubsystemType type,
                       ValkeyModuleString **keys, size_t nkeys,
                       ValkeyModuleString **args, size_t nargs) {
-    VALKEYMODULE_NOT_USED(engine_ctx);
     VALKEYMODULE_NOT_USED(keys);
     VALKEYMODULE_NOT_USED(nkeys);
 
     ValkeyModule_Assert(type == VMSE_EVAL || type == VMSE_FUNCTION);
 
+    HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
     HelloFunc *func = (HelloFunc *)compiled_function->function;
     uint32_t result;
-    ValkeyModuleScriptingEngineExecutionState state = executeHelloLangFunction(server_ctx, func, args, nargs, &result);
-    ValkeyModule_Assert(state == VMSE_STATE_KILLED || state == VMSE_STATE_EXECUTING);
+    HelloExecutionState state = executeHelloLangFunction(
+        server_ctx,
+        &ctx->debug,
+        func,
+        args,
+        nargs,
+        &result);
+    ValkeyModule_Assert(state == KILLED || state == FINISHED || state == ABORTED);
 
-    if (state == VMSE_STATE_KILLED) {
+    if (state == KILLED) {
         if (type == VMSE_EVAL) {
             ValkeyModule_ReplyWithError(module_ctx, "ERR Script killed by user with SCRIPT KILL.");
         }
@@ -429,8 +507,12 @@ callHelloLangFunction(ValkeyModuleCtx *module_ctx,
             ValkeyModule_ReplyWithError(module_ctx, "ERR Script killed by user with FUNCTION KILL");
         }
     }
-
-    ValkeyModule_ReplyWithLongLong(module_ctx, result);
+    else if (state == ABORTED) {
+        ValkeyModule_ReplyWithError(module_ctx, "ERR execution aborted during debugging session");
+    }
+    else {
+        ValkeyModule_ReplyWithLongLong(module_ctx, result);
+    }
 }
 
 static ValkeyModuleScriptingEngineCallableLazyEvalReset *helloResetEvalEnv(ValkeyModuleCtx *module_ctx,
@@ -440,6 +522,144 @@ static ValkeyModuleScriptingEngineCallableLazyEvalReset *helloResetEvalEnv(Valke
     VALKEYMODULE_NOT_USED(engine_ctx);
     VALKEYMODULE_NOT_USED(async);
     return NULL;
+}
+
+static int helloDebuggerStepCommand(ValkeyModuleString **argv, size_t argc, void *context) {
+    VALKEYMODULE_NOT_USED(argv);
+    VALKEYMODULE_NOT_USED(argc);
+    HelloDebugCtx *ctx = context;
+    ctx->stop_on_next_instr = 1;
+    return 0;
+}
+
+static int helloDebuggerContinueCommand(ValkeyModuleString **argv, size_t argc, void *context) {
+    VALKEYMODULE_NOT_USED(argv);
+    VALKEYMODULE_NOT_USED(argc);
+    HelloDebugCtx *ctx = context;
+    ctx->stop_on_next_instr = 0;
+    return 0;
+}
+
+static int helloDebuggerStackCommand(ValkeyModuleString **argv, size_t argc, void *context) {
+    HelloDebugCtx *ctx = context;
+    ValkeyModuleString *msg = NULL;
+
+    if (argc > 1) {
+        long long n;
+        ValkeyModule_StringToLongLong(argv[1], &n);
+        uint32_t index = (uint32_t)n;
+
+        if (index >= ctx->sp) {
+            ValkeyModuleString *msg = ValkeyModule_CreateStringPrintf(NULL, "Index out of range. Current stack size: %u", ctx->sp);
+            ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+        }
+        else {
+            uint32_t value = ctx->stack[ctx->sp - index - 1];
+            msg = ValkeyModule_CreateStringPrintf(NULL, "[%u] %u", index, value);
+            ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+        }
+    }
+    else {
+        msg = ValkeyModule_CreateStringPrintf(NULL, "Stack contents:");
+        if (ctx->sp == 0) {
+            msg = ValkeyModule_CreateStringPrintf(NULL, "[empty]");
+            ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+        }
+        else {
+            ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+            for (uint32_t i=0; i < ctx->sp; i++) {
+                uint32_t value = ctx->stack[ctx->sp - i - 1];
+                if (i == 0) {
+                    msg = ValkeyModule_CreateStringPrintf(NULL, "top -> [%u] %u", i, value);
+                } else {
+                    msg = ValkeyModule_CreateStringPrintf(NULL, "       [%u] %u", i, value);
+                }
+                ValkeyModule_ScriptingEngineDebuggerLog(msg, 0);
+            }
+        }
+    }
+
+    ValkeyModule_ScriptingEngineDebuggerFlushLogs();
+    return 1;
+}
+
+static int helloDebuggerAbortCommand(ValkeyModuleString **argv, size_t argc, void *context) {
+    VALKEYMODULE_NOT_USED(argv);
+    VALKEYMODULE_NOT_USED(argc);
+    HelloDebugCtx *ctx = context;
+    ctx->abort = 1;
+    return 0;
+}
+
+#define COMMAND_COUNT (4)
+
+static ValkeyModuleScriptingEngineDebuggerCommandParam stack_params[1] = {
+    {
+        .name = "index",
+        .optional = 1
+    }
+};
+
+static ValkeyModuleScriptingEngineDebuggerCommand helloDebuggerCommands[COMMAND_COUNT] = {
+    VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("step", 1, NULL, 0, "Execute current instruction.", 0 ,helloDebuggerStepCommand),
+    VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("continue", 1, NULL, 0, "Continue normal execution.", 0, helloDebuggerContinueCommand),
+    VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("stack", 2, stack_params, 1, "Print stack contents. If index is specified, print only the value at index. Indexes start at 0 (top = 0).", 0, helloDebuggerStackCommand),
+    VALKEYMODULE_SCRIPTING_ENIGNE_DEBUGGER_COMMAND("abort", 1, NULL, 0, "Abort execution.", 0, helloDebuggerAbortCommand),
+};
+
+static ValkeyModuleScriptingEngineDebuggerEnableRet helloDebuggerEnable(ValkeyModuleCtx *module_ctx,
+                                                                        ValkeyModuleScriptingEngineCtx *engine_ctx,
+                                                                        ValkeyModuleScriptingEngineSubsystemType type,
+                                                                        const ValkeyModuleScriptingEngineDebuggerCommand **commands,
+                                                                        size_t *commands_len) {
+    VALKEYMODULE_NOT_USED(module_ctx);
+    VALKEYMODULE_NOT_USED(type);
+
+    HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
+    ctx->debug = (HelloDebugCtx) {.enabled = 1};
+    *commands = helloDebuggerCommands;
+    *commands_len = COMMAND_COUNT;
+
+    for (int i=0; i < COMMAND_COUNT; i++) {
+        helloDebuggerCommands[i].context = &ctx->debug;
+    }
+    return VMSE_DEBUG_ENABLED;
+}
+
+static void helloDebuggerDisable(ValkeyModuleCtx *module_ctx,
+                                 ValkeyModuleScriptingEngineCtx *engine_ctx,
+                                 ValkeyModuleScriptingEngineSubsystemType type) {
+    VALKEYMODULE_NOT_USED(module_ctx);
+    VALKEYMODULE_NOT_USED(type);
+
+    HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
+    ctx->debug = (HelloDebugCtx){0};
+
+}
+
+static void helloDebuggerStart(ValkeyModuleCtx *module_ctx,
+                               ValkeyModuleScriptingEngineCtx *engine_ctx,
+                               ValkeyModuleScriptingEngineSubsystemType type,
+                               ValkeyModuleString *code) {
+    VALKEYMODULE_NOT_USED(module_ctx);
+    VALKEYMODULE_NOT_USED(type);
+    VALKEYMODULE_NOT_USED(code);
+
+    HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
+    ctx->debug.stop_on_next_instr = 1;
+}
+
+static void helloDebuggerEnd(ValkeyModuleCtx *module_ctx,
+                               ValkeyModuleScriptingEngineCtx *engine_ctx,
+                               ValkeyModuleScriptingEngineSubsystemType type) {
+    VALKEYMODULE_NOT_USED(module_ctx);
+    VALKEYMODULE_NOT_USED(type);
+
+    HelloLangCtx *ctx = (HelloLangCtx *)engine_ctx;
+    ctx->debug.stop_on_next_instr = 0;
+    ctx->debug.abort = 0;
+    ctx->debug.stack = NULL;
+    ctx->debug.sp = 0;
 }
 
 int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx,
@@ -454,6 +674,7 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx,
 
     hello_ctx = ValkeyModule_Alloc(sizeof(HelloLangCtx));
     hello_ctx->program = NULL;
+    hello_ctx->debug.enabled = 0;
 
     ValkeyModuleScriptingEngineMethods methods = {
         .version = VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION,
@@ -463,6 +684,10 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx,
         .get_function_memory_overhead = engineFunctionMemoryOverhead,
 	    .reset_eval_env = helloResetEvalEnv,
         .get_memory_info = engineGetMemoryInfo,
+        .debugger_enable = helloDebuggerEnable,
+        .debugger_disable = helloDebuggerDisable,
+        .debugger_start = helloDebuggerStart,
+        .debugger_end = helloDebuggerEnd,
     };
 
     ValkeyModule_RegisterScriptingEngine(ctx,

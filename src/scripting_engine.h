@@ -14,6 +14,9 @@ typedef ValkeyModuleScriptingEngineCompiledFunction compiledFunction;
 typedef ValkeyModuleScriptingEngineSubsystemType subsystemType;
 typedef ValkeyModuleScriptingEngineMemoryInfo engineMemoryInfo;
 typedef ValkeyModuleScriptingEngineCallableLazyEvalReset callableLazyEvalReset;
+typedef ValkeyModuleScriptingEngineDebuggerEnableRet debuggerEnableRet;
+typedef ValkeyModuleScriptingEngineDebuggerCommand debuggerCommand;
+typedef ValkeyModuleScriptingEngineDebuggerCommandParam debuggerCommandParam;
 typedef ValkeyModuleScriptingEngineMethods engineMethods;
 
 /*
@@ -81,5 +84,54 @@ callableLazyEvalReset *scriptingEngineCallResetEvalEnvFunc(scriptingEngine *engi
 
 engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine,
                                                   subsystemType type);
+
+debuggerEnableRet scriptingEngineCallDebuggerEnable(scriptingEngine *engine,
+                                                    subsystemType type,
+                                                    const debuggerCommand **commands,
+                                                    size_t *commands_len);
+
+void scriptingEngineCallDebuggerDisable(scriptingEngine *engine,
+                                        subsystemType type);
+
+void scriptingEngineCallDebuggerStart(scriptingEngine *engine,
+                                      subsystemType type,
+                                      robj *source);
+
+void scriptingEngineCallDebuggerEnd(scriptingEngine *engine,
+                                    subsystemType type);
+
+/*
+ * API of scripting engine remote debugger.
+ */
+void scriptingEngineDebuggerInit(void);
+
+int scriptingEngineDebuggerEnable(client *c, scriptingEngine *engine, sds *err);
+
+void scriptingEngineDebuggerDisable(client *c);
+
+int scriptingEngineDebuggerStartSession(client *c);
+
+void scriptingEngineDebuggerEndSession(client *c);
+
+void scriptingEngineDebuggerLog(sds entry);
+
+void scriptingEngineDebuggerLogWithMaxLen(sds entry);
+
+void scriptingEngineDebuggerSetMaxlen(size_t max);
+
+size_t scriptingEngineDebuggerGetMaxlen(void);
+
+void scriptingEngineDebuggerFlushLogs(void);
+
+void scriptingEngineDebuggerProcessCommands(int *client_disconnected, robj **err);
+
+void scriptingEngineDebuggerLogRespReplyStr(const char *reply);
+
+int scriptingEngineDebuggerRemoveChild(int pid);
+
+int scriptingEngineDebuggerPendingChildren(void);
+
+void scriptingEngineDebuggerKillForkedSessions(void);
+
 
 #endif /* _SCRIPTING_ENGINE_H_ */
