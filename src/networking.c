@@ -4517,7 +4517,7 @@ char *getClientTypeName(int class) {
     }
 }
 
-/* Returns the client type for output buffer limits calculation 
+/* Returns the client type for output buffer limits calculation
  * (i.e., primaries are treated as normal). */
 int getClientTypeForOutputBuffering(client *c) {
     int class = getClientType(c);
