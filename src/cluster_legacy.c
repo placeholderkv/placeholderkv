@@ -6026,8 +6026,8 @@ sds clusterGenNodeDescription(client *c, clusterNode *node, int tls_primary) {
     return ci;
 }
 
-/* Generate the slot topology for all nodes and store the string representation
- * in the slots_info struct on the node. This is used to improve the efficiency
+/* Generate the slot topology for all nodes and store the slot range information
+ * in the slot_info_pairs array on the node. This is used to improve the efficiency
  * of clusterGenNodesDescription() because it removes looping of the slot space
  * for generating the slot info for each node individually. */
 void clusterGenNodesSlotsInfo(int filter) {
