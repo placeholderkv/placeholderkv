@@ -1621,9 +1621,8 @@ static void resetConfig(void) {
  *                a connected socket.
  *      CC_QUIET: Don't print errors if connection fails. */
 static int cliConnect(int flags) {
-    resetConfig();
-
     if (context == NULL || flags & CC_FORCE) {
+        resetConfig();
         if (context != NULL) {
             redisFree(context);
             resetConfig();
