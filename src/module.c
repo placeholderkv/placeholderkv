@@ -12280,8 +12280,9 @@ int moduleLoad(const char *path, void **module_argv, int module_argc, int is_loa
      * same symbols, does not work with ASAN. Therefore, we exclude
      * RTLD_DEEPBIND when doing test builds with ASAN.
      * See https://github.com/google/sanitizers/issues/611 for more details.
-     * This flag is also not available in OSX, but the default symbol resolution
-     * behavior in OSX is the same as when we use DEEPBIND in Linux. */
+     * This flag is also not available in macos, but the default symbol
+     * resolution behavior in macos is the same as when we use DEEPBIND in
+     * Linux. */
     dlopen_flags |= RTLD_DEEPBIND;
 #endif
 
