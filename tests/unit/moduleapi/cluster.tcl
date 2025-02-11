@@ -16,11 +16,25 @@ start_cluster 3 0 [list config_lines $modules] {
         assert_equal OK [$node1 test.pingall]
         assert_equal 2 [CI 0 cluster_stats_messages_module_sent]
         wait_for_condition 50 100 {
-            [CI 1 cluster_stats_messages_module_received] eq 1 &&
-            [CI 2 cluster_stats_messages_module_received] eq 1
+            [CI 1 cluster_stats_messages_module_received] eq 2 &&
+            [CI 2 cluster_stats_messages_module_received] eq 2
         } else {
             fail "node 2 or node 3 didn't receive cluster module message"
         }
+    }
+
+    test "Cluster module message DING/DONG acknowledgment" {
+        assert_equal OK [$node1 test.pingall]
+        wait_for_condition 100 100 {
+            [CI 0 cluster_stats_messages_module_received] eq 4  &&
+            [CI 1 cluster_stats_messages_module_received] eq 4 &&
+            [CI 2 cluster_stats_messages_module_received] eq 4
+        } else {
+            fail "node 2 or node 3 didn't receive DING/DONG messages"
+        }
+
+        verify_log_message -1 "*DING (type 1) RECEIVED*Hey*" 0
+        verify_log_message 0 "*DONG (type 2) RECEIVED*Message Received*" 0
     }
 }
 
