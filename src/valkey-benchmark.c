@@ -2020,22 +2020,17 @@ int main(int argc, char **argv) {
         if (test_is_selected("fcall")) {
             char *script = generateFunctionScript(1, config.num_keys_in_fcall > 0);
 
-            char *ip = config.conn_info.hostip;
-            int port = config.conn_info.hostport;
-            redisContext *conn = redisConnect(ip, port);
-            assert(conn != NULL);
-            if (config.tls == 1) {
-                const char *err = NULL;
-                if (cliSecureConnection(conn, config.sslconfig, &err) == REDIS_ERR && err) {
-                    fprintf(stderr, "Could not negotiate a TLS connection: %s\n", err);
-                }
-                assert(err == NULL);
+            redisContext *ctx = getRedisContext(config.conn_info.hostip, config.conn_info.hostport, NULL);
+            if (ctx == NULL) {
+                exit(1);
             }
-            assert(conn->err == 0);
-            redisReply *reply = redisCommand(conn, "FUNCTION LOAD REPLACE %s", script);
+
+            assert(ctx != NULL && ctx->err == 0);
+            void *reply = redisCommand(ctx, "FUNCTION LOAD REPLACE %s", script);
+
             assert(reply != NULL);
             freeReplyObject(reply);
-            redisFree(conn);
+            redisFree(ctx);
             zfree(script);
 
             char **cmd_argv = zmalloc(sizeof(char *) * (config.num_keys_in_fcall + 3));
