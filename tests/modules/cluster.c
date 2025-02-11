@@ -49,10 +49,6 @@ int PingallCommand(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
 void DingReceiver(ValkeyModuleCtx *ctx, const char *sender_id, uint8_t type, const unsigned char *payload, uint32_t len) {
     ValkeyModule_Log(ctx, "notice", "DING (type %d) RECEIVED from %.*s: '%.*s'", type, VALKEYMODULE_NODE_ID_LEN, sender_id, (int)len, payload);
     ValkeyModule_SendClusterMessage(ctx, NULL, MSGTYPE_DONG, "Message Received!", 17);
-    ValkeyModuleCallReply *reply = ValkeyModule_Call(ctx, "INCR", "c", "dings_received");
-    if (reply != NULL) { 
-        ValkeyModule_FreeCallReply(reply);
-    }
 }
 
 void DongReceiver(ValkeyModuleCtx *ctx, const char *sender_id, uint8_t type, const unsigned char *payload, uint32_t len) {
