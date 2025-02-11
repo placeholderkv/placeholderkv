@@ -64,8 +64,10 @@
 
 typedef enum {
     ENTRY_ENC_EMB_VALUE = 0,
-    ENTRY_ENC_PTR_VALUE
+    ENTRY_ENC_PTR_VALUE = 1
 } hashTypeEntryEnc;
+
+#define FIELD_SDS_AUX_BIT_ENTRY_HAS_PTR_VALUE 0
 
 /* Struct used for ENTRY_ENC_PTR_VALUE. */
 typedef struct {
@@ -74,7 +76,7 @@ typedef struct {
 } hashTypeEntryPtrValue;
 
 static inline hashTypeEntryEnc entryGetEncoding(const hashTypeEntry *entry) {
-    return sdsGetAuxBits(entry);
+    return sdsGetAuxBit(entry, FIELD_SDS_AUX_BIT_ENTRY_HAS_PTR_VALUE);
 }
 
 /* Returns the containing struct for an entry without embedded value. */
@@ -108,6 +110,7 @@ hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
         sdswrite(buf + field_size, buf_size - field_size, SDS_TYPE_8, value, value_len);
         embedded_field_sds = (sds)(buf + sdsHdrSize(field_sds_type));
         /* Field sds aux bits are zero, which we use for this entry encoding. */
+        sdsSetAuxBit(embedded_field_sds, FIELD_SDS_AUX_BIT_ENTRY_HAS_PTR_VALUE, 0);
         serverAssert(entryGetEncoding(embedded_field_sds) == ENTRY_ENC_EMB_VALUE);
         sdsfree(value);
     } else {
@@ -128,7 +131,8 @@ hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
         sdswrite(entry->field_data, field_size, field_sds_type, field, field_len);
         embedded_field_sds = (sds)(entry->field_data + sdsHdrSize(field_sds_type));
         /* Store the entry encoding type in sds aux bits. */
-        sdsSetAuxBits(embedded_field_sds, ENTRY_ENC_PTR_VALUE);
+        sdsSetAuxBit(embedded_field_sds, FIELD_SDS_AUX_BIT_ENTRY_HAS_PTR_VALUE, 1);
+        serverAssert(entryGetEncoding(embedded_field_sds) == ENTRY_ENC_PTR_VALUE);
     }
     return (void *)embedded_field_sds;
 }

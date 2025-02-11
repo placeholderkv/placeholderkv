@@ -95,20 +95,25 @@ static inline unsigned char sdsType(const_sds s) {
     return flags & SDS_TYPE_MASK;
 }
 
-/* Returns the user data bits in the SDS header as stored by sdsSetAuxBits.
- * Always returns 0 for SDS_TYPE_5. */
-static inline unsigned char sdsGetAuxBits(const_sds s) {
+/* Returns a user data bit stored in the SDS header by sdsSetAuxBit. The bit
+ * index is 0-4. Returns 0 or 1. Always returns 0 for SDS_TYPE_5. */
+static inline int sdsGetAuxBit(const_sds s, int bit) {
     unsigned char flags = s[-1];
-    return sdsType(s) == SDS_TYPE_5 ? 0 : flags >> SDS_TYPE_BITS;
+    return sdsType(s) == SDS_TYPE_5 ? 0 : flags >> (SDS_TYPE_BITS + bit);
 }
 
-/* Allow storing user data in some unused bits in the SDS header, except for
- * SDS_TYPE_5. Aux is a 5-bit unsigned integer, a value between 0 and 31. The
- * aux value is lost if the SDS is auto-resized. */
-static inline void sdsSetAuxBits(sds s, unsigned char aux) {
+/* Stores a bit in an unused area in the SDS header, except for SDS_TYPE_5. The
+ * bit index is 0-4. The value is 0 or 1. The aux bits are lost if the SDS is
+ * auto-resized. */
+static inline void sdsSetAuxBit(sds s, int bit, int value) {
     if (sdsType(s) == SDS_TYPE_5) return;
     unsigned char flags = s[-1];
-    s[-1] = (char)((flags & SDS_TYPE_MASK) | ((aux << SDS_TYPE_BITS) & ~SDS_TYPE_MASK));
+    if (value) {
+        flags |= 1 << (SDS_TYPE_BITS + bit);
+    } else {
+        flags &= ~(1 << (SDS_TYPE_BITS + bit));
+    }
+    s[-1] = (char)flags;
 }
 
 static inline size_t sdslen(const_sds s) {
