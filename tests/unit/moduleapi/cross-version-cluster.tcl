@@ -37,9 +37,9 @@ tags {external:skip needs:other-server cluster modules} {
 
             test "Send cluster message via module from latest to other server" {
                 assert_equal OK [r test.pingall]
-                assert_match "*cluster_stats_messages_module_sent:2*" [r CLUSTER INFO]
+                assert_match "*cluster_stats_messages_module_sent:1*" [r CLUSTER INFO]
                 wait_for_condition 50 100 {
-                    [string match {*cluster_stats_messages_module_received:2*} [r -1 CLUSTER INFO]]
+                    [string match {*cluster_stats_messages_module_received:1*} [r -1 CLUSTER INFO]]
                 } else {
                     fail "Node didn't receive the message"
                 }
@@ -49,9 +49,9 @@ tags {external:skip needs:other-server cluster modules} {
                 r CONFIG resetstat
                 r -1 CONFIG resetstat
                 assert_equal OK [r -1 test.pingall]
-                assert_match "*cluster_stats_messages_module_sent:2*" [r -1 CLUSTER INFO]
+                assert_match "*cluster_stats_messages_module_sent:1*" [r -1 CLUSTER INFO]
                 wait_for_condition 50 100 {
-                    [string match {*cluster_stats_messages_module_received:2*} [r CLUSTER INFO]]
+                    [string match {*cluster_stats_messages_module_received:1*} [r CLUSTER INFO]]
                 } else {
                     fail "Node didn't receive the message"
                 }
