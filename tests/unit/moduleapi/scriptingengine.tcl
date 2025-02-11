@@ -136,6 +136,8 @@ start_server {tags {"modules"}} {
         after 1000 ;
         assert_equal [r ping] "PONG"
         assert_error {ERR Script killed by user with FUNCTION KILL*} {$rd read}
+        $rd ping
+        assert_equal [$rd read] "PONG"
         $rd close
     }
 

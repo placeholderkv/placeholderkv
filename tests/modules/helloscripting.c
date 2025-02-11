@@ -424,9 +424,11 @@ callHelloLangFunction(ValkeyModuleCtx *module_ctx,
     if (state == VMSE_STATE_KILLED) {
         if (type == VMSE_EVAL) {
             ValkeyModule_ReplyWithError(module_ctx, "ERR Script killed by user with SCRIPT KILL.");
+            return;
         }
         if (type == VMSE_FUNCTION) {
             ValkeyModule_ReplyWithError(module_ctx, "ERR Script killed by user with FUNCTION KILL");
+            return;
         }
     }
 
