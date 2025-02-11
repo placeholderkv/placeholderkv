@@ -101,7 +101,7 @@ void evalInit(void) {
      * and we need to free them respectively. */
     evalCtx.scripts = dictCreate(&shaScriptObjectDictType);
     evalCtx.scripts_lru_list = listCreate();
-    listSetFreeMethod(evalCtx.scripts_lru_list, (void (*)(void *))sdsfree);
+    listSetFreeMethod(evalCtx.scripts_lru_list, sdsfreeVoid);
     evalCtx.scripts_mem = 0;
 }
 

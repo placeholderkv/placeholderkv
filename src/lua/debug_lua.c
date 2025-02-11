@@ -47,7 +47,7 @@ void ldbInit(void) {
     ldb.conn = NULL;
     ldb.active = 0;
     ldb.logs = listCreate();
-    listSetFreeMethod(ldb.logs, (void (*)(void *))sdsfree);
+    listSetFreeMethod(ldb.logs, sdsfreeVoid);
     ldb.children = listCreate();
     ldb.src = NULL;
     ldb.lines = 0;
