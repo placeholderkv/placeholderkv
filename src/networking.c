@@ -157,8 +157,14 @@ client *createClient(connection *conn) {
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
     if (conn) {
-        connEnableTcpNoDelay(conn);
-        if (server.tcpkeepalive) connKeepAlive(conn, server.tcpkeepalive);
+        /* These options are only applicable to TCP or TLS connection.*/
+        const char *typename = conn->type->get_type(NULL);
+        if (!strcasecmp(CONN_TYPE_SOCKET, typename) ||
+            !strcasecmp(CONN_TYPE_TLS, typename)) {
+            connEnableTcpNoDelay(conn);
+            if (server.tcpkeepalive) connKeepAlive(conn, server.tcpkeepalive);
+        }
+
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
         conn->flags |= CONN_FLAG_ALLOW_ACCEPT_OFFLOAD;
