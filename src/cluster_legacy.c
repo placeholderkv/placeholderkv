@@ -1250,58 +1250,65 @@ void clusterInitLast(void) {
     }
 }
 
-/* Called when a cluster node receives SHUTDOWN. */
-void clusterHandleServerShutdown(void) {
-    if (nodeIsPrimary(myself) && server.auto_failover_on_shutdown) {
-        /* Find the first best replica, that is, the replica with the largest offset. */
-        int old_replica = 0;
-        client *best_replica = NULL;
-        listIter replicas_iter;
-        listNode *replicas_list_node;
-        listRewind(server.replicas, &replicas_iter);
-        while ((replicas_list_node = listNext(&replicas_iter)) != NULL) {
-            client *replica = listNodeValue(replicas_list_node);
-            /* This is done only when the replica offset is caught up, to avoid data loss.
-             * And 0x80100 is 8.1.0, we only support this feature in this version. */
-            if (replica->repl_data->replica_version < 0x80100) {
-                old_replica = 1;
-                best_replica = NULL;
-                break;
-            }
-            if (replica->repl_data->repl_state == REPLICA_STATE_ONLINE &&
-                replica->name && sdslen(replica->name->ptr) == CLUSTER_NAMELEN &&
-                replica->repl_data->repl_ack_off == server.primary_repl_offset) {
-                best_replica = replica;
-            }
-        }
+void clusterAutoFailoverOnShutdown(void) {
+    if (!nodeIsPrimary(myself) || !server.auto_failover_on_shutdown) return;
 
-        if (best_replica) {
-            /* Send the CLUSTER FAILOVER FORCE REPLICAID node-id to all replicas since
-             * it is a shared replication buffer, but only the replica with the matching
-             * node-id will execute it. The caller will call flushReplicasOutputBuffers,
-             * so in here it is a best effort. */
-            char buf[128];
-            size_t buflen = snprintf(buf, sizeof(buf),
-                                     "*5\r\n$7\r\nCLUSTER\r\n"
-                                     "$8\r\nFAILOVER\r\n"
-                                     "$5\r\nFORCE\r\n"
-                                     "$9\r\nREPLICAID\r\n"
-                                     "$%d\r\n%s\r\n",
-                                     CLUSTER_NAMELEN,
-                                     (char *)best_replica->name->ptr);
-            /* Must install write handler for all replicas first before feeding
-             * replication stream. */
-            prepareReplicasToWrite();
-            feedReplicationBuffer(buf, buflen);
-            serverLog(LL_NOTICE, "Perform auto failover to replica %s on shutdown.", (char *)best_replica->name->ptr);
-        } else {
-            if (old_replica) {
-                serverLog(LL_NOTICE, "Unable to perform auto failover on shutdown since there are old replicas.");
-            } else {
-                serverLog(LL_NOTICE, "Unable to find a replica to perform the auto failover on shutdown.");
-            }
+    /* Find the first best replica, that is, the replica with the largest offset. */
+    int legacy_replica = 0;
+    client *best_replica = NULL;
+    listIter replicas_iter;
+    listNode *replicas_list_node;
+    listRewind(server.replicas, &replicas_iter);
+    while ((replicas_list_node = listNext(&replicas_iter)) != NULL) {
+        client *replica = listNodeValue(replicas_list_node);
+        /* This is done only when the replica offset is caught up, to avoid data loss.
+         * And 0x80100 is 8.1.0, we only support this feature in this version. */
+        if (replica->repl_data->replica_version < 0x80100) {
+            legacy_replica = 1;
+            best_replica = NULL;
+            break;
+        }
+        if (replica->repl_data->repl_state == REPLICA_STATE_ONLINE &&
+            replica->name && sdslen(replica->name->ptr) == CLUSTER_NAMELEN &&
+            replica->repl_data->repl_ack_off == server.primary_repl_offset) {
+            best_replica = replica;
         }
     }
+
+    /* We are not able to find the replica to do the auto failover. */
+    if (best_replica == NULL) {
+        if (legacy_replica) {
+            serverLog(LL_NOTICE, "Unable to perform auto failover on shutdown since there are legacy replicas.");
+        } else {
+            serverLog(LL_NOTICE, "Unable to find a replica to perform the auto failover on shutdown.");
+        }
+        return;
+    }
+
+    /* Send the CLUSTER FAILOVER FORCE REPLICAID node-id to all replicas since
+     * it is a shared replication buffer, but only the replica with the matching
+     * node-id will execute it. The caller will call flushReplicasOutputBuffers,
+     * so in here it is a best effort. */
+    char buf[128];
+    size_t buflen = snprintf(buf, sizeof(buf),
+                             "*5\r\n$7\r\nCLUSTER\r\n"
+                             "$8\r\nFAILOVER\r\n"
+                             "$5\r\nFORCE\r\n"
+                             "$9\r\nREPLICAID\r\n"
+                             "$%d\r\n%s\r\n",
+                             CLUSTER_NAMELEN,
+                             (char *)best_replica->name->ptr);
+    /* Must install write handler for all replicas first before feeding
+     * replication stream. */
+    prepareReplicasToWrite();
+    feedReplicationBuffer(buf, buflen);
+    serverLog(LL_NOTICE, "Perform auto failover to replica %s on shutdown.", (char *)best_replica->name->ptr);
+}
+
+/* Called when a cluster node receives SHUTDOWN. */
+void clusterHandleServerShutdown(void) {
+    /* Check if we are able to do the auto failover on shutdown. */
+    clusterAutoFailoverOnShutdown();
 
     /* The error logs have been logged in the save function if the save fails. */
     serverLog(LL_NOTICE, "Saving the cluster configuration file before exiting.");
