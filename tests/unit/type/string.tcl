@@ -756,6 +756,7 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
         lappend res [r get bar]
     } {12 12}
 
+if {[string match {*jemalloc*} [s mem_allocator]]} {
     test {Memory usage of embedded string value} {
         # Check that we can fit 9 bytes of key + value into a 32 byte
         # allocation, including the serverObject itself.
@@ -779,4 +780,6 @@ if {[string match {*jemalloc*} [s mem_allocator]]} {
         set sds_overhead [expr {$obj_alloc + $val_alloc - $obj_header_size - 1 - $content_size - $avail}]
         assert_equal 6 $sds_overhead
     } {} {needs:debug}
+} ; # if jemalloc
+
 }

@@ -28,15 +28,16 @@
  */
 
 #include "script_lua.h"
-#include "fpconv_dtoa.h"
+#include "debug_lua.h"
 
-#include "server.h"
-#include "sha1.h"
-#include "rand.h"
-#include "cluster.h"
-#include "monotonic.h"
-#include "resp_parser.h"
-#include "version.h"
+#include "../sha1.h"
+#include "../rand.h"
+#include "../cluster.h"
+#include "../monotonic.h"
+#include "../resp_parser.h"
+#include "../version.h"
+
+#include <fpconv_dtoa.h>
 #include <lauxlib.h>
 #include <lualib.h>
 #include <ctype.h>
@@ -1667,6 +1668,55 @@ void luaExtractErrorInformation(lua_State *lua, errorInfo *err_info) {
         err_info->ignore_err_stats_update = lua_toboolean(lua, -1);
     }
     lua_pop(lua, 1);
+}
+
+/* This is the core of our Lua debugger, called each time Lua is about
+ * to start executing a new line. */
+void luaLdbLineHook(lua_State *lua, lua_Debug *ar) {
+    scriptRunCtx *rctx = luaGetFromRegistry(lua, REGISTRY_RUN_CTX_NAME);
+    serverAssert(rctx); /* Only supported inside script invocation */
+    lua_getstack(lua, 0, ar);
+    lua_getinfo(lua, "Sl", ar);
+    ldbSetCurrentLine(ar->currentline);
+
+    int bp = ldbShouldBreak();
+    int timeout = 0;
+
+    /* Events outside our script are not interesting. */
+    if (strstr(ar->short_src, "user_script") == NULL) return;
+
+    /* Check if a timeout occurred. */
+    if (ar->event == LUA_HOOKCOUNT && !ldbIsStepEnabled() && bp == 0) {
+        mstime_t elapsed = elapsedMs(rctx->start_time);
+        mstime_t timelimit = server.busy_reply_threshold ? server.busy_reply_threshold : 5000;
+        if (elapsed >= timelimit) {
+            timeout = 1;
+            ldbSetStepMode(1);
+        } else {
+            return; /* No timeout, ignore the COUNT event. */
+        }
+    }
+
+    if (ldbIsStepEnabled() || bp) {
+        char *reason = "step over";
+        if (bp)
+            reason = ldbIsBreakpointOnNextLineEnabled() ? "server.breakpoint() called" : "break point";
+        else if (timeout)
+            reason = "timeout reached, infinite loop?";
+        ldbSetStepMode(0);
+        ldbSetBreakpointOnNextLine(0);
+        ldbLog(sdscatprintf(sdsempty(), "* Stopped at %d, stop reason = %s", ldbGetCurrentLine(), reason));
+        ldbLogSourceLine(ldbGetCurrentLine());
+        ldbSendLogs();
+        if (ldbRepl(lua) == C_ERR && timeout) {
+            /* If the client closed the connection and we have a timeout
+             * connection, let's kill the script otherwise the process
+             * will remain blocked indefinitely. */
+            luaPushError(lua, "timeout during Lua debugging with client closing connection");
+            luaError(lua);
+        }
+        rctx->start_time = getMonotonicUs();
+    }
 }
 
 void luaCallFunction(scriptRunCtx *run_ctx,

@@ -833,6 +833,31 @@ if {!$::tls} { ;# fake_redis_node doesn't support TLS
         close_cli $fd
     }
 
+    test "valkey-cli make sure selected db survives connection drops" {    
+        set fd [open_cli]
+                
+        # Select the database        
+        assert_equal "OK" [run_command $fd "select $::dbnum"]
+
+        # Kill all normal clients, to disconnect valkey-cli client
+        r client kill type normal
+        after 10
+
+        # Trigger reconnect
+        write_cli $fd "ping"
+
+        assert_equal "OK" [run_command $fd "set x 1"]        
+        assert_equal "OK" [r select $::dbnum]        
+        assert_equal "1" [r get x]
+        
+        set client_info [run_command $fd "client info"]
+
+        regexp {db=(\d+)} $client_info _ actual_db        
+
+        # Validate that the selected DB matches the reported DB
+        assert_equal $::dbnum $actual_db
+    }
+
     test "Valid Connection Scheme: redis://" {
         set cmdline [valkeycliuri "redis://" [srv host] [srv port]]
         assert_equal {PONG} [exec {*}$cmdline PING]

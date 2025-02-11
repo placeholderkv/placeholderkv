@@ -418,15 +418,35 @@ start_server {tags {"pause network"}} {
 
 start_cluster 1 1 {tags {"external:skip cluster pause network"}} {
     test "Test check paused info during the cluster failover in info clients" {
+        set CLUSTER_PACKET_TYPE_NONE -1
+        set CLUSTER_PACKET_TYPE_FAILOVER_AUTH_ACK 6
+
         assert_equal [s 0 paused_reason] "none"
         assert_equal [s 0 paused_actions] "none"
         assert_equal [s 0 paused_timeout_milliseconds] 0
 
+        # Let replica drop FAILOVER_AUTH_ACK so that the election won't
+        # get the enough votes and the election will time out.
+        R 1 debug drop-cluster-packet-filter $CLUSTER_PACKET_TYPE_FAILOVER_AUTH_ACK
         R 1 cluster failover
         wait_for_log_messages 0 {"*Manual failover requested by replica*"} 0 10 1000
 
+        # Failover will definitely time out, so on the primary side we will pause for
+        # `CLUSTER_MF_TIMEOUT * CLUSTER_MF_PAUSE_MULT` this long.
         assert_equal [s 0 paused_reason] "failover_in_progress"
         assert_equal [s 0 paused_actions] "write"
         assert_morethan [s 0 paused_timeout_milliseconds] 0
+
+        # Let the failover happen, make sure we will clear the paused state.
+        R 1 cluster failover takeover
+        wait_for_condition 1000 50 {
+            [s 0 role] eq {slave} &&
+            [s -1 role] eq {master}
+        } else {
+            fail "The failover does not happen"
+        }
+        assert_equal [s 0 paused_reason] "none"
+        assert_equal [s 0 paused_actions] "none"
+        assert_equal [s 0 paused_timeout_milliseconds] 0
     }
 }

@@ -195,8 +195,10 @@ static robj *createEmbeddedStringObjectWithKeyAndExpire(const char *val_ptr,
         data += key_sds_size;
     }
 
-    /* Copy embedded value (EMBSTR) always as SDS TYPE 8. */
-    o->ptr = sdswrite(data, val_sds_size, SDS_TYPE_8, val_ptr, val_len);
+    /* Copy embedded value (EMBSTR) always as SDS TYPE 8. Account for unused
+     * memory in the SDS alloc field. */
+    size_t remaining_size = bufsize - (data - (char *)(void *)o);
+    o->ptr = sdswrite(data, remaining_size, SDS_TYPE_8, val_ptr, val_len);
 
     return o;
 }

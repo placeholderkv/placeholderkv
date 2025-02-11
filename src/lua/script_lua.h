@@ -48,14 +48,13 @@
  * Uses script.c for interaction back with Redis.
  */
 
-#include "server.h"
-#include "script.h"
+#include "../server.h"
+#include "../script.h"
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
 
 #define REGISTRY_RUN_CTX_NAME "__RUN_CTX__"
-#define REGISTRY_SET_GLOBALS_PROTECTION_NAME "__GLOBAL_PROTECTION__"
 #define REDIS_API_NAME "redis"
 #define SERVER_API_NAME "server"
 
