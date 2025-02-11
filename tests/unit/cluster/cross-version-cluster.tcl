@@ -28,7 +28,7 @@ tags {external:skip needs:other-server cluster} {
 
             # Make sure the primary won't do the auto-failover.
             catch {$primary shutdown nosave}
-            verify_log_message -1 "*Unable to perform auto failover on shutdown since there are old replicas*" 0
+            verify_log_message -1 "*Unable to perform auto failover on shutdown since there are legacy replicas*" 0
         }
     }
 }
