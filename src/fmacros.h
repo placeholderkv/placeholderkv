@@ -34,7 +34,14 @@
 
 #if defined(__linux__)
 #define _GNU_SOURCE
+/*
+ * This macro might have already been defined by including <features.h>, which
+ * is transitively included by <sys/types.h>. Therefore, to avoid redefinition
+ * build warnings, we check if the macro is already defined.
+ */
+#ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
+#endif
 #endif
 
 #if defined(_AIX)

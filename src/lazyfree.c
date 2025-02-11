@@ -50,13 +50,13 @@ void lazyFreeErrors(void *args[]) {
     atomic_fetch_add_explicit(&lazyfreed_objects, len, memory_order_relaxed);
 }
 
-/* Release the lua_scripts dict. */
-void lazyFreeLuaScripts(void *args[]) {
-    dict *lua_scripts = args[0];
-    list *lua_scripts_lru_list = args[1];
-    lua_State *lua = args[2];
-    long long len = dictSize(lua_scripts);
-    freeLuaScriptsSync(lua_scripts, lua_scripts_lru_list, lua);
+/* Release the eval scripts data structures. */
+void lazyFreeEvalScripts(void *args[]) {
+    dict *scripts = args[0];
+    list *scripts_lru_list = args[1];
+    list *engine_callbacks = args[2];
+    long long len = dictSize(scripts);
+    freeEvalScripts(scripts, scripts_lru_list, engine_callbacks);
     atomic_fetch_sub_explicit(&lazyfree_objects, len, memory_order_relaxed);
     atomic_fetch_add_explicit(&lazyfreed_objects, len, memory_order_relaxed);
 }
@@ -223,14 +223,15 @@ void freeErrorsRadixTreeAsync(rax *errors) {
     }
 }
 
-/* Free lua_scripts dict and lru list, if the dict is huge enough, free them in async way.
+/* Free scripts dict, and lru list, if the dict is huge enough, free them in
+ * async way.
  * Close lua interpreter, if there are a lot of lua scripts, close it in async way. */
-void freeLuaScriptsAsync(dict *lua_scripts, list *lua_scripts_lru_list, lua_State *lua) {
-    if (dictSize(lua_scripts) > LAZYFREE_THRESHOLD) {
-        atomic_fetch_add_explicit(&lazyfree_objects, dictSize(lua_scripts), memory_order_relaxed);
-        bioCreateLazyFreeJob(lazyFreeLuaScripts, 3, lua_scripts, lua_scripts_lru_list, lua);
+void freeEvalScriptsAsync(dict *scripts, list *scripts_lru_list, list *engine_callbacks) {
+    if (dictSize(scripts) > LAZYFREE_THRESHOLD) {
+        atomic_fetch_add_explicit(&lazyfree_objects, dictSize(scripts), memory_order_relaxed);
+        bioCreateLazyFreeJob(lazyFreeEvalScripts, 3, scripts, scripts_lru_list, engine_callbacks);
     } else {
-        freeLuaScriptsSync(lua_scripts, lua_scripts_lru_list, lua);
+        freeEvalScripts(scripts, scripts_lru_list, engine_callbacks);
     }
 }
 

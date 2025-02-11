@@ -180,6 +180,7 @@ int test_writeToReplica(int argc, char **argv, int flags) {
         zfree(fake_conn->buffer);
         zfree(fake_conn);
         zfree(block);
+        c->repl_data->ref_repl_buf_node = NULL;
     }
 
     /* Cleanup */
@@ -294,6 +295,7 @@ int test_postWriteToReplica(int argc, char **argv, int flags) {
 
         /* Cleanup */
         zfree(block);
+        c->repl_data->ref_repl_buf_node = NULL;
         listEmpty(server.repl_buffer_blocks);
     }
 

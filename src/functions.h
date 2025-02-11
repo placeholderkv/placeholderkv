@@ -68,12 +68,8 @@ typedef struct engineInfo {
 /* Hold information about the specific function.
  * Used on rdb.c so it must be declared here. */
 typedef struct functionInfo {
-    sds name;            /* Function name */
-    void *function;      /* Opaque object that set by the function's engine and allow it
-                            to run the function, usually it's the function compiled code. */
-    functionLibInfo *li; /* Pointer to the library created the function */
-    sds desc;            /* Function description */
-    uint64_t f_flags;    /* Function flags */
+    compiledFunction *compiled_function; /* Compiled function structure */
+    functionLibInfo *li;                 /* Pointer to the library created the function */
 } functionInfo;
 
 /* Hold information about the specific library.
@@ -101,7 +97,6 @@ void functionsLibCtxSwapWithCurrent(functionsLibCtx *new_lib_ctx, int async);
 
 void functionsRemoveLibFromEngine(scriptingEngine *engine);
 
-int luaEngineInitEngine(void);
 int functionsInit(void);
 
 #endif /* __FUNCTIONS_H_ */
