@@ -12285,7 +12285,7 @@ int moduleLoad(const char *path, void **module_argv, int module_argc, int is_loa
     }
 
     int dlopen_flags = RTLD_NOW | RTLD_LOCAL;
-#if (defined(__linux__) || defined(__FreeBSD__)) && !defined(__SANITIZE_ADDRESS__) && defined(__GLIBC__) && __has_include(<dlfcn.h>)
+#if (defined(__GLIBC__) || defined(__FreeBSD__)) && !defined(VALKEY_ADDRESS_SANITIZER) && __has_include(<dlfcn.h>)
     /* RTLD_DEEPBIND, which is required for loading modules that contains the
      * same symbols, does not work with ASAN. Therefore, we exclude
      * RTLD_DEEPBIND when doing test builds with ASAN.
