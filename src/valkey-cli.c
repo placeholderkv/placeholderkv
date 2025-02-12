@@ -709,37 +709,38 @@ void cliInitCommandHelpEntries(redisReply *commandTable, dict *groups) {
     }
 }
 
+/* Convert a version on the form "x.y.z" to a number to easily compare versions.
+ * Threat release canditates as GA release. */
+static int parseVersion(const char *v) {
+    if (!v) return -1;
+    int major = atoi(v);
+    v = strchr(v, '.');
+    if (!v++) return -1;
+    int minor = atoi(v);
+    v = strchr(v, '.');
+    if (!v++) return -1;
+    int patch = atoi(v);
+    if (patch >= 240) {
+        /* It's a release candidate. Round up to GA release.
+         *
+         * 7.9.240 = 8.0.0-rc1
+         * 8.0.240 = 8.1.0-rc1
+         */
+        if (minor >= 9) {
+            major++;
+            minor = 0;
+        } else {
+            minor++;
+        }
+        patch = 0;
+    }
+    return (major << 16) | (minor << 8) | patch;
+}
+
 /* Does the server version support a command/argument only available "since" some version?
  * Returns 1 when supported, or 0 when the "since" version is newer than "version". */
 static int versionIsSupported(sds version, sds since) {
-    int i;
-    char *versionPos = version;
-    char *sincePos = since;
-    if (!since) {
-        return 1;
-    }
-
-    for (i = 0; i != 3; i++) {
-        int versionPart = atoi(versionPos);
-        int sincePart = atoi(sincePos);
-        if (versionPart > sincePart) {
-            return 1;
-        } else if (sincePart > versionPart) {
-            return 0;
-        }
-        versionPos = strchr(versionPos, '.');
-        sincePos = strchr(sincePos, '.');
-
-        /* If we finished to parse both `version` and `since`, it means they are equal */
-        if (!versionPos && !sincePos) return 1;
-
-        /* Different number of digits considered as not supported */
-        if (!versionPos || !sincePos) return 0;
-
-        versionPos++;
-        sincePos++;
-    }
-    return 0;
+    return parseVersion(version) >= parseVersion(since);
 }
 
 static void removeUnsupportedArgs(struct cliCommandArg *args, int *numargs, sds version) {
