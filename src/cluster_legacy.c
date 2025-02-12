@@ -4786,9 +4786,7 @@ void clusterFailoverReplaceYourPrimary(void) {
 
     /* Since we have became a new primary node, we may rely on auth_time to
      * determine whether a failover is in progress, so it is best to reset it. */
-    if (server.cluster->failover_auth_time) {
-        server.cluster->failover_auth_time = 0;
-    }
+    server.cluster->failover_auth_time = 0;
 }
 
 /* This function is called if we are a replica node and our primary serving
