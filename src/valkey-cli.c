@@ -710,7 +710,7 @@ void cliInitCommandHelpEntries(redisReply *commandTable, dict *groups) {
 }
 
 /* Convert a version on the form "x.y.z" to a number to easily compare versions.
- * Threat release canditates as GA release. */
+ * Threat release candidates as GA release. */
 static int parseVersion(const char *v) {
     if (!v) return -1;
     int major = atoi(v);
