@@ -43,18 +43,23 @@ int test_kvstoreAdd16Keys(int argc, char **argv, int flags) {
     int i;
 
     int didx = 0;
+    kvstore *kvs0 = kvstoreCreate(&KvstoreHashtableTestType, 0, 0);
     kvstore *kvs1 = kvstoreCreate(&KvstoreHashtableTestType, 0, KVSTORE_ALLOCATE_HASHTABLES_ON_DEMAND);
     kvstore *kvs2 = kvstoreCreate(&KvstoreHashtableTestType, 0, KVSTORE_ALLOCATE_HASHTABLES_ON_DEMAND | KVSTORE_FREE_EMPTY_HASHTABLES);
 
     for (i = 0; i < 16; i++) {
+        TEST_ASSERT(kvstoreHashtableAdd(kvs0, didx, stringFromInt(i)));
         TEST_ASSERT(kvstoreHashtableAdd(kvs1, didx, stringFromInt(i)));
         TEST_ASSERT(kvstoreHashtableAdd(kvs2, didx, stringFromInt(i)));
     }
+    TEST_ASSERT(kvstoreHashtableSize(kvs0, didx) == 16);
+    TEST_ASSERT(kvstoreSize(kvs0) == 16);
     TEST_ASSERT(kvstoreHashtableSize(kvs1, didx) == 16);
     TEST_ASSERT(kvstoreSize(kvs1) == 16);
     TEST_ASSERT(kvstoreHashtableSize(kvs2, didx) == 16);
     TEST_ASSERT(kvstoreSize(kvs2) == 16);
 
+    kvstoreRelease(kvs0);
     kvstoreRelease(kvs1);
     kvstoreRelease(kvs2);
     return 0;

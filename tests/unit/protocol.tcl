@@ -81,7 +81,7 @@ start_server {tags {"protocol network"}} {
             # PROTO_INLINE_MAX_SIZE is hardcoded in Valkey code to 64K. doing the same here 
             # since we would like to validate it is enforced. 
             set PROTO_INLINE_MAX_SIZE [expr 1024 * 64]
-            set payload [string repeat A 1024]"\n"
+            set payload [string repeat A 1024]
             set payload_size 0
             while {$payload_size <= $PROTO_INLINE_MAX_SIZE} {
                 if {[catch {

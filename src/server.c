@@ -45,6 +45,9 @@
 #include "module.h"
 #include "scripting_engine.h"
 #include "networking.h"
+#include "lua/engine_lua.h"
+#include "lua/debug_lua.h"
+#include "eval.h"
 
 #include <time.h>
 #include <signal.h>
@@ -1415,6 +1418,12 @@ void checkChildrenDone(void) {
     }
 }
 
+static void sumEngineUsedMemory(scriptingEngine *engine, void *context) {
+    size_t *total_memory = (size_t *)context;
+    engineMemoryInfo mem_info = scriptingEngineCallGetMemoryInfo(engine, VMSE_ALL);
+    *total_memory += mem_info.used_memory;
+}
+
 /* Called from serverCron and cronUpdateMemoryStats to update cached memory metrics. */
 void cronUpdateMemoryStats(void) {
     /* Record the max memory used since the server was started. */
@@ -1440,8 +1449,9 @@ void cronUpdateMemoryStats(void) {
             /* LUA memory isn't part of zmalloc_used, but it is part of the process RSS,
              * so we must deduct it in order to be able to calculate correct
              * "allocator fragmentation" ratio */
-            size_t lua_memory = evalMemory();
-            server.cron_malloc_stats.allocator_resident = server.cron_malloc_stats.process_rss - lua_memory;
+            size_t engines_memory = 0;
+            scriptingEngineManagerForEachEngine(sumEngineUsedMemory, &engines_memory);
+            server.cron_malloc_stats.allocator_resident = server.cron_malloc_stats.process_rss - engines_memory;
         }
         if (!server.cron_malloc_stats.allocator_active)
             server.cron_malloc_stats.allocator_active = server.cron_malloc_stats.allocator_resident;
@@ -1541,7 +1551,7 @@ long long serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDa
             for (j = 0; j < server.dbnum; j++) {
                 long long size, used, vkeys;
 
-                size = kvstoreBuckets(server.db[j].keys);
+                size = kvstoreBuckets(server.db[j].keys) * hashtableEntriesPerBucket();
                 used = kvstoreSize(server.db[j].keys);
                 vkeys = kvstoreSize(server.db[j].expires);
                 if (used || vkeys) {
@@ -2938,12 +2948,24 @@ void initServer(void) {
         serverPanic("Scripting engine manager initialization failed, check the server logs.");
     }
 
+    /* Since we initialized the scripting engine manager, we need to ensure that
+     * commands with `CMD_NOSCRIPT` flag are not allowed to run in scripts. */
+    server.script_disable_deny_script = 0;
+
     /* Initialize the LUA scripting engine. */
-    scriptingInit(1);
+    if (luaEngineInitEngine() != C_OK) {
+        serverPanic("Lua engine initialization failed, check the server logs.");
+        exit(1);
+    }
+
     /* Initialize the functions engine based off of LUA initialization. */
     if (functionsInit() == C_ERR) {
         serverPanic("Functions initialization failed, check the server logs.");
     }
+
+    /* Initialize the EVAL scripting component. */
+    evalInit();
+
     commandlogInit();
     latencyMonitorInit();
     initSharedQueryBuf();
@@ -5713,14 +5735,18 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         getExpensiveClientsInfo(&maxin, &maxout);
         totalNumberOfStatefulKeys(&blocking_keys, &blocking_keys_on_nokey, &watched_keys);
 
+        pause_purpose purpose;
+        char *paused_reason = "none";
         char *paused_actions = "none";
         long long paused_timeout = 0;
         if (server.paused_actions & PAUSE_ACTION_CLIENT_ALL) {
             paused_actions = "all";
-            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_ALL);
+            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_ALL, &purpose);
+            paused_reason = getPausedReason(purpose);
         } else if (server.paused_actions & PAUSE_ACTION_CLIENT_WRITE) {
             paused_actions = "write";
-            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_WRITE);
+            paused_timeout = getPausedActionTimeout(PAUSE_ACTION_CLIENT_WRITE, &purpose);
+            paused_reason = getPausedReason(purpose);
         }
 
         if (sections++) info = sdscat(info, "\r\n");
@@ -5740,6 +5766,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "total_watched_keys:%lu\r\n", watched_keys,
                 "total_blocking_keys:%lu\r\n", blocking_keys,
                 "total_blocking_keys_on_nokey:%lu\r\n", blocking_keys_on_nokey,
+                "paused_reason:%s\r\n", paused_reason,
                 "paused_actions:%s\r\n", paused_actions,
                 "paused_timeout_milliseconds:%lld\r\n", paused_timeout));
     }

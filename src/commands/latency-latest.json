@@ -20,11 +20,11 @@
         ],
         "reply_schema": {
             "type": "array",
-            "description": "An array where each element is a four elements array representing the event's name, timestamp, latest and all-time latency measurements.",
+            "description": "An array where each element is an array representing the event name, timestamp, latest and all-time latency measurements.",
             "items": {
                 "type": "array",
-                "minItems": 4,
-                "maxItems": 4,
+                "minItems": 6,
+                "maxItems": 6,
                 "items": [
                     {
                         "type": "string",
@@ -41,6 +41,14 @@
                     {
                         "type": "integer",
                         "description": "Max latency in milliseconds."
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Sum of the latencies recorded in the time series for this event."
+                    },
+                    {
+                        "type": "integer",
+                        "description": "The number of latency spikes recorded in the time series for this event."
                     }
                 ]
             }

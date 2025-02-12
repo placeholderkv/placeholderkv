@@ -583,6 +583,7 @@ tags "modules" {
                     after 110
 
                     set repl [attach_to_replication_stream]
+                    assert_equal [$replica propagate-test.obeyed] 0
                     $master propagate-test.incr k1
 
                     assert_replication_stream $repl {
@@ -598,6 +599,10 @@ tags "modules" {
                     assert_equal [$master ttl k1] -1
                     assert_equal [$replica get k1] 1
                     assert_equal [$replica ttl k1] -1
+                    # Validate that replicated commands were "obeyed" from primary.
+                    assert_equal [$replica propagate-test.obeyed] 1
+                    $master propagate-test.incr k1
+                    assert_equal [$replica propagate-test.obeyed] 2
                 }
 
                 test {module notification on set} {

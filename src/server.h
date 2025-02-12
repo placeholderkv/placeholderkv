@@ -51,7 +51,6 @@
 #include <syslog.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <lua.h>
 #include <signal.h>
 
 #ifdef HAVE_LIBSYSTEMD
@@ -2635,7 +2634,7 @@ void dictVanillaFree(void *val);
 
 /* Write flags for various write errors and states */
 #define WRITE_FLAGS_WRITE_ERROR (1 << 0)
-
+#define WRITE_FLAGS_IS_REPLICA (1 << 1)
 
 client *createClient(connection *conn);
 void freeClient(client *c);
@@ -2735,7 +2734,8 @@ void pauseActions(pause_purpose purpose, mstime_t end, uint32_t actions);
 void unpauseActions(pause_purpose purpose);
 uint32_t isPausedActions(uint32_t action_bitmask);
 uint32_t isPausedActionsWithUpdate(uint32_t action_bitmask);
-mstime_t getPausedActionTimeout(uint32_t action);
+char *getPausedReason(pause_purpose purpose);
+mstime_t getPausedActionTimeout(uint32_t action, pause_purpose *purpose);
 void updatePausedActions(void);
 void unblockPostponedClients(void);
 void processEventsWhileBlocked(void);
@@ -3509,17 +3509,9 @@ int redis_check_rdb_main(int argc, char **argv, FILE *fp);
 int redis_check_aof_main(int argc, char **argv);
 
 /* Scripting */
-void scriptingInit(int setup);
-int ldbRemoveChild(pid_t pid);
-void ldbKillForkedSessions(void);
-int ldbPendingChildren(void);
-void luaLdbLineHook(lua_State *lua, lua_Debug *ar);
-void freeLuaScriptsSync(dict *lua_scripts, list *lua_scripts_lru_list, lua_State *lua);
-void freeLuaScriptsAsync(dict *lua_scripts, list *lua_scripts_lru_list, lua_State *lua);
+void freeEvalScripts(dict *scripts, list *scripts_lru_list, list *engine_callbacks);
+void freeEvalScriptsAsync(dict *scripts, list *scripts_lru_list, list *engine_callbacks);
 void freeFunctionsAsync(functionsLibCtx *lib_ctx);
-int ldbIsEnabled(void);
-void ldbLog(sds entry);
-void ldbLogRespReply(char *reply);
 void sha1hex(char *digest, char *script, size_t len);
 unsigned long evalMemory(void);
 dict *evalScriptsDict(void);
@@ -3528,11 +3520,6 @@ uint64_t evalGetCommandFlags(client *c, uint64_t orig_flags);
 uint64_t fcallGetCommandFlags(client *c, uint64_t orig_flags);
 int isInsideYieldingLongCommand(void);
 
-typedef struct luaScript {
-    uint64_t flags;
-    robj *body;
-    listNode *node; /* list node in lua_scripts_lru_list list. */
-} luaScript;
 /* Cache of recently used small arguments to avoid malloc calls. */
 #define LUA_CMD_OBJCACHE_SIZE 32
 #define LUA_CMD_OBJCACHE_MAX_LEN 64

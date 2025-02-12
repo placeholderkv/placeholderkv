@@ -11,7 +11,7 @@ proc common_bench_setup {cmd} {
     r flushall
     if {[catch { exec {*}$cmd } error]} {
         set first_line [lindex [split $error "\n"] 0]
-        puts [colorstr red "valkey-benchmark non zero code. first line: $first_line"]
+        puts [colorstr red "valkey-benchmark non zero code, the output is: $error"]
         fail "valkey-benchmark non zero code. first line: $first_line"
     }
 }

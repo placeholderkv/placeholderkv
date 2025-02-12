@@ -865,6 +865,16 @@ start_server {tags {"tracking network logreqres:skip"}} {
 # Just some extra coverage for --log-req-res, because we do not
 # run the full tracking unit in that mode
 start_server {tags {"tracking network"}} {
+    test {CLIENT TRACKINGINFO when start} {
+        set res [r client trackinginfo]
+        set flags [dict get $res flags]
+        assert_equal {off} $flags
+        set redirect [dict get $res redirect]
+        assert_equal {-1} $redirect
+        set prefixes [dict get $res prefixes]
+        assert_equal {} $prefixes
+    }
+
     test {Coverage: Basic CLIENT CACHING} {
         set rd_redirection [valkey_deferring_client]
         $rd_redirection client id
