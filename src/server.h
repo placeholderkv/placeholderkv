@@ -2594,6 +2594,7 @@ int validateProcTitleTemplate(const char *template);
 int serverCommunicateSystemd(const char *sd_notify_msg);
 void serverSetCpuAffinity(const char *cpulist);
 void dictVanillaFree(void *val);
+mode_t getDataFileMode(void);
 
 /* ERROR STATS constants */
 

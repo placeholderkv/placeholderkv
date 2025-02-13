@@ -95,11 +95,6 @@ void aof_background_fsync_and_close(int fd);
 #define AOF_MANIFEST_KEY_FILE_SEQ "seq"
 #define AOF_MANIFEST_KEY_FILE_TYPE "type"
 
-/* Get AOF file mode from server. */
-static inline mode_t getAofFileMode(void) {
-    return ~server.umask & 0666;
-}
-
 /* Create an empty aofInfo. */
 aofInfo *aofInfoCreate(void) {
     return zcalloc(sizeof(aofInfo));
@@ -535,7 +530,7 @@ int writeAofManifestFile(sds buf) {
     sds tmp_am_name = getTempAofManifestFileName();
     sds tmp_am_filepath = makePath(server.aof_dirname, tmp_am_name);
 
-    int fd = open(tmp_am_filepath, O_WRONLY | O_TRUNC | O_CREAT, getAofFileMode());
+    int fd = open(tmp_am_filepath, O_WRONLY | O_TRUNC | O_CREAT, getDataFileMode());
     if (fd == -1) {
         serverLog(LL_WARNING, "Can't open the AOF manifest file %s: %s", tmp_am_name, strerror(errno));
 
@@ -733,7 +728,7 @@ void aofOpenIfNeededOnServerStart(void) {
 
     /* Here we should use 'O_APPEND' flag. */
     sds aof_filepath = makePath(server.aof_dirname, aof_name);
-    server.aof_fd = open(aof_filepath, O_WRONLY | O_APPEND | O_CREAT, getAofFileMode());
+    server.aof_fd = open(aof_filepath, O_WRONLY | O_APPEND | O_CREAT, getDataFileMode());
     sdsfree(aof_filepath);
     if (server.aof_fd == -1) {
         serverLog(LL_WARNING, "Can't open the append-only file %s: %s", aof_name, strerror(errno));
@@ -795,7 +790,7 @@ int openNewIncrAofForAppend(void) {
         new_aof_name = sdsdup(getNewIncrAofName(temp_am));
     }
     sds new_aof_filepath = makePath(server.aof_dirname, new_aof_name);
-    newfd = open(new_aof_filepath, O_WRONLY | O_TRUNC | O_CREAT, getAofFileMode());
+    newfd = open(new_aof_filepath, O_WRONLY | O_TRUNC | O_CREAT, getDataFileMode());
     sdsfree(new_aof_filepath);
     if (newfd == -1) {
         serverLog(LL_WARNING, "Can't open the append-only file %s: %s", new_aof_name, strerror(errno));

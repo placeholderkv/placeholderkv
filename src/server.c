@@ -6827,6 +6827,11 @@ void serverSetCpuAffinity(const char *cpulist) {
 #endif
 }
 
+/* Get data file mode from server. */
+mode_t getDataFileMode(void) {
+    return ~server.umask & 0666;
+}
+
 /* Send a notify message to systemd. Returns sd_notify return code which is
  * a positive number on success. */
 int serverCommunicateSystemd(const char *sd_notify_msg) {
