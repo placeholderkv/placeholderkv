@@ -14,6 +14,9 @@ exat = "exat"
 optin = "optin"
 smove = "smove"
 
+[default.ignore-words]
+"Parth"
+
 [type.c]
 extend-ignore-re = [
     "BA3E2571", # sha1.c
