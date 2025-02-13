@@ -1110,7 +1110,7 @@ getNodeByQuery(client *c, struct serverCommand *cmd, robj **argv, int argc, int 
              * NODE <node-id>. */
             int flags = LOOKUP_NOTOUCH | LOOKUP_NOSTATS | LOOKUP_NONOTIFY | LOOKUP_NOEXPIRE;
             if ((migrating_slot || importing_slot) && !pubsubshard_included) {
-                if (lookupKeyReadWithFlags(&server.db[0], thiskey, flags) == NULL)
+                if (lookupKeyReadWithFlags(c->db, thiskey, flags) == NULL)
                     missing_keys++;
                 else
                     existing_keys++;
