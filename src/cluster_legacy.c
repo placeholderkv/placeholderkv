@@ -7193,7 +7193,7 @@ int clusterCommandSpecial(client *c) {
 
         /* Replicas can be reset while containing data, but not primary nodes
          * that must be empty. */
-        if (clusterNodeIsPrimary(myself) && kvstoreSize(c->db->keys) != 0) {
+        if (clusterNodeIsPrimary(myself) && !dbHasNoKeys()) {
             addReplyError(c, "CLUSTER RESET can't be called with "
                              "master nodes containing keys");
             return 1;
