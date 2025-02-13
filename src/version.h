@@ -4,13 +4,13 @@
  * similar. */
 #define SERVER_NAME "valkey"
 #define SERVER_TITLE "Valkey"
-#define VALKEY_VERSION "255.255.255"
-#define VALKEY_VERSION_NUM 0x00ffffff
+#define VALKEY_VERSION "8.1.0"
+#define VALKEY_VERSION_NUM 0x00080100
 /* The release stage is used in order to provide release status information.
  * In unstable branch the status is always "dev".
  * During release process the status will be set to rc1,rc2...rcN.
  * When the version is released the status will be "ga". */
-#define VALKEY_RELEASE_STAGE "dev"
+#define VALKEY_RELEASE_STAGE "rc1"
 
 /* Redis OSS compatibility version, should never
  * exceed 7.2.x. */

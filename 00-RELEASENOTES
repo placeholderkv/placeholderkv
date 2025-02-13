@@ -1,16 +1,142 @@
-Hello! This file is just a placeholder, since this is the "unstable" branch
-of Valkey, the place where all the development happens.
+Valkey 8.1 release notes
+========================
+--------------------------------------------------------------------------------
+Upgrade urgency levels:
+LOW:      No need to upgrade unless there are new features you want to use.
+MODERATE: Program an upgrade of the server, but it's not urgent.
+HIGH:     There is a critical bug that may affect a subset of users. Upgrade!
+CRITICAL: There is a critical bug affecting MOST USERS. Upgrade ASAP.
+SECURITY: There are security fixes in the release.
+--------------------------------------------------------------------------------
 
-There is no release notes for this branch, it gets forked into another branch
-every time there is a partial feature freeze in order to eventually create
-a new stable release.
 
-Usually "unstable" is stable enough for you to use it in development environments
-however you should never use it in production environments. It is possible
-to download the latest stable release here:
+================================================================================
+Valkey 8.1.0 RC1  -  Released Thu 11 Feb 2025
+================================================================================
+Upgrade urgency LOW: This is the first release candidate of Valkey 8.1, with
+performance improvements, extended observability and cluster improvements and different bug fixes. 
+It includes a new implementation of the Valkey dictionary which is more memory and cache efficient, 
+better performance for encryption in transit, reduced replication overhead by offloading work to I/O threads,
+faster failover support in cluster mode, major improvements to the active defrag process to reduce the impact on command processing
+and different API changes for improved usability. 
+Valkey now supports new new check-and-set feature for native STRINGs.
 
-    https://valkey.io/download/
+API and Interface changes
+=========================
+* Introduce cancel argument to bgsave command (#757)
+* Add conditional update support to the `SET` command using `IFEQ` argument (#1324)
+* Add more filters to `CLIENT LIST` (#1401)
+* Add `availability_zone` to the HELLO response (#1487)
 
-More information is available at https://valkey.io
+Observability and Monitoring changes
+====================================
+* Extend `LATENCY LATEST` to add sum / cnt stats (#1570)
+* Add `paused_actions` and `paused_timeout_milliseconds` for `INFO CLIENTS` (#1519)
+* Add paused_reason to `INFO CLIENTS` (#1564)
+* Added `COMMANDLOG` to record slow executions and large requests/replies (#1294)
+* Fix cluster info sent stats for message with light header (#1563)
+* Add latency stats around cluster config file operations (#1534)
+* Add new flag in `CLIENT LIST` for import-source client (#1398)
+* Show client capabilities in `CLIENT LIST` / `CLIENT INFO` (#1698)
 
-Happy hacking!
+Performance/Efficiency Improvements - Core
+==========================================
+* Introduce a new memory efficient hash table to store keys (#1186)
+* Accelerate hash table iterator with prefetching (#1501)
+* Accelerate hash table iterator with value prefetching (#1568)
+* Replace dict with new hashtable: hash datatype (#1502)
+* Replace dict with new hashtable for sets datatype (#1176)
+* Replace dict with new hashtable: sorted set datatype (#1427)
+* Free strings during BGSAVE/BGAOFRW to reduce copy-on-write (#905)
+* Create an empty lua table with specified initial capacity as much as possible (#1092)
+* Move prepareClientToWrite out of loop for HGETALL command (#1119)
+* Improved hashing algorithm for Lua tables (#1168)
+* Replace dict with new hashtable for sets datatype (#1176)
+* Do security attack check only when command not found to reduce the critical path. (#1212)
+* Trim free space from inline command argument strings to avoid excess memory usage (#1213)
+* Increase the max number of io threads to 256. (#1220)
+* Refactor of ActiveDefrag to reduce latencies (#1242)
+* Integrate fast_float to optionally replace strtod (#1260)
+* Improvements for TLS with I/O threads (#1271)
+* Optimize PFCOUNT, PFMERGE command by SIMD acceleration (#1293)
+* Optimize sdscatrepr by batch processing printable characters (#1342)
+* Optimize ZRANK to avoid path comparisons (#1389)
+* Move clientCron onto a separate timer (#1387)
+* Client struct: lazy init components and optimize struct layout (#1405)
+* Offload reading the replication stream to IO threads (#1449)
+* Skip CRC checksumming during diskless full sync with TLS enabled. (#1479)
+
+New/Modified configurations
+===========================
+* Deprecate `io-threads-do-reads`, which has no effect since io threads will now always do reads. (#1138)
+* Introduce `import-mode` config to avoid expiration and eviction during data syncing (#1185)
+* Introduce new `rdb-version-check` config which allows for relaxed RDB version verification (#1604)
+* Deprecate `dynamic-hz`, since server cron jobs are handled dynamically by default (#1387) 
+* Introduce `log-format` and `log-timestamp-format` to control the log format (#1022)
+* Introducing `active-defrag-cycle-us` for more fine-grinned control of memory defragmentation run time (#1242) 
+* Introduce new configurations to control the new `COMMANDLOG` reporting thresholds (#1294)
+
+Build and Packaging changes
+=================================
+* Introduce CMake build system for valkey (#1196)
+* RDMA builtin support (#1209)
+* Fix Valkey binary build workflow, version support changes. (#1429)
+* Remove Valkey specific changes in jemalloc source code (#1266)
+
+Module Improvements
+===================
+* Add API UpdateRuntimeArgs for updating the module arguments during runtime (#1041)
+* Add support for MustObeyClient Module API (#1582)
+* Adds support for scripting engines as Valkey modules (#1277, #1497)
+
+Cluster improvements
+====================
+* Do election in order based on failed primary rank to avoid voting conflicts (#1018)
+* Make replica `CLUSTER RESET` flush async based on `lazyfree-lazy-user-flush` (#1190)
+* Trigger the election as soon as possible when doing a forced manual failover (#1067)
+* Make manual failover reset the on-going election to promote failover (#1274)
+* Brocast a PONG to all node in cluster when role changed (#1295)
+* Manual failover vote is not limited by two times the node timeout (#1305)
+* Automatic failover vote is not limited by two times the node timeout (#1356)
+
+Behavior Changes
+================
+* Streams use an additional 8 bytes to track their internal size (#688)
+* Take hz into account in activerehashing to avoid CPU spikes (#977)
+* Incr `expired_keys` if the expiration time is already expired (#1517)
+* Fix replica not able to initiate election in time when epoch fails (#1009)
+* Make `FUNCTION RESTORE FLUSH` flush async based on `lazyfree-lazy-user-flush` (#1254)
+* Allow `MEMORY MALLOC-STATS` and `MEMORY PURGE` during loading phase (#1317)
+* Use `DEEPBIND` flag when loading external modules in order to avoid symbol conflicts (#1703)
+
+
+Logging and Tooling Improvements
+================================
+* Remove the restriction that cli --cluster create requires at least 3 primary nodes (#1075)
+* Add short client info log to CLUSTER MEET / FORGET / RESET commands (#1249)
+* Support for reading from replicas in valkey-benchmark (#1392)
+* valkey-cli will now re-select previously selected database after reconnect (#1694)
+* valkey-cli will now auto-exit from subscribed mode when there are no more active subscriptions (#1432)
+
+Bug Fixes
+=========
+* Mark the node as FAIL when the node is marked as NOADDR and broadcast the FAIL (#1191)
+* [Bug Fix] Optimize RDB Load Performance and Fix Cluster Mode Resizing (#1199)
+* Log as primary role (M) instead of child process (C) during startup (#1282)
+* Fix empty primary may have dirty slots data due to bad migration (#1285)
+* RDMA: Fix dead loop when transfer large data (20KB) (#1386)
+
+We appreciate the efforts of all who contributed code to this release!
+
+Karthik Subbarao (KarthikSubbarao), Xuyang WANG (Nugine), Yury Fridlyand (Yury-Fridlyand), Ben Totten (bentotten), Danish Mehmood (danish-mehmood),
+Eran Ifrah (eifrah-aws), gmbnomis, kronwerk, Stefan Mueller (muelstefamzn), Ran Shidlansik (ranshid), secwall, Tal Shachar (talxsha),
+Uri Yagelnik (uriyage), Basel Naamna (xbasel), Alan Scherger (flyinprogrammer), Amit Nagler (naglera), Binbin (enjoy-binbin),
+Caiyi Wu (Codebells), Guillaume Koenig (knggk), Harkrishn Patro (hpatro), Jacob Murphy (murphyjacob4), Jim Brunner (JimB123), Josef Šimánek (simi),
+Jungwoo Song (bluayer), Karthick Ariyaratnam (karthyuom), Lipeng Zhu (lipzhu), Madelyn Olson (madolson), Masahiro Ide (imasahiro), Melroy van den Berg (melroy89),
+Mikhail Koviazin (mkmkme), Nadav Gigi (NadavGigi), Nadav Levanoni (nadav-levanoni), Nikhil Manglore (Nikhil-Manglore), Parth Patel (parthpatel), Pierre (pieturin),
+Ping Xie (PingXie), Qu Chen (QuChen88), Rain Valentine (SoftlyRaining), Ray Cao (RayaCoo), Ricardo Dias (rjd15372), Romain Geissler (Romain-Geissler-1A),
+Roman Gershman (romange), Roshan Khatri (roshkhatri), Rueian (rueian), Sarthak Aggarwal (sarthakaggarwal97), Seungmin Lee (sungming2), Shai Zarka (zarkash-aws),
+Shivshankar (Shivshankar-Reddy), Sinkevich Artem (ArtSin), Stav Ben-Tov (stav-bentov), Thalia Archibald (thaliaarchi), Vadym Khoptynets (poiuj),
+Viktor Söderqvist (zuiderkwast), Viktor Szépe (szepeviktor), Vu Diep (vudiep411), Wen Hui (hwware), Yanqi Lv (lyq2333), Zvi Schneider (zvi-code),
+bodong.ybd (yangbodong22011), chx9 (chx9), otheng (otheng03), skyfirelee (artikell), xingbowang (xingbowang), zhaozhao.zz (soloestoy), zhenwei pi(pizhenwei),
+zixuan zhao (azuredream), 烈香 (hengyoush), 风去幽墨 (fengquyoumo)
