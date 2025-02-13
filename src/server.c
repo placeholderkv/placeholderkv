@@ -5668,6 +5668,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "redis_version:%s\r\n", REDIS_VERSION,
                 "server_name:%s\r\n", SERVER_NAME,
                 "valkey_version:%s\r\n", VALKEY_VERSION,
+                "valkey_version_full:%s\r\n", VALKEY_VERSION "-" VALKEY_RELEASE_EXT,
                 "redis_git_sha1:%s\r\n", serverGitSHA1(),
                 "redis_git_dirty:%i\r\n", strtol(serverGitDirty(), NULL, 10) > 0,
                 "redis_build_id:%s\r\n", serverBuildIdString(),
