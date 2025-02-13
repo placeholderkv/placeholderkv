@@ -8,7 +8,7 @@
 #define VALKEY_VERSION_NUM 0x00ffffff
 /* The release stage is used in order to provide release status information.
  * In unstable branch the status is always "dev".
- * During release process the status will be set to rc1,rc2...rcN. 
+ * During release process the status will be set to rc1,rc2...rcN.
  * When the version is released the status will be "ga". */
 #define VALKEY_RELEASE_STAGE "dev"
 
