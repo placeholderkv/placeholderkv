@@ -796,6 +796,7 @@ jobs:
             container: fedora:latest
           - name: test-fedorarawhide-jemalloc
             container: fedora:rawhide
+            tcl: tcl8
 
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -825,7 +826,7 @@ jobs:
           dnf -y install gcc make procps-ng which /usr/bin/kill
           make -j SERVER_CFLAGS='-Werror'
       - name: testprep
-        run: dnf -y install tcl tcltls
+        run: dnf -y install ${{ matrix.tcl || 'tcl' }} tcltls
       - name: test
         if: true && !contains(github.event.inputs.skiptests, 'valkey')
         run: ./runtest ${{ github.event_name != 'pull_request' && '--accurate' || '' }} --verbose --dump-logs ${{github.event.inputs.test_args}}
@@ -862,6 +863,7 @@ jobs:
             container: fedora:latest
           - name: test-fedorarawhide-tls-module
             container: fedora:rawhide
+            tcl: tcl8
 
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -892,7 +894,7 @@ jobs:
           make -j BUILD_TLS=module SERVER_CFLAGS='-Werror'
       - name: testprep
         run: |
-          dnf -y install tcl tcltls
+          dnf -y install ${{ matrix.tcl || 'tcl' }} tcltls
           ./utils/gen-test-certs.sh
       - name: test
         if: true && !contains(github.event.inputs.skiptests, 'valkey')
@@ -934,6 +936,7 @@ jobs:
             container: fedora:latest
           - name: test-fedorarawhide-tls-module-no-tls
             container: fedora:rawhide
+            tcl: tcl8
 
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -964,7 +967,7 @@ jobs:
           make -j BUILD_TLS=module SERVER_CFLAGS='-Werror'
       - name: testprep
         run: |
-          dnf -y install tcl tcltls
+          dnf -y install ${{ matrix.tcl || 'tcl' }} tcltls
           ./utils/gen-test-certs.sh
       - name: test
         if: true && !contains(github.event.inputs.skiptests, 'valkey')
