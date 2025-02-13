@@ -232,7 +232,7 @@ robj *createStringObjectWithKeyAndExpire(const char *ptr, size_t len, const sds 
     size += (key != NULL) * (sdslen(key) + 3); /* hdr size (1) + hdr (1) + nullterm (1) */
     size += (expire != -1) * sizeof(long long);
     size += 4 + len; /* embstr header (3) + nullterm (1) */
-    if (size <= 64) {
+    if (size <= 128) {
         return createEmbeddedStringObjectWithKeyAndExpire(ptr, len, key, expire);
     } else {
         return createObjectWithKeyAndExpire(OBJ_STRING, sdsnewlen(ptr, len), key, expire);
