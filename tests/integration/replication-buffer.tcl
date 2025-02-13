@@ -155,7 +155,11 @@ start_server {} {
         # Replication actual backlog grow more than backlog setting since
         # the slow replica2 kept replication buffer.
         populate 20000 master 10000
-        assert {[s repl_backlog_histlen] > [expr 10000*10000]}
+        wait_for_condition 10000 100 {
+            ([s repl_backlog_histlen] > [expr 10000*10000])
+        } else {
+            fail "Unexpected backlog size"
+        }        
     }
 
     # Wait replica1 catch up with the master
