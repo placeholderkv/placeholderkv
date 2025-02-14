@@ -3047,11 +3047,9 @@ static void clusterProcessModulePacket(clusterMsgModule *module_data, clusterNod
     unsigned char *payload = module_data->bulk_data;
 
     /* Ensure sender name is properly truncated to 40 characters */
-    char truncated_name[41]; /* 40 chars + null terminator */
-    strncpy(truncated_name, sender->name, 40);
-    truncated_name[40] = '\0';
-
+    sds truncated_name = sdsnewlen(sender->name, 40);
     moduleCallClusterReceivers(truncated_name, module_id, type, payload, len);
+    sdsfree(truncated_name);
 }
 
 static void clusterProcessLightPacket(clusterNode *sender, clusterLink *link, uint16_t type) {

@@ -22,12 +22,10 @@ start_cluster 3 0 [list config_lines $modules] {
             fail "node 2 or node 3 didn't receive cluster module message"
         }
     }
-}
 
-start_cluster 3 0 [list config_lines $modules] {
-    set node1 [srv 0 client]
-    set node2 [srv -1 client]
-    set node3 [srv -2 client]
+    $node1 CONFIG RESETSTAT
+    $node2 CONFIG RESETSTAT
+    $node3 CONFIG RESETSTAT
 
     test "Cluster module message DING/DONG acknowledgment" {
         assert_equal OK [$node1 test.pingall]
