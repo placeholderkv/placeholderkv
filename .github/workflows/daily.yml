@@ -1306,7 +1306,7 @@ jobs:
     if: always() && github.event_name == 'schedule' && github.repository == 'valkey-io/valkey'
     needs:
     - test-ubuntu-jemalloc
-    - test-ubuntu-arm:
+    - test-ubuntu-arm
     - test-ubuntu-jemalloc-fortify
     - test-ubuntu-libc-malloc
     - test-ubuntu-no-malloc-usable-size
