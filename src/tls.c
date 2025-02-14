@@ -452,6 +452,9 @@ typedef struct tls_connection {
     SSL *ssl;
     char *ssl_error;
     listNode *pending_list_node;
+    /* Per https://docs.openssl.org/master/man3/SSL_write, after a write call with partially written data,
+     * we must make subsequent write calls with the same length. We use this field to keep track of 
+     * the previous write length. */
     size_t last_failed_write_data_len;
 } tls_connection;
 
