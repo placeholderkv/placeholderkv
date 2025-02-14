@@ -71,7 +71,7 @@ static void pauseClientsByClient(mstime_t end, int isPauseClientAll);
 int postponeClientRead(client *c);
 char *getClientSockname(client *c);
 static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter);
-static int clientMatchesFilter(client *client, clientFilter client_filter);
+static int clientMatchesFilter(client *client, clientFilter *client_filter);
 static sds getAllFilteredClientsInfoString(clientFilter *client_filter, int hide_user_data);
 
 int ProcessingEventsWhileBlocked = 0; /* See processEventsWhileBlocked(). */
@@ -3484,7 +3484,7 @@ static sds getAllFilteredClientsInfoString(clientFilter *client_filter, int hide
     listRewind(server.clients, &li);
     while ((ln = listNext(&li)) != NULL) {
         client = listNodeValue(ln);
-        if (!clientMatchesFilter(client, *client_filter)) continue;
+        if (!clientMatchesFilter(client, client_filter)) continue;
         o = catClientInfoString(o, client, hide_user_data);
         o = sdscatlen(o, "\n", 1);
     }
@@ -3687,15 +3687,15 @@ static int parseClientFiltersOrReply(client *c, int index, clientFilter *filter)
     return C_OK;
 }
 
-static int clientMatchesFilter(client *client, clientFilter client_filter) {
+static int clientMatchesFilter(client *client, clientFilter *client_filter) {
     /* Check each filter condition and return false if the client does not match. */
-    if (client_filter.addr && strcmp(getClientPeerId(client), client_filter.addr) != 0) return 0;
-    if (client_filter.laddr && strcmp(getClientSockname(client), client_filter.laddr) != 0) return 0;
-    if (client_filter.type != -1 && getClientType(client) != client_filter.type) return 0;
-    if (client_filter.ids && !intsetFind(client_filter.ids, client->id)) return 0;
-    if (client_filter.user && client->user != client_filter.user) return 0;
-    if (client_filter.skipme && client == server.current_client) return 0;
-    if (client_filter.max_age != 0 && (long long)(commandTimeSnapshot() / 1000 - client->ctime) < client_filter.max_age) return 0;
+    if (client_filter->addr && strcmp(getClientPeerId(client), client_filter->addr) != 0) return 0;
+    if (client_filter->laddr && strcmp(getClientSockname(client), client_filter->laddr) != 0) return 0;
+    if (client_filter->type != -1 && getClientType(client) != client_filter->type) return 0;
+    if (client_filter->ids && !intsetFind(client_filter->ids, client->id)) return 0;
+    if (client_filter->user && client->user != client_filter->user) return 0;
+    if (client_filter->skipme && client == server.current_client) return 0;
+    if (client_filter->max_age != 0 && (long long)(commandTimeSnapshot() / 1000 - client->ctime) < client_filter->max_age) return 0;
 
     /* If all conditions are satisfied, the client matches the filter. */
     return 1;
@@ -3888,7 +3888,7 @@ void clientKillCommand(client *c) {
     listRewind(server.clients, &li);
     while ((ln = listNext(&li)) != NULL) {
         client *client = listNodeValue(ln);
-        if (!clientMatchesFilter(client, client_filter)) continue;
+        if (!clientMatchesFilter(client, &client_filter)) continue;
 
         /* Kill it. */
         if (c == client) {
