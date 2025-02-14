@@ -17,8 +17,8 @@ Upgrade urgency LOW: This is the first release candidate of Valkey 8.1, with
 performance improvements, extended observability and cluster improvements and different bug fixes. 
 It includes a new implementation of the Valkey dictionary which is more memory and cache efficient, 
 better performance for encryption in transit, reduced replication overhead by offloading work to I/O threads,
-faster failover support in cluster mode, major improvements to the active defrag process to reduce the impact on command processing
-and different API changes for improved usability. 
+faster failover support in cluster mode, major improvements to the active defrag process to reduce the impact on command processing,
+different API changes for improved usability and ability to track large requests and replies. 
 Valkey now supports new new check-and-set feature for native STRINGs.
 
 API and Interface changes
