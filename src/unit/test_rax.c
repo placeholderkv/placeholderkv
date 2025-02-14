@@ -1024,14 +1024,14 @@ int test_raxFuzz(int argc, char **argv, int flags) {
     return !!errors;
 }
 
-/* Test for crash in raxRemove when two keys share a common prefix in the same rax
- * structure. Upon deletion of one key, rax attempts to recompress the structure
- * back to its original form for other key. The crash occurs when the
- * recompression exceeds 512MB size limit due to a missing size check in the
- * compression logic.
+/* This test verifies that raxRemove correctly handles compression when two keys
+ * share a common prefix. Upon deletion of one key, rax attempts to recompress
+ * the structure back to its original form for other key. Historically, there was
+ * a crash when deleting one key because rax would attempt to recompress the
+ * structure without checking the 512MB size limit.
  *
  * This test is disabled by default because it uses a lot of memory. */
-int test_raxRemoveCrash(int argc, char **argv, int flags) {
+int test_raxRecompressHugeKey(int argc, char **argv, int flags) {
     UNUSED(argc);
     UNUSED(argv);
 
