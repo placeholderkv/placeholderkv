@@ -38,7 +38,7 @@
             ],
             [
                 "8.1.0",
-                "`ID` option accepts multiple IDs."
+                "`ID` option accepts multiple IDs. Added filters NAME, MINIDLE, FLAGS, SUBSCRIBED-PATTERN, SUBSCRIBED-CHANNEL, SUBSCRIBED-SHARD-CHANNEL, LIB-NAME, LIB-VER, DB, TOTAL-NET-IN and TOTAL-NET-OUT"
             ]
         ],
         "command_flags": [
@@ -162,6 +162,83 @@
                                 "type": "integer",
                                 "optional": true,
                                 "since": "8.0.0"
+                            },
+                            {
+                                "token": "NAME",
+                                "name": "name",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "MINIDLE",
+                                "name": "minidle",
+                                "type": "integer",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "FLAGS",
+                                "name": "flags",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "SUBSCRIBED-PATTERN",
+                                "name": "subscribed-pattern",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "SUBSCRIBED-CHANNEL",
+                                "name": "subscribed-channel",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "SUBSCRIBED-SHARD-CHANNEL",
+                                "name": "subscribed-shard-channel",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "LIB-NAME",
+                                "name": "lib-name",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "LIB-VER",
+                                "name": "lib-ver",
+                                "type": "string",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "DB",
+                                "name": "db",
+                                "type": "integer",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "TOTAL-NET-IN",
+                                "name": "total-net-in",
+                                "type": "integer",
+                                "optional": true,
+                                "since": "8.1.0"
+                            },
+                            {
+                                "token": "TOTAL-NET-OUT",
+                                "name": "total-net-out",
+                                "type": "integer",
+                                "optional": true,
+                                "since": "8.1.0"
                             }
                         ]
                     }

@@ -1289,7 +1289,7 @@ commandHistory CLIENT_KILL_History[] = {
 {"6.2.0","`LADDR` option."},
 {"8.0.0","`MAXAGE` option."},
 {"8.0.0","Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."},
-{"8.1.0","`ID` option accepts multiple IDs."},
+{"8.1.0","`ID` option accepts multiple IDs. Added filters NAME, MINIDLE, FLAGS, SUBSCRIBED-PATTERN, SUBSCRIBED-CHANNEL, SUBSCRIBED-SHARD-CHANNEL, LIB-NAME, LIB-VER, DB, TOTAL-NET-IN and TOTAL-NET-OUT"},
 };
 #endif
 
@@ -1328,12 +1328,23 @@ struct COMMAND_ARG CLIENT_KILL_filter_new_format_Subargs[] = {
 {MAKE_ARG("laddr",ARG_TYPE_STRING,-1,"LADDR",NULL,"6.2.0",CMD_ARG_OPTIONAL,0,NULL),.display_text="ip:port"},
 {MAKE_ARG("skipme",ARG_TYPE_ONEOF,-1,"SKIPME",NULL,NULL,CMD_ARG_OPTIONAL,2,NULL),.subargs=CLIENT_KILL_filter_new_format_skipme_Subargs},
 {MAKE_ARG("maxage",ARG_TYPE_INTEGER,-1,"MAXAGE",NULL,"8.0.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("name",ARG_TYPE_STRING,-1,"NAME",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("minidle",ARG_TYPE_INTEGER,-1,"MINIDLE",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("flags",ARG_TYPE_STRING,-1,"FLAGS",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-pattern",ARG_TYPE_STRING,-1,"SUBSCRIBED-PATTERN",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-channel",ARG_TYPE_STRING,-1,"SUBSCRIBED-CHANNEL",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-shard-channel",ARG_TYPE_STRING,-1,"SUBSCRIBED-SHARD-CHANNEL",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("lib-name",ARG_TYPE_STRING,-1,"LIB-NAME",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("lib-ver",ARG_TYPE_STRING,-1,"LIB-VER",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("db",ARG_TYPE_INTEGER,-1,"DB",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("total-net-in",ARG_TYPE_INTEGER,-1,"TOTAL-NET-IN",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("total-net-out",ARG_TYPE_INTEGER,-1,"TOTAL-NET-OUT",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
 };
 
 /* CLIENT KILL filter argument table */
 struct COMMAND_ARG CLIENT_KILL_filter_Subargs[] = {
 {MAKE_ARG("old-format",ARG_TYPE_STRING,-1,NULL,NULL,NULL,CMD_ARG_NONE,0,"2.8.12"),.display_text="ip:port"},
-{MAKE_ARG("new-format",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_MULTIPLE,7,NULL),.subargs=CLIENT_KILL_filter_new_format_Subargs},
+{MAKE_ARG("new-format",ARG_TYPE_ONEOF,-1,NULL,NULL,NULL,CMD_ARG_MULTIPLE,18,NULL),.subargs=CLIENT_KILL_filter_new_format_Subargs},
 };
 
 /* CLIENT KILL argument table */
@@ -1353,7 +1364,7 @@ commandHistory CLIENT_LIST_History[] = {
 {"7.0.0","Added `resp`, `multi-mem`, `rbs` and `rbp` fields."},
 {"7.0.3","Added `ssub` field."},
 {"8.0.0","Replaced `master` `TYPE` with `primary`. `master` still supported for backward compatibility."},
-{"8.1.0","Added filters USER, ADDR, LADDR, SKIPME, and MAXAGE"},
+{"8.1.0","Added filters USER, ADDR, LADDR, SKIPME, MAXAGE, NAME, MINIDLE, FLAGS, SUBSCRIBED-PATTERN, SUBSCRIBED-CHANNEL, SUBSCRIBED-SHARD-CHANNEL, LIB-NAME, LIB-VER, DB, TOTAL-NET-IN and TOTAL-NET-OUT"},
 };
 #endif
 
@@ -1392,6 +1403,17 @@ struct COMMAND_ARG CLIENT_LIST_Args[] = {
 {MAKE_ARG("laddr",ARG_TYPE_STRING,-1,"LADDR",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL),.display_text="ip:port"},
 {MAKE_ARG("skipme",ARG_TYPE_ONEOF,-1,"SKIPME",NULL,"8.1.0",CMD_ARG_OPTIONAL,2,NULL),.subargs=CLIENT_LIST_skipme_Subargs},
 {MAKE_ARG("maxage",ARG_TYPE_INTEGER,-1,"MAXAGE",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("name",ARG_TYPE_STRING,-1,"NAME",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("minidle",ARG_TYPE_INTEGER,-1,"MINIDLE",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("flags",ARG_TYPE_STRING,-1,"FLAGS",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-pattern",ARG_TYPE_STRING,-1,"SUBSCRIBED-PATTERN",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-channel",ARG_TYPE_STRING,-1,"SUBSCRIBED-CHANNEL",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("subscribed-shard-channel",ARG_TYPE_STRING,-1,"SUBSCRIBED-SHARD-CHANNEL",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("lib-name",ARG_TYPE_STRING,-1,"LIB-NAME",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("lib-ver",ARG_TYPE_STRING,-1,"LIB-VER",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("db",ARG_TYPE_INTEGER,-1,"DB",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("total-net-in",ARG_TYPE_INTEGER,-1,"TOTAL-NET-IN",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
+{MAKE_ARG("total-net-out",ARG_TYPE_INTEGER,-1,"TOTAL-NET-OUT",NULL,"8.1.0",CMD_ARG_OPTIONAL,0,NULL)},
 };
 
 /********** CLIENT NO_EVICT ********************/
@@ -1674,7 +1696,7 @@ struct COMMAND_STRUCT CLIENT_Subcommands[] = {
 {MAKE_CMD("import-source","Mark this client as an import source when server is in import mode.","O(1)","8.1.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_IMPORT_SOURCE_History,0,CLIENT_IMPORT_SOURCE_Tips,0,clientImportSourceCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_IMPORT_SOURCE_Keyspecs,0,NULL,1),.args=CLIENT_IMPORT_SOURCE_Args},
 {MAKE_CMD("info","Returns information about the connection.","O(1)","6.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_INFO_History,0,CLIENT_INFO_Tips,1,clientInfoCommand,2,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_INFO_Keyspecs,0,NULL,0)},
 {MAKE_CMD("kill","Terminates open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_KILL_History,8,CLIENT_KILL_Tips,0,clientKillCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_KILL_Keyspecs,0,NULL,1),.args=CLIENT_KILL_Args},
-{MAKE_CMD("list","Lists open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_LIST_History,8,CLIENT_LIST_Tips,1,clientListCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_LIST_Keyspecs,0,NULL,7),.args=CLIENT_LIST_Args},
+{MAKE_CMD("list","Lists open connections.","O(N) where N is the number of client connections","2.4.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_LIST_History,8,CLIENT_LIST_Tips,1,clientListCommand,-2,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_LIST_Keyspecs,0,NULL,18),.args=CLIENT_LIST_Args},
 {MAKE_CMD("no-evict","Sets the client eviction mode of the connection.","O(1)","7.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_EVICT_History,0,CLIENT_NO_EVICT_Tips,0,clientNoEvictCommand,3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_NO_EVICT_Keyspecs,0,NULL,1),.args=CLIENT_NO_EVICT_Args},
 {MAKE_CMD("no-touch","Controls whether commands sent by the client affect the LRU/LFU of accessed keys.","O(1)","7.2.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_NO_TOUCH_History,0,CLIENT_NO_TOUCH_Tips,0,clientNoTouchCommand,3,CMD_NOSCRIPT|CMD_LOADING|CMD_STALE,ACL_CATEGORY_CONNECTION,CLIENT_NO_TOUCH_Keyspecs,0,NULL,1),.args=CLIENT_NO_TOUCH_Args},
 {MAKE_CMD("pause","Suspends commands processing.","O(1)","3.0.0",CMD_DOC_NONE,NULL,NULL,"connection",COMMAND_GROUP_CONNECTION,CLIENT_PAUSE_History,1,CLIENT_PAUSE_Tips,0,clientPauseCommand,-3,CMD_ADMIN|CMD_NOSCRIPT|CMD_LOADING|CMD_STALE|CMD_SENTINEL,ACL_CATEGORY_CONNECTION,CLIENT_PAUSE_Keyspecs,0,NULL,2),.args=CLIENT_PAUSE_Args},
