@@ -452,6 +452,7 @@ typedef struct tls_connection {
     SSL *ssl;
     char *ssl_error;
     listNode *pending_list_node;
+    size_t last_failed_write_data_len;
 } tls_connection;
 
 static connection *createTLSConnection(int client_side) {
@@ -911,10 +912,12 @@ static int connTLSWrite(connection *conn_, const void *data, size_t data_len) {
     if (conn->c.state != CONN_STATE_CONNECTED) return -1;
     ERR_clear_error();
     ret = SSL_write(conn->ssl, data, data_len);
+    conn->last_failed_write_data_len = ret < 0 ? data_len : 0;
     return updateStateAfterSSLIO(conn, ret, 1);
 }
 
 static int connTLSWritev(connection *conn_, const struct iovec *iov, int iovcnt) {
+    tls_connection *conn = (tls_connection *)conn_;
     if (iovcnt == 1) return connTLSWrite(conn_, iov[0].iov_base, iov[0].iov_len);
 
     /* Accumulate the amount of bytes of each buffer and check if it exceeds NET_MAX_WRITES_PER_EVENT. */
@@ -927,7 +930,7 @@ static int connTLSWritev(connection *conn_, const struct iovec *iov, int iovcnt)
     /* The amount of all buffers is greater than NET_MAX_WRITES_PER_EVENT,
      * which is not worth doing so much memory copying to reduce system calls,
      * therefore, invoke connTLSWrite() multiple times to avoid memory copies. */
-    if (iov_bytes_len > NET_MAX_WRITES_PER_EVENT) {
+    if (iov_bytes_len > NET_MAX_WRITES_PER_EVENT && iovcnt > 0 && iov[0].iov_len >= conn->last_failed_write_data_len) {
         ssize_t tot_sent = 0;
         for (int i = 0; i < iovcnt; i++) {
             ssize_t sent = connTLSWrite(conn_, iov[i].iov_base, iov[i].iov_len);
