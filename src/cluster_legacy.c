@@ -3047,7 +3047,7 @@ static void clusterProcessModulePacket(clusterMsgModule *module_data, clusterNod
     unsigned char *payload = module_data->bulk_data;
 
     /* Ensure sender name is properly truncated to 40 characters */
-    char truncated_name[41];  /* 40 chars + null terminator */
+    char truncated_name[41]; /* 40 chars + null terminator */
     strncpy(truncated_name, sender->name, 40);
     truncated_name[40] = '\0';
 
