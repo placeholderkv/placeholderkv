@@ -48,7 +48,7 @@ int PingallCommand(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
 
 void DingReceiver(ValkeyModuleCtx *ctx, const char *sender_id, uint8_t type, const unsigned char *payload, uint32_t len) {
     ValkeyModule_Log(ctx, "notice", "DING (type %d) RECEIVED from %.*s: '%.*s'", type, VALKEYMODULE_NODE_ID_LEN, sender_id, (int)len, payload);
-    ValkeyModule_SendClusterMessage(ctx, NULL, MSGTYPE_DONG, "Message Received!", 17);
+    ValkeyModule_SendClusterMessage(ctx, sender_id, MSGTYPE_DONG, "Message Received!", 17);
 }
 
 void DongReceiver(ValkeyModuleCtx *ctx, const char *sender_id, uint8_t type, const unsigned char *payload, uint32_t len) {
@@ -72,9 +72,8 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int arg
     if (ValkeyModule_CreateCommand(ctx, "test.cluster_shards", test_cluster_shards, "", 0, 0, 0) == VALKEYMODULE_ERR)
         return VALKEYMODULE_ERR;
 
-    // Register the receivers
+    /* Register our handlers for different message types. */
     ValkeyModule_RegisterClusterMessageReceiver(ctx, MSGTYPE_DING, DingReceiver);
     ValkeyModule_RegisterClusterMessageReceiver(ctx, MSGTYPE_DONG, DongReceiver);
-
     return VALKEYMODULE_OK;
 }
