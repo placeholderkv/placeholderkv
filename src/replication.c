@@ -3792,7 +3792,7 @@ void syncWithPrimary(connection *conn) {
         int dfd = -1, maxtries = 5;
         while (maxtries--) {
             snprintf(tmpfile, 256, "temp-%d.%ld.rdb", (int)server.unixtime, (long int)getpid());
-            dfd = open(tmpfile, O_CREAT | O_WRONLY | O_EXCL, getDataFileMode());
+            dfd = open(tmpfile, O_CREAT | O_WRONLY | O_EXCL, 0666);
             if (dfd != -1) break;
             /* We save the errno of open to prevent some systems from modifying it after
              * the sleep call. For example, sleep in Mac will change errno to ETIMEDOUT. */
