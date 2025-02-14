@@ -9,9 +9,11 @@ typedef struct scriptingEngine scriptingEngine;
 /* ValkeyModule type aliases for scripting engine structs and types. */
 typedef struct ValkeyModule ValkeyModule;
 typedef ValkeyModuleScriptingEngineCtx engineCtx;
-typedef ValkeyModuleScriptingEngineFunctionCtx functionCtx;
+typedef ValkeyModuleScriptingEngineServerRuntimeCtx serverRuntimeCtx;
 typedef ValkeyModuleScriptingEngineCompiledFunction compiledFunction;
+typedef ValkeyModuleScriptingEngineSubsystemType subsystemType;
 typedef ValkeyModuleScriptingEngineMemoryInfo engineMemoryInfo;
+typedef ValkeyModuleScriptingEngineCallableLazyEvalReset callableLazyEvalReset;
 typedef ValkeyModuleScriptingEngineMethods engineMethods;
 
 /*
@@ -37,9 +39,8 @@ int scriptingEngineManagerRegister(const char *engine_name,
                                    engineCtx *engine_ctx,
                                    engineMethods *engine_methods);
 int scriptingEngineManagerUnregister(const char *engine_name);
-scriptingEngine *scriptingEngineManagerFind(sds engine_name);
-void scriptingEngineManagerForEachEngine(engineIterCallback callback,
-                                         void *context);
+scriptingEngine *scriptingEngineManagerFind(const char *engine_name);
+void scriptingEngineManagerForEachEngine(engineIterCallback callback, void *context);
 
 /*
  * Engine API functions.
@@ -51,23 +52,34 @@ ValkeyModule *scriptingEngineGetModule(scriptingEngine *engine);
 /*
  * API to call engine callback functions.
  */
-compiledFunction **scriptingEngineCallCreateFunctionsLibrary(scriptingEngine *engine,
-                                                             const char *code,
-                                                             size_t timeout,
-                                                             size_t *out_num_compiled_functions,
-                                                             robj **err);
+compiledFunction **scriptingEngineCallCompileCode(scriptingEngine *engine,
+                                                  subsystemType type,
+                                                  const char *code,
+                                                  size_t timeout,
+                                                  size_t *out_num_compiled_functions,
+                                                  robj **err);
+
+void scriptingEngineCallFreeFunction(scriptingEngine *engine,
+                                     subsystemType type,
+                                     compiledFunction *compiled_func);
+
 void scriptingEngineCallFunction(scriptingEngine *engine,
-                                 functionCtx *func_ctx,
+                                 serverRuntimeCtx *server_ctx,
                                  client *caller,
-                                 void *compiled_function,
+                                 compiledFunction *compiled_function,
+                                 subsystemType type,
                                  robj **keys,
                                  size_t nkeys,
                                  robj **args,
                                  size_t nargs);
-void scriptingEngineCallFreeFunction(scriptingEngine *engine,
-                                     void *compiled_func);
+
 size_t scriptingEngineCallGetFunctionMemoryOverhead(scriptingEngine *engine,
-                                                    void *compiled_function);
-engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine);
+                                                    compiledFunction *compiled_function);
+
+callableLazyEvalReset *scriptingEngineCallResetEvalEnvFunc(scriptingEngine *engine,
+                                                           int async);
+
+engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine,
+                                                  subsystemType type);
 
 #endif /* _SCRIPTING_ENGINE_H_ */

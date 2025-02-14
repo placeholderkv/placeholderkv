@@ -1104,6 +1104,11 @@ size_t hashtableChainedBuckets(hashtable *ht, int table) {
     return ht->child_buckets[table];
 }
 
+/* Returns the number of entry positions per bucket. */
+unsigned hashtableEntriesPerBucket(void) {
+    return ENTRIES_PER_BUCKET;
+}
+
 /* Returns the size of the hashtable structures, in bytes (not including the sizes
  * of the entries, if the entries are pointers to allocated objects). */
 size_t hashtableMemUsage(hashtable *ht) {

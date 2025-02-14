@@ -117,6 +117,7 @@ void *hashtableMetadata(hashtable *ht);
 size_t hashtableSize(const hashtable *ht);
 size_t hashtableBuckets(hashtable *ht);
 size_t hashtableChainedBuckets(hashtable *ht, int table);
+unsigned hashtableEntriesPerBucket(void);
 size_t hashtableMemUsage(hashtable *ht);
 void hashtablePauseAutoShrink(hashtable *ht);
 void hashtableResumeAutoShrink(hashtable *ht);

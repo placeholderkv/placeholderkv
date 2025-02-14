@@ -35,6 +35,7 @@
 
 #include "server.h"
 #include "hashtable.h"
+#include "eval.h"
 #include "script.h"
 #include "module.h"
 #include <stddef.h>
@@ -236,27 +237,6 @@ robj *activeDefragStringOb(robj *ob) {
     return new_robj;
 }
 
-
-/* Defrag helper for lua scripts
- *
- * Returns NULL in case the allocation wasn't moved.
- * When it returns a non-null value, the old pointer was already released
- * and should NOT be accessed. */
-static luaScript *activeDefragLuaScript(luaScript *script) {
-    luaScript *ret = NULL;
-
-    /* try to defrag script struct */
-    if ((ret = activeDefragAlloc(script))) {
-        script = ret;
-    }
-
-    /* try to defrag actual script object */
-    robj *ob = activeDefragStringOb(script->body);
-    if (ob) script->body = ob;
-
-    return ret;
-}
-
 /* Defrag helper for dict main allocations (dict struct, and hash tables).
  * Receives a pointer to the dict* and return a new dict* when the dict
  * struct itself was moved.
@@ -359,7 +339,7 @@ static void activeDefragSdsDict(dict *d, int val_type) {
         .defragVal = (val_type == DEFRAG_SDS_DICT_VAL_IS_SDS       ? (dictDefragAllocFunction *)activeDefragSds
                       : val_type == DEFRAG_SDS_DICT_VAL_IS_STROB   ? (dictDefragAllocFunction *)activeDefragStringOb
                       : val_type == DEFRAG_SDS_DICT_VAL_VOID_PTR   ? (dictDefragAllocFunction *)activeDefragAlloc
-                      : val_type == DEFRAG_SDS_DICT_VAL_LUA_SCRIPT ? (dictDefragAllocFunction *)activeDefragLuaScript
+                      : val_type == DEFRAG_SDS_DICT_VAL_LUA_SCRIPT ? (dictDefragAllocFunction *)evalActiveDefragScript
                                                                    : NULL)};
     do {
         cursor = dictScanDefrag(d, cursor, activeDefragSdsDictCallback, &defragfns, NULL);

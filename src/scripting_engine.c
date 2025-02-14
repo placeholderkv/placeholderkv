@@ -1,3 +1,9 @@
+/*
+ * Copyright Valkey Contributors.
+ * All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #include "scripting_engine.h"
 #include "dict.h"
 #include "functions.h"
@@ -15,7 +21,7 @@ typedef struct scriptingEngine {
     sds name;                    /* Name of the engine */
     ValkeyModule *module;        /* the module that implements the scripting engine */
     scriptingEngineImpl impl;    /* engine context and callbacks to interact with the engine */
-    client *c;                   /* Client that is used to run commands */
+    client *client;              /* Client that is used to run commands */
     ValkeyModuleCtx *module_ctx; /* Cache of the module context object */
 } scriptingEngine;
 
@@ -104,21 +110,15 @@ int scriptingEngineManagerRegister(const char *engine_name,
         .module = engine_module,
         .impl = {
             .ctx = engine_ctx,
-            .methods = {
-                .create_functions_library = engine_methods->create_functions_library,
-                .call_function = engine_methods->call_function,
-                .free_function = engine_methods->free_function,
-                .get_function_memory_overhead = engine_methods->get_function_memory_overhead,
-                .get_memory_info = engine_methods->get_memory_info,
-            },
+            .methods = *engine_methods,
         },
-        .c = c,
+        .client = c,
         .module_ctx = engine_module ? moduleAllocateContext() : NULL,
     };
 
     dictAdd(engineMgr.engines, engine_name_sds, e);
 
-    engineMemoryInfo mem_info = scriptingEngineCallGetMemoryInfo(e);
+    engineMemoryInfo mem_info = scriptingEngineCallGetMemoryInfo(e, VMSE_ALL);
     engineMgr.total_memory_overhead += zmalloc_size(e) +
                                        sdsAllocSize(e->name) +
                                        mem_info.engine_memory_overhead;
@@ -141,13 +141,13 @@ int scriptingEngineManagerUnregister(const char *engine_name) {
 
     functionsRemoveLibFromEngine(e);
 
-    engineMemoryInfo mem_info = scriptingEngineCallGetMemoryInfo(e);
+    engineMemoryInfo mem_info = scriptingEngineCallGetMemoryInfo(e, VMSE_ALL);
     engineMgr.total_memory_overhead -= zmalloc_size(e) +
                                        sdsAllocSize(e->name) +
                                        mem_info.engine_memory_overhead;
 
     sdsfree(e->name);
-    freeClient(e->c);
+    freeClient(e->client);
     if (e->module_ctx) {
         serverAssert(e->module != NULL);
         zfree(e->module_ctx);
@@ -163,7 +163,7 @@ int scriptingEngineManagerUnregister(const char *engine_name) {
  * Lookups the engine with `engine_name` in the engine manager and returns it if
  * it exists. Otherwise returns `NULL`.
  */
-scriptingEngine *scriptingEngineManagerFind(sds engine_name) {
+scriptingEngine *scriptingEngineManagerFind(const char *engine_name) {
     dictEntry *entry = dictFind(engineMgr.engines, engine_name);
     if (entry) {
         return dictGetVal(entry);
@@ -176,7 +176,7 @@ sds scriptingEngineGetName(scriptingEngine *engine) {
 }
 
 client *scriptingEngineGetClient(scriptingEngine *engine) {
-    return engine->c;
+    return engine->client;
 }
 
 ValkeyModule *scriptingEngineGetModule(scriptingEngine *engine) {
@@ -214,16 +214,20 @@ static void engineTeardownModuleCtx(scriptingEngine *e) {
     }
 }
 
-compiledFunction **scriptingEngineCallCreateFunctionsLibrary(scriptingEngine *engine,
-                                                             const char *code,
-                                                             size_t timeout,
-                                                             size_t *out_num_compiled_functions,
-                                                             robj **err) {
+compiledFunction **scriptingEngineCallCompileCode(scriptingEngine *engine,
+                                                  subsystemType type,
+                                                  const char *code,
+                                                  size_t timeout,
+                                                  size_t *out_num_compiled_functions,
+                                                  robj **err) {
+    serverAssert(type == VMSE_EVAL || type == VMSE_FUNCTION);
+
     engineSetupModuleCtx(engine, NULL);
 
-    compiledFunction **functions = engine->impl.methods.create_functions_library(
+    compiledFunction **functions = engine->impl.methods.compile_code(
         engine->module_ctx,
         engine->impl.ctx,
+        type,
         code,
         timeout,
         out_num_compiled_functions,
@@ -234,21 +238,38 @@ compiledFunction **scriptingEngineCallCreateFunctionsLibrary(scriptingEngine *en
     return functions;
 }
 
+void scriptingEngineCallFreeFunction(scriptingEngine *engine,
+                                     subsystemType type,
+                                     compiledFunction *compiled_func) {
+    serverAssert(type == VMSE_EVAL || type == VMSE_FUNCTION);
+    engineSetupModuleCtx(engine, NULL);
+    engine->impl.methods.free_function(
+        engine->module_ctx,
+        engine->impl.ctx,
+        type,
+        compiled_func);
+    engineTeardownModuleCtx(engine);
+}
+
 void scriptingEngineCallFunction(scriptingEngine *engine,
-                                 functionCtx *func_ctx,
+                                 serverRuntimeCtx *server_ctx,
                                  client *caller,
-                                 void *compiled_function,
+                                 compiledFunction *compiled_function,
+                                 subsystemType type,
                                  robj **keys,
                                  size_t nkeys,
                                  robj **args,
                                  size_t nargs) {
+    serverAssert(type == VMSE_EVAL || type == VMSE_FUNCTION);
+
     engineSetupModuleCtx(engine, caller);
 
     engine->impl.methods.call_function(
         engine->module_ctx,
         engine->impl.ctx,
-        func_ctx,
+        server_ctx,
         compiled_function,
+        type,
         keys,
         nkeys,
         args,
@@ -257,28 +278,34 @@ void scriptingEngineCallFunction(scriptingEngine *engine,
     engineTeardownModuleCtx(engine);
 }
 
-void scriptingEngineCallFreeFunction(scriptingEngine *engine,
-                                     void *compiled_func) {
-    engineSetupModuleCtx(engine, NULL);
-    engine->impl.methods.free_function(engine->module_ctx,
-                                       engine->impl.ctx,
-                                       compiled_func);
-    engineTeardownModuleCtx(engine);
-}
-
 size_t scriptingEngineCallGetFunctionMemoryOverhead(scriptingEngine *engine,
-                                                    void *compiled_function) {
+                                                    compiledFunction *compiled_function) {
     engineSetupModuleCtx(engine, NULL);
     size_t mem = engine->impl.methods.get_function_memory_overhead(
-        engine->module_ctx, compiled_function);
+        engine->module_ctx,
+        compiled_function);
     engineTeardownModuleCtx(engine);
     return mem;
 }
 
-engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine) {
+callableLazyEvalReset *scriptingEngineCallResetEvalEnvFunc(scriptingEngine *engine,
+                                                           int async) {
+    engineSetupModuleCtx(engine, NULL);
+    callableLazyEvalReset *callback = engine->impl.methods.reset_eval_env(
+        engine->module_ctx,
+        engine->impl.ctx,
+        async);
+    engineTeardownModuleCtx(engine);
+    return callback;
+}
+
+engineMemoryInfo scriptingEngineCallGetMemoryInfo(scriptingEngine *engine,
+                                                  subsystemType type) {
     engineSetupModuleCtx(engine, NULL);
     engineMemoryInfo mem_info = engine->impl.methods.get_memory_info(
-        engine->module_ctx, engine->impl.ctx);
+        engine->module_ctx,
+        engine->impl.ctx,
+        type);
     engineTeardownModuleCtx(engine);
     return mem_info;
 }

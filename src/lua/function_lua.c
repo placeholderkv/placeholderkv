@@ -39,24 +39,20 @@
  * Uses script_lua.c to run the Lua code.
  */
 
-#include "scripting_engine.h"
-#include "functions.h"
+#include "function_lua.h"
 #include "script_lua.h"
-#include <lua.h>
+
+#include "../script.h"
+#include "../adlist.h"
+#include "../monotonic.h"
+#include "../server.h"
+
 #include <lauxlib.h>
 #include <lualib.h>
 
-#define LUA_ENGINE_NAME "LUA"
-#define REGISTRY_ENGINE_CTX_NAME "__ENGINE_CTX__"
-#define REGISTRY_ERROR_HANDLER_NAME "__ERROR_HANDLER__"
 #define REGISTRY_LOAD_CTX_NAME "__LIBRARY_CTX__"
 #define LIBRARY_API_NAME "__LIBRARY_API__"
 #define GLOBALS_API_NAME "__GLOBALS_API__"
-
-/* Lua engine ctx */
-typedef struct luaEngineCtx {
-    lua_State *lua;
-} luaEngineCtx;
 
 /* Lua function ctx */
 typedef struct luaFunctionCtx {
@@ -69,10 +65,6 @@ typedef struct loadCtx {
     monotime start_time;
     size_t timeout;
 } loadCtx;
-
-static void luaEngineFreeFunction(ValkeyModuleCtx *module_ctx,
-                                  engineCtx *engine_ctx,
-                                  void *compiled_function);
 
 /* Hook for FUNCTION LOAD execution.
  * Used to cancel the execution in case of a timeout (500ms).
@@ -91,19 +83,14 @@ static void luaEngineLoadHook(lua_State *lua, lua_Debug *ar) {
     }
 }
 
-static void freeCompiledFunc(ValkeyModuleCtx *module_ctx,
-                             luaEngineCtx *lua_engine_ctx,
-                             void *compiled_func) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
-    compiledFunction *func = compiled_func;
-    decrRefCount(func->name);
-    if (func->desc) {
-        decrRefCount(func->desc);
+static void freeCompiledFunc(lua_State *lua,
+                             compiledFunction *compiled_func) {
+    decrRefCount(compiled_func->name);
+    if (compiled_func->desc) {
+        decrRefCount(compiled_func->desc);
     }
-    luaEngineFreeFunction(module_ctx, lua_engine_ctx, func->function);
-    zfree(func);
+    luaFunctionFreeFunction(lua, compiled_func->function);
+    zfree(compiled_func);
 }
 
 /*
@@ -117,18 +104,12 @@ static void freeCompiledFunc(ValkeyModuleCtx *module_ctx,
  *
  * Return NULL on compilation error and set the error to the err variable
  */
-static compiledFunction **luaEngineCreate(ValkeyModuleCtx *module_ctx,
-                                          engineCtx *engine_ctx,
-                                          const char *code,
-                                          size_t timeout,
-                                          size_t *out_num_compiled_functions,
-                                          robj **err) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
+compiledFunction **luaFunctionLibraryCreate(lua_State *lua,
+                                            const char *code,
+                                            size_t timeout,
+                                            size_t *out_num_compiled_functions,
+                                            robj **err) {
     compiledFunction **compiled_functions = NULL;
-    luaEngineCtx *lua_engine_ctx = engine_ctx;
-    lua_State *lua = lua_engine_ctx->lua;
 
     /* set load library globals */
     lua_getmetatable(lua, LUA_GLOBALSINDEX);
@@ -163,13 +144,15 @@ static compiledFunction **luaEngineCreate(ValkeyModuleCtx *module_ctx,
         *err = createObject(OBJ_STRING, error);
         lua_pop(lua, 1); /* pops the error */
         luaErrorInformationDiscard(&err_info);
+
         listIter *iter = listGetIterator(load_ctx.functions, AL_START_HEAD);
         listNode *node = NULL;
         while ((node = listNext(iter)) != NULL) {
-            freeCompiledFunc(module_ctx, lua_engine_ctx, listNodeValue(node));
+            freeCompiledFunc(lua, listNodeValue(node));
         }
         listReleaseIterator(iter);
         listRelease(load_ctx.functions);
+
         goto done;
     }
 
@@ -200,69 +183,9 @@ done:
     return compiled_functions;
 }
 
-/*
- * Invole the give function with the given keys and args
- */
-static void luaEngineCall(ValkeyModuleCtx *module_ctx,
-                          engineCtx *engine_ctx,
-                          functionCtx *func_ctx,
-                          void *compiled_function,
-                          robj **keys,
-                          size_t nkeys,
-                          robj **args,
-                          size_t nargs) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
-    luaEngineCtx *lua_engine_ctx = engine_ctx;
-    lua_State *lua = lua_engine_ctx->lua;
-    luaFunctionCtx *f_ctx = compiled_function;
-
-    /* Push error handler */
-    lua_pushstring(lua, REGISTRY_ERROR_HANDLER_NAME);
-    lua_gettable(lua, LUA_REGISTRYINDEX);
-
-    lua_rawgeti(lua, LUA_REGISTRYINDEX, f_ctx->lua_function_ref);
-
-    serverAssert(lua_isfunction(lua, -1));
-
-    scriptRunCtx *run_ctx = (scriptRunCtx *)func_ctx;
-    luaCallFunction(run_ctx, lua, keys, nkeys, args, nargs, 0);
-    lua_pop(lua, 1); /* Pop error handler */
-}
-
-static engineMemoryInfo luaEngineGetMemoryInfo(ValkeyModuleCtx *module_ctx,
-                                               engineCtx *engine_ctx) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
-    luaEngineCtx *lua_engine_ctx = engine_ctx;
-
-    return (engineMemoryInfo){
-        .used_memory = luaMemory(lua_engine_ctx->lua),
-        .engine_memory_overhead = zmalloc_size(lua_engine_ctx),
-    };
-}
-
-static size_t luaEngineFunctionMemoryOverhead(ValkeyModuleCtx *module_ctx,
-                                              void *compiled_function) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
-    return zmalloc_size(compiled_function);
-}
-
-static void luaEngineFreeFunction(ValkeyModuleCtx *module_ctx,
-                                  engineCtx *engine_ctx,
-                                  void *compiled_function) {
-    /* The lua engine is implemented in the core, and not in a Valkey Module */
-    serverAssert(module_ctx == NULL);
-
-    luaEngineCtx *lua_engine_ctx = engine_ctx;
-    lua_State *lua = lua_engine_ctx->lua;
-    luaFunctionCtx *f_ctx = compiled_function;
-    lua_unref(lua, f_ctx->lua_function_ref);
-    zfree(f_ctx);
+int luaFunctionGetLuaFunctionRef(compiledFunction *compiled_function) {
+    luaFunctionCtx *f = compiled_function->function;
+    return f->lua_function_ref;
 }
 
 static void luaRegisterFunctionArgsInitialize(compiledFunction *func,
@@ -455,15 +378,14 @@ static int luaRegisterFunctionReadArgs(lua_State *lua, compiledFunction *func) {
     }
 }
 
-static int luaRegisterFunction(lua_State *lua) {
-    compiledFunction *func = zcalloc(sizeof(*func));
-
+static int luaFunctionRegisterFunction(lua_State *lua) {
     loadCtx *load_ctx = luaGetFromRegistry(lua, REGISTRY_LOAD_CTX_NAME);
     if (!load_ctx) {
-        zfree(func);
         luaPushError(lua, "server.register_function can only be called on FUNCTION LOAD command");
         return luaError(lua);
     }
+
+    compiledFunction *func = zcalloc(sizeof(*func));
 
     if (luaRegisterFunctionReadArgs(lua, func) != C_OK) {
         zfree(func);
@@ -475,93 +397,48 @@ static int luaRegisterFunction(lua_State *lua) {
     return 0;
 }
 
-/* Initialize Lua engine, should be called once on start. */
-int luaEngineInitEngine(void) {
-    luaEngineCtx *lua_engine_ctx = zmalloc(sizeof(*lua_engine_ctx));
-    lua_engine_ctx->lua = lua_open();
-
-    luaRegisterServerAPI(lua_engine_ctx->lua);
-
+void luaFunctionInitializeLuaState(lua_State *lua) {
     /* Register the library commands table and fields and store it to registry */
-    lua_newtable(lua_engine_ctx->lua); /* load library globals */
-    lua_newtable(lua_engine_ctx->lua); /* load library `server` table */
+    lua_newtable(lua); /* load library globals */
+    lua_newtable(lua); /* load library `server` table */
 
-    lua_pushstring(lua_engine_ctx->lua, "register_function");
-    lua_pushcfunction(lua_engine_ctx->lua, luaRegisterFunction);
-    lua_settable(lua_engine_ctx->lua, -3);
+    lua_pushstring(lua, "register_function");
+    lua_pushcfunction(lua, luaFunctionRegisterFunction);
+    lua_settable(lua, -3);
 
-    luaRegisterLogFunction(lua_engine_ctx->lua);
-    luaRegisterVersion(lua_engine_ctx->lua);
+    luaRegisterLogFunction(lua);
+    luaRegisterVersion(lua);
 
-    luaSetErrorMetatable(lua_engine_ctx->lua);
-    lua_setfield(lua_engine_ctx->lua, -2, SERVER_API_NAME);
+    luaSetErrorMetatable(lua);
+    lua_setfield(lua, -2, SERVER_API_NAME);
 
     /* Get the server object and also set it to the Redis API
      * compatibility namespace. */
-    lua_getfield(lua_engine_ctx->lua, -1, SERVER_API_NAME);
-    lua_setfield(lua_engine_ctx->lua, -2, REDIS_API_NAME);
+    lua_getfield(lua, -1, SERVER_API_NAME);
+    lua_setfield(lua, -2, REDIS_API_NAME);
 
-    luaSetErrorMetatable(lua_engine_ctx->lua);
-    luaSetTableProtectionRecursively(lua_engine_ctx->lua); /* protect load library globals */
-    lua_setfield(lua_engine_ctx->lua, LUA_REGISTRYINDEX, LIBRARY_API_NAME);
-
-    /* Save error handler to registry */
-    lua_pushstring(lua_engine_ctx->lua, REGISTRY_ERROR_HANDLER_NAME);
-    char *errh_func = "local dbg = debug\n"
-                      "debug = nil\n"
-                      "local error_handler = function (err)\n"
-                      "  local i = dbg.getinfo(2,'nSl')\n"
-                      "  if i and i.what == 'C' then\n"
-                      "    i = dbg.getinfo(3,'nSl')\n"
-                      "  end\n"
-                      "  if type(err) ~= 'table' then\n"
-                      "    err = {err='ERR ' .. tostring(err)}"
-                      "  end"
-                      "  if i then\n"
-                      "    err['source'] = i.source\n"
-                      "    err['line'] = i.currentline\n"
-                      "  end"
-                      "  return err\n"
-                      "end\n"
-                      "return error_handler";
-    luaL_loadbuffer(lua_engine_ctx->lua, errh_func, strlen(errh_func), "@err_handler_def");
-    lua_pcall(lua_engine_ctx->lua, 0, 1, 0);
-    lua_settable(lua_engine_ctx->lua, LUA_REGISTRYINDEX);
-
-    lua_pushvalue(lua_engine_ctx->lua, LUA_GLOBALSINDEX);
-    luaSetErrorMetatable(lua_engine_ctx->lua);
-    luaSetTableProtectionRecursively(lua_engine_ctx->lua); /* protect globals */
-    lua_pop(lua_engine_ctx->lua, 1);
+    luaSetErrorMetatable(lua);
+    luaSetTableProtectionRecursively(lua); /* protect load library globals */
+    lua_setfield(lua, LUA_REGISTRYINDEX, LIBRARY_API_NAME);
 
     /* Save default globals to registry */
-    lua_pushvalue(lua_engine_ctx->lua, LUA_GLOBALSINDEX);
-    lua_setfield(lua_engine_ctx->lua, LUA_REGISTRYINDEX, GLOBALS_API_NAME);
-
-    /* save the engine_ctx on the registry so we can get it from the Lua interpreter */
-    luaSaveOnRegistry(lua_engine_ctx->lua, REGISTRY_ENGINE_CTX_NAME, lua_engine_ctx);
+    lua_pushvalue(lua, LUA_GLOBALSINDEX);
+    lua_setfield(lua, LUA_REGISTRYINDEX, GLOBALS_API_NAME);
 
     /* Create new empty table to be the new globals, we will be able to control the real globals
      * using metatable */
-    lua_newtable(lua_engine_ctx->lua); /* new globals */
-    lua_newtable(lua_engine_ctx->lua); /* new globals metatable */
-    lua_pushvalue(lua_engine_ctx->lua, LUA_GLOBALSINDEX);
-    lua_setfield(lua_engine_ctx->lua, -2, "__index");
-    lua_enablereadonlytable(lua_engine_ctx->lua, -1, 1); /* protect the metatable */
-    lua_setmetatable(lua_engine_ctx->lua, -2);
-    lua_enablereadonlytable(lua_engine_ctx->lua, -1, 1); /* protect the new global table */
-    lua_replace(lua_engine_ctx->lua, LUA_GLOBALSINDEX);  /* set new global table as the new globals */
+    lua_newtable(lua); /* new globals */
+    lua_newtable(lua); /* new globals metatable */
+    lua_pushvalue(lua, LUA_GLOBALSINDEX);
+    lua_setfield(lua, -2, "__index");
+    lua_enablereadonlytable(lua, -1, 1); /* protect the metatable */
+    lua_setmetatable(lua, -2);
+    lua_enablereadonlytable(lua, -1, 1); /* protect the new global table */
+    lua_replace(lua, LUA_GLOBALSINDEX);  /* set new global table as the new globals */
+}
 
-    engineMethods lua_engine_methods = {
-        .version = VALKEYMODULE_SCRIPTING_ENGINE_ABI_VERSION,
-        .create_functions_library = luaEngineCreate,
-        .call_function = luaEngineCall,
-        .get_function_memory_overhead = luaEngineFunctionMemoryOverhead,
-        .free_function = luaEngineFreeFunction,
-        .get_memory_info = luaEngineGetMemoryInfo,
-    };
-
-    return scriptingEngineManagerRegister(LUA_ENGINE_NAME,
-                                          NULL,
-                                          lua_engine_ctx,
-                                          &lua_engine_methods);
+void luaFunctionFreeFunction(lua_State *lua, void *function) {
+    luaFunctionCtx *funcCtx = function;
+    lua_unref(lua, funcCtx->lua_function_ref);
+    zfree(function);
 }
