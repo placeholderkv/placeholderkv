@@ -80,22 +80,28 @@ static long long serverPopcountAVX2(void *s, long count) {
     }
 
     /* We divide the array into the following three parts
-    *        Part A         Part B       Part C
-    * +-----------------+--------------+---------+
-    * | 8 * 32bytes * X |  32bytes * Y | Z bytes |
-    * +-----------------+--------------+---------+
-    */
+     *        Part A         Part B       Part C
+     * +-----------------+--------------+---------+
+     * | 8 * 32bytes * X |  32bytes * Y | Z bytes |
+     * +-----------------+--------------+---------+
+     */
 
     /* Parrt A: loop unrolling, processing 8 * 32 bytes per iteration. */
     while (i + 8 * 32 <= count) {
         __m256i local = _mm256_setzero_si256();
-        ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES
-        ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
+        ITER_32_BYTES
         acc = _mm256_add_epi64(acc, _mm256_sad_epu8(local, _mm256_setzero_si256()));
     }
 
     /* Part B: when the remaining data length is less than 8 * 32 bytes,
-     * process 32 bytes per iteration. */    
+     * process 32 bytes per iteration. */
     __m256i local = _mm256_setzero_si256();
     while (i + 32 <= count) {
         ITER_32_BYTES;
