@@ -67,7 +67,7 @@ static long long serverPopcountAVX2(void *s, long count) {
     const __m256i low_mask = _mm256_set1_epi8(0x0f);
     __m256i acc = _mm256_setzero_si256();
 
-/* Count 32 bytes per iteration*/
+/* Count 32 bytes per iteration. */
 #define ITER_32_BYTES                                                             \
     {                                                                             \
         const __m256i vec = _mm256_loadu_si256((const __m256i *)(p + i));         \
@@ -85,9 +85,9 @@ static long long serverPopcountAVX2(void *s, long count) {
     * +-----------------+--------------+---------+
     * | 8 * 32bytes * X |  32bytes * Y | Z bytes |
     * +-----------------+--------------+---------+
-    * /
+    */
 
-    /* Parrt A: loop unrolling, processing 8 * 32 bytes per iteration */
+    /* Parrt A: loop unrolling, processing 8 * 32 bytes per iteration. */
     while (i + 8 * 32 <= count) {
         __m256i local = _mm256_setzero_si256();
         ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES ITER_32_BYTES
