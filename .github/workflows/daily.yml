@@ -1305,35 +1305,35 @@ jobs:
     runs-on: ubuntu-latest
     if: always() && github.event_name == 'schedule' && github.repository == 'valkey-io/valkey'
     needs:
-    - test-ubuntu-jemalloc
-    - test-ubuntu-arm
-    - test-ubuntu-jemalloc-fortify
-    - test-ubuntu-libc-malloc
-    - test-ubuntu-no-malloc-usable-size
-    - test-ubuntu-32bit
-    - test-ubuntu-tls
-    - test-ubuntu-tls-no-tls
-    - test-ubuntu-io-threads
-    - test-ubuntu-tls-io-threads
-    - test-ubuntu-reclaim-cache
-    - test-valgrind-test
-    - test-valgrind-misc
-    - test-valgrind-no-malloc-usable-size-test
-    - test-valgrind-no-malloc-usable-size-misc
-    - test-sanitizer-address
-    - test-sanitizer-undefined
-    - test-sanitizer-force-defrag
-    - test-rpm-distros-jemalloc
-    - test-rpm-distros-tls-module
-    - test-rpm-distros-tls-module-no-tls
-    - test-macos-latest
-    - test-macos-latest-sentinel
-    - test-macos-latest-cluster
-    - build-macos
-    - test-freebsd
-    - test-alpine-jemalloc
-    - test-alpine-libc-malloc
-    - reply-schemas-validator
+      - test-ubuntu-jemalloc
+      - test-ubuntu-arm
+      - test-ubuntu-jemalloc-fortify
+      - test-ubuntu-libc-malloc
+      - test-ubuntu-no-malloc-usable-size
+      - test-ubuntu-32bit
+      - test-ubuntu-tls
+      - test-ubuntu-tls-no-tls
+      - test-ubuntu-io-threads
+      - test-ubuntu-tls-io-threads
+      - test-ubuntu-reclaim-cache
+      - test-valgrind-test
+      - test-valgrind-misc
+      - test-valgrind-no-malloc-usable-size-test
+      - test-valgrind-no-malloc-usable-size-misc
+      - test-sanitizer-address
+      - test-sanitizer-undefined
+      - test-sanitizer-force-defrag
+      - test-rpm-distros-jemalloc
+      - test-rpm-distros-tls-module
+      - test-rpm-distros-tls-module-no-tls
+      - test-macos-latest
+      - test-macos-latest-sentinel
+      - test-macos-latest-cluster
+      - build-macos
+      - test-freebsd
+      - test-alpine-jemalloc
+      - test-alpine-libc-malloc
+      - reply-schemas-validator
     steps:
       - name: Collect job status
         run: |
