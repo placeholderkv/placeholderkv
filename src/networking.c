@@ -3143,6 +3143,10 @@ int canParseCommand(client *c) {
 }
 
 int processInputBuffer(client *c) {
+    mstime_t latency;
+    latencyStartMonitor(latency);
+    int processed = 0;
+
     /* Parse the query buffer. */
     while (c->querybuf && c->qb_pos < sdslen(c->querybuf)) {
         if (!canParseCommand(c)) {
@@ -3177,8 +3181,12 @@ int processInputBuffer(client *c) {
              * ASAP in that case. */
             return C_ERR;
         }
+        processed++;
     }
-
+    latencyEndMonitor(latency);
+    if (processed > 1) {
+        latencyAddSampleIfNeeded("pipeline", latency);
+    }
     return C_OK;
 }
 
