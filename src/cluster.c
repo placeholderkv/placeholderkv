@@ -1341,7 +1341,6 @@ int isNodeAvailable(clusterNode *node) {
     /* Hide empty replicas in here, from a data-path POV, an empty replica
      * is not available. */
     return getNodeReplicationOffset(node) != 0;
-    return 1;
 }
 
 void addNodeReplyForClusterSlot(client *c, clusterNode *node, int start_slot, int end_slot) {
