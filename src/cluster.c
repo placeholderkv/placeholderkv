@@ -1340,9 +1340,7 @@ int isNodeAvailable(clusterNode *node) {
 
     /* Hide empty replicas in here, from a data-path POV, an empty replica
      * is not available. */
-    if (getNodeReplicationOffset(node) == 0) {
-        return 0;
-    }
+    return getNodeReplicationOffset(node) != 0;
     return 1;
 }
 
