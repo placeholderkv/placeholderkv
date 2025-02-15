@@ -1420,6 +1420,7 @@ void clientAcceptHandler(connection *conn) {
 void acceptCommonHandler(connection *conn, struct ClientFlags flags, char *ip) {
     client *c;
     UNUSED(ip);
+    int port;
 
     if (connGetState(conn) != CONN_STATE_ACCEPTING) {
         char addr[NET_ADDR_STR_LEN] = {0};
@@ -1432,12 +1433,26 @@ void acceptCommonHandler(connection *conn, struct ClientFlags flags, char *ip) {
         return;
     }
 
+    if (connAddrSockName(conn, NULL, 0, &port)) {
+        serverLog(LL_WARNING, "Unable to retrieve socket port");
+        connClose(conn);
+        return;
+    }
+
+    if (port == server.admin_port && connIsLocal(conn) != 1) {
+        serverLog(LL_WARNING, "Denied connection. On admin-port, connections are"
+                              " only accepted from the loopback interface.");
+        server.stat_rejected_conn++;
+        connClose(conn);
+        return;
+    }
+
     /* Limit the number of connections we take at the same time.
      *
      * Admission control will happen before a client is created and connAccept()
      * called, because we don't want to even start transport-level negotiation
      * if rejected. */
-    if (listLength(server.clients) + getClusterConnectionsCount() >= server.maxclients) {
+    if (port != server.admin_port && (listLength(server.clients) + getClusterConnectionsCount() >= server.maxclients)) {
         char *err;
         if (server.cluster_enabled)
             err = "-ERR max number of clients + cluster "

@@ -557,7 +557,9 @@ proc start_server {options {code undefined}} {
         dict set config "tls-cluster" "yes"
         dict set config "tls-replication" "yes"
     } else {
-        dict set config port $port
+        set aport [find_available_port $::baseport $::portcount]
+        dict set config "port" $port
+        dict set config "admin-port" $aport
     }
 
     set unixsocket [file normalize [format "%s/%s" [dict get $config "dir"] "socket"]]
@@ -627,7 +629,9 @@ proc start_server {options {code undefined}} {
                 dict set config port $pport
                 dict set config "tls-port" $port
             } else {
+                set aport [find_available_port $::baseport $::portcount]
                 dict set config port $port
+                dict set config admin-port $aport
             }
             create_server_config_file $config_file $config $config_lines
 
@@ -661,8 +665,10 @@ proc start_server {options {code undefined}} {
     # setup properties to be able to initialize a client object
     set port_param [expr $::tls ? {"tls-port"} : {"port"}]
     set host $::host
+    set admin_port 0
     if {[dict exists $config bind]} { set host [lindex [dict get $config bind] 0] }
     if {[dict exists $config $port_param]} { set port [dict get $config $port_param] }
+    if {[dict exists $config admin-port]} { set admin_port [lindex [dict get $config admin-port] 0] }
 
     # setup config dict
     dict set srv "executable" $executable
@@ -671,6 +677,7 @@ proc start_server {options {code undefined}} {
     dict set srv "pid" $pid
     dict set srv "host" $host
     dict set srv "port" $port
+    dict set srv "admin-port" $admin_port
     dict set srv "stdout" $stdout
     dict set srv "stderr" $stderr
     dict set srv "unixsocket" $unixsocket
