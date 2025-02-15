@@ -28,7 +28,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define HAVE_AVX2
 #include "server.h"
 #ifdef HAVE_AVX2
 #include <immintrin.h>
