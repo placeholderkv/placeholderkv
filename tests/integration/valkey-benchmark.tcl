@@ -37,6 +37,20 @@ tags {"benchmark network external:skip logreqres:skip"} {
             default_set_get_checks
         }
 
+        test {benchmark: negative path} {
+            set wrong_host 127.0.0.0
+            set wrong_port 6500
+            foreach e {valkeybenchmark valkeybenchmarkuri valkeybenchmarkuriuserpass} {
+                if {$e eq {valkeybenchmarkuriuserpass}} {
+                    set cmd [valkeybenchmarkuriuserpass $wrong_host $wrong_port "default" pass "-c 5 -n 10 -t set"] 
+                } else {
+                    set cmd [$e $wrong_host $wrong_port "-c 5 -n 10 -t set"]
+                }
+                catch { exec {*}$cmd } res
+                assert_match  "*Could not connect to server at*" $res
+            }
+        }
+
         test {benchmark: connecting using URI set,get} {
             set cmd [valkeybenchmarkuri $master_host $master_port "-c 5 -n 10 -t set,get"]
             common_bench_setup $cmd
