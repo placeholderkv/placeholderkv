@@ -1065,7 +1065,7 @@ start_server {
         set group [lindex [dict get $reply groups] 0]
         assert_equal [dict get $reply max-deleted-entry-id] "0-0"
         assert_equal [dict get $reply entries-added] 0
-        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group entries-read] 0
         assert_equal [dict get $group lag] 0
 
         r XADD x 1-0 data a
@@ -1075,7 +1075,7 @@ start_server {
         set group [lindex [dict get $reply groups] 0]
         assert_equal [dict get $reply max-deleted-entry-id] "1-0"
         assert_equal [dict get $reply entries-added] 1
-        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group entries-read] 1
         assert_equal [dict get $group lag] 0
     }
 
@@ -1090,7 +1090,7 @@ start_server {
 
         set reply [r XINFO STREAM x FULL]
         set group [lindex [dict get $reply groups] 0]
-        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group entries-read] 0
         assert_equal [dict get $group lag] 5
 
         r XREADGROUP GROUP g1 c11 COUNT 1 STREAMS x >
@@ -1164,7 +1164,7 @@ start_server {
         assert_equal [dict get $group entries-read] 5
         assert_equal [dict get $group lag] 1
         set group [lindex [dict get $reply groups] 1]
-        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group entries-read] 3
         assert_equal [dict get $group lag] 3
 
         r XTRIM x MINID = 5-0
@@ -1173,8 +1173,88 @@ start_server {
         assert_equal [dict get $group entries-read] 5
         assert_equal [dict get $group lag] 1
         set group [lindex [dict get $reply groups] 1]
-        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group entries-read] 4
         assert_equal [dict get $group lag] 2
+    }
+
+    test {Consumer group lag with with tombstone} {
+        r DEL x
+        r XGROUP CREATE x processing $ MKSTREAM
+        r XADD x 0-1 name Mercury
+        r XREADGROUP GROUP processing alice STREAMS x >
+        r XADD x 0-2 name Venus
+        r XADD x 0-3 name Earth
+        r XADD x 0-4 name Jupiter
+        r XADD x 0-5 name Jupiter
+
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 1
+        assert_equal [dict get $group lag] 4
+
+        r XDEL x 0-1
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 1
+        assert_equal [dict get $group lag] 4
+
+        r XDEL x 0-2
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 2
+        assert_equal [dict get $group lag] 3
+
+        r XDEL x 0-3
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 3
+        assert_equal [dict get $group lag] 2
+
+        r XDEL x 0-4
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 4
+        assert_equal [dict get $group lag] 1
+
+        r XDEL x 0-5
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] 5
+        assert_equal [dict get $group lag] 0
+    }
+
+    test {Consumer group check lag and entries-read consistency} {
+        r DEL x
+        r XGROUP CREATE x processing $ MKSTREAM
+        r XGROUP CREATE x processing1 $ MKSTREAM
+        r XADD x 0-1 name Mercury
+        r XADD x 0-2 name Venus
+        r XADD x 0-3 name Earth
+        r XADD x 0-4 name Jupiter
+
+        r XREADGROUP GROUP processing alice COUNT 2 STREAMS x >
+        r XDEL x 0-3
+
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group lag] {}
+
+        r DEL x
+        r XGROUP CREATE x processing $ MKSTREAM
+        r XGROUP CREATE x processing1 $ MKSTREAM
+        r XADD x 0-1 name Mercury
+        r XADD x 0-2 name Venus
+        r XADD x 0-3 name Earth
+        r XADD x 0-4 name Jupiter
+
+        r XDEL x 0-3
+        r XREADGROUP GROUP processing alice COUNT 2 STREAMS x >
+
+        set reply [r XINFO STREAM x FULL]
+        set group [lindex [dict get $reply groups] 0]
+        assert_equal [dict get $group entries-read] {}
+        assert_equal [dict get $group lag] {}
     }
 
     test {Loading from legacy (Redis <= v6.2.x, rdb_ver < 10) persistence} {
