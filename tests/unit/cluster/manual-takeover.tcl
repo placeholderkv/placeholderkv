@@ -22,8 +22,12 @@ set paused_pid [srv 0 pid]
 set paused_pid1 [srv -1 pid]
 set paused_pid2 [srv -2 pid]
 test "Killing majority of master nodes" {
+    # Bumping the epochs to increase the chance of conflicts.
+    R 0 cluster bumpepoch
     pause_process $paused_pid
+    R 1 cluster bumpepoch
     pause_process $paused_pid1
+    R 2 cluster bumpepoch
     pause_process $paused_pid2
 }
 
