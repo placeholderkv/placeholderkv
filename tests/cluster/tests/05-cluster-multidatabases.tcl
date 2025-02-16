@@ -134,6 +134,11 @@ test "Validate slot statistics using cluster countkeysinslot and cluster getkeys
         assert_equal $keys_in_slot $keys_per_db 
     }
 
+    # Make sure slot-stats counts keys in all databases
+    set slotstats [R $primary_id CLUSTER SLOT-STATS  SLOTSRANGE  $slot $slot]    
+    set total_items [expr $keys_per_db * 16]
+    assert_equal $slotstats "{$slot {key-count $total_items}}"    
+
     # Verify key retrieval by slot for each database
     for {set db 0} {$db < 16} {incr db} {
         R $primary_id select $db
