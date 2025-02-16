@@ -436,6 +436,48 @@ start_server {tags {"pubsub network"}} {
         $rd1 close
     }
 
+    test "Keyspace notifications: lazy expired events" {
+        # disable active expire
+        r debug set-active-expire 0
+        r config set notify-keyspace-events KEX
+        r del foo
+        set rd1 [valkey_deferring_client]
+        assert_equal {1} [psubscribe $rd1 *]
+        r set foo bar PX 1
+        wait_for_condition 50 100 {
+            [r exists foo] == 0
+        } else {
+            fail "Key does not lazy expire?!"
+        }
+        assert_equal "pmessage * __keyspace@${db}__:foo lazyexpired" [$rd1 read]
+        assert_equal "pmessage * __keyevent@${db}__:lazyexpired foo" [$rd1 read]
+        $rd1 close
+        # enable active expire
+        r debug set-active-expire 1
+    }
+
+    test "Keyspace notifications: expired and lazy expired events" {
+        # disable active expire
+        r debug set-active-expire 0
+        r config set notify-keyspace-events KEXx
+        r del foo
+        set rd1 [valkey_deferring_client]
+        assert_equal {1} [psubscribe $rd1 *]
+        r set foo bar PX 1
+        wait_for_condition 50 100 {
+            [r exists foo] == 0
+        } else {
+            fail "Key does not lazy expire?!"
+        }
+        assert_equal "pmessage * __keyspace@${db}__:foo expired" [$rd1 read]
+        assert_equal "pmessage * __keyevent@${db}__:expired foo" [$rd1 read]
+        assert_equal "pmessage * __keyspace@${db}__:foo lazyexpired" [$rd1 read]
+        assert_equal "pmessage * __keyevent@${db}__:lazyexpired foo" [$rd1 read]
+        $rd1 close
+        # enable active expire
+        r debug set-active-expire 1
+    }
+
     test "Keyspace notifications: evicted events" {
         r config set notify-keyspace-events Ee
         r config set maxmemory-policy allkeys-lru

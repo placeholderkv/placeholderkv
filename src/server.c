@@ -2691,6 +2691,7 @@ void resetServerStats(void) {
     server.stat_total_eviction_exceeded_time = 0;
     server.stat_last_eviction_exceeded_time = 0;
     server.stat_keyspace_misses = 0;
+    server.stat_keyspace_expiration_misses = 0;
     server.stat_keyspace_hits = 0;
     server.stat_active_defrag_hits = 0;
     server.stat_active_defrag_misses = 0;
@@ -5976,6 +5977,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "current_eviction_exceeded_time:%lld\r\n", current_eviction_exceeded_time / 1000,
                 "keyspace_hits:%lld\r\n", server.stat_keyspace_hits,
                 "keyspace_misses:%lld\r\n", server.stat_keyspace_misses,
+                "keyspace_expiration_misses:%lld\r\n", server.stat_keyspace_expiration_misses,
                 "pubsub_channels:%llu\r\n", kvstoreSize(server.pubsub_channels),
                 "pubsub_patterns:%lu\r\n", dictSize(server.pubsub_patterns),
                 "pubsubshard_channels:%llu\r\n", kvstoreSize(server.pubsubshard_channels),

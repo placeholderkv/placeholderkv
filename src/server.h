@@ -653,6 +653,7 @@ typedef enum {
 #define NOTIFY_LOADED (1 << 12)   /* module only key space notification, indicate a key loaded from rdb */
 #define NOTIFY_MODULE (1 << 13)   /* d, module key space notification */
 #define NOTIFY_NEW (1 << 14)      /* n, new key notification */
+#define NOTIFY_LAZY_EXPIRED (1 << 15) /* X, lazy expire key notification */
 #define NOTIFY_ALL                                                                                            \
     (NOTIFY_GENERIC | NOTIFY_STRING | NOTIFY_LIST | NOTIFY_SET | NOTIFY_HASH | NOTIFY_ZSET | NOTIFY_EXPIRED | \
      NOTIFY_EVICTED | NOTIFY_STREAM | NOTIFY_MODULE) /* A flag */
@@ -1688,6 +1689,7 @@ struct valkeyServer {
     monotime stat_last_eviction_exceeded_time;     /* Timestamp of current eviction start, unit us */
     long long stat_keyspace_hits;                  /* Number of successful lookups of keys */
     long long stat_keyspace_misses;                /* Number of failed lookups of keys */
+    long long stat_keyspace_expiration_misses;     /* Number of failed lookups of keys due to expiration */
     long long stat_active_defrag_hits;             /* number of allocations moved */
     long long stat_active_defrag_misses;           /* number of allocations scanned but not moved */
     long long stat_active_defrag_key_hits;         /* number of keys with moved allocations */

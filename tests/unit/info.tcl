@@ -504,6 +504,37 @@ start_server {tags {"info" "external:skip" "debug_defrag:skip"}} {
             $r2 close
             wait_for_watched_clients_count 0
         }
+
+        test {stats: keyspace misses} {
+            # disable active expire cycle
+            r debug set-active-expire 0
+
+            # clear stats before test
+            r config resetstat
+
+            # test keyspace misses
+            r set k1 "v1" PX 1
+
+            # before expiration, k1 is in db
+            set before [r info stats]
+
+            # wait for key to expire
+            after 100
+
+            # after expiration, k1 is not in db
+            r get k1
+            r get k2
+            set after [r info stats]
+
+            # check keyspace misses
+            assert_equal [getInfoProperty $before keyspace_misses] 0
+            assert_equal [getInfoProperty $before keyspace_expiration_misses] 0
+            assert_equal [getInfoProperty $after keyspace_misses] 2
+            assert_equal [getInfoProperty $after keyspace_expiration_misses] 1
+
+            # rollback active expire cycle
+            r debug set-active-expire 1
+        }
     }
 }
 
