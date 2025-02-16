@@ -414,6 +414,20 @@ test "Copy key to other database" {
     R $primary_id flushall
 }
 
+test "CLUSTER RESET should fail if databases contain keys" {
+    set primary_id 0
+
+    R $primary_id select 0
+    R $primary_id flushall
+    R $primary_id select 9
+    R $primary_id set "key1" "test_value"
+
+    # CLUSTER RESET should fail as the db isn't empty
+    assert_error "ERR CLUSTER RESET can't be called with master nodes containing keys" {R $primary_id CLUSTER RESET}
+
+    R $primary_id flushall
+}
+
 test "Move key to other database" {
     set primary_id 0
 
