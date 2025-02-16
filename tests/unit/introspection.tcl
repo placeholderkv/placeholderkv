@@ -708,6 +708,7 @@ start_server {tags {"introspection"}} {
             rdma-rx-size
             rdma-bind
             rdma-port
+            info-simple-for-sentinel
         }
 
         if {!$::tls} {

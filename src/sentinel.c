@@ -248,7 +248,8 @@ typedef struct sentinelValkeyInstance {
      * are set to NULL no script is executed. */
     char *notification_script;
     char *client_reconfig_script;
-    sds info; /* cached INFO output */
+    sds info;        /* cached INFO output */
+    int info_simple; /* Instance support info simple for sentinel. */
 } sentinelValkeyInstance;
 
 /* Main state. */
@@ -1346,6 +1347,9 @@ sentinelValkeyInstance *createSentinelValkeyInstance(char *name,
     ri->role_reported_time = mstime();
     ri->replica_conf_change_time = mstime();
 
+    /* capability */
+    ri->info_simple = 0;
+
     /* Add into the right table. */
     dictAdd(table, ri->name, ri);
     return ri;
@@ -2358,6 +2362,8 @@ void sentinelReconnectInstance(sentinelValkeyInstance *ri) {
 
             /* Send a PING ASAP when reconnecting. */
             sentinelSendPing(ri);
+
+            ri->info_simple = 0;
         }
     }
     /* Pub / Sub */
@@ -2428,6 +2434,11 @@ void sentinelRefreshInstanceInfo(sentinelValkeyInstance *ri, const char *info) {
     for (j = 0; j < numlines; j++) {
         sentinelValkeyInstance *replica;
         sds l = lines[j];
+
+        /* capability for info simple */
+        if (sdslen(l) >= 26 && !memcmp(l, "info_simple_for_sentinel:", 25)) {
+            ri->info_simple = atoi(l + 25);
+        }
 
         /* run_id:<40 hex chars>*/
         if (sdslen(l) >= 47 && !memcmp(l, "run_id:", 7)) {
@@ -2997,8 +3008,13 @@ void sentinelSendPeriodicCommands(sentinelValkeyInstance *ri) {
 
     /* Send INFO to primaries and replicas, not sentinels. */
     if ((ri->flags & SRI_SENTINEL) == 0 && (ri->info_refresh == 0 || (now - ri->info_refresh) > info_period)) {
-        retval = redisAsyncCommand(ri->link->cc, sentinelInfoReplyCallback, ri, "%s",
-                                   sentinelInstanceMapCommand(ri, "INFO"));
+        if (ri->info_simple) {
+            retval = redisAsyncCommand(ri->link->cc, sentinelInfoReplyCallback, ri, "%s %s",
+                                       sentinelInstanceMapCommand(ri, "INFO"), "SENTINEL");
+        } else {
+            retval = redisAsyncCommand(ri->link->cc, sentinelInfoReplyCallback, ri, "%s",
+                                       sentinelInstanceMapCommand(ri, "INFO"));
+        }
         if (retval == C_OK) ri->link->pending_commands++;
     }
 

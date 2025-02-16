@@ -5619,6 +5619,42 @@ void totalNumberOfStatefulKeys(unsigned long *blocking_keys,
     if (watched_keys) *watched_keys = wkeys;
 }
 
+static sds genValKeyReplicasInfo(sds info) {
+    if (listLength(server.replicas)) {
+        int replica_id = 0;
+        listNode *ln;
+        listIter li;
+
+        listRewind(server.replicas, &li);
+        while ((ln = listNext(&li))) {
+            client *replica = listNodeValue(ln);
+            char ip[NET_IP_STR_LEN], *replica_ip = replica->repl_data->replica_addr;
+            int port;
+            long lag = 0;
+
+            if (!replica_ip) {
+                if (connAddrPeerName(replica->conn, ip, sizeof(ip), &port) == -1) continue;
+                replica_ip = ip;
+            }
+            const char *state = replstateToString(replica->repl_data->repl_state);
+            if (state[0] == '\0') continue;
+            if (replica->repl_data->repl_state == REPLICA_STATE_ONLINE) lag = time(NULL) - replica->repl_data->repl_ack_time;
+
+            info = sdscatprintf(info,
+                                "slave%d:ip=%s,port=%d,state=%s,"
+                                "offset=%lld,lag=%ld,type=%s\r\n",
+                                replica_id, replica_ip, replica->repl_data->replica_listening_port, state,
+                                replica->repl_data->repl_ack_off, lag,
+                                replica->flag.repl_rdb_channel                                ? "rdb-channel"
+                                : replica->repl_data->repl_state == REPLICA_STATE_BG_RDB_LOAD ? "main-channel"
+                                                                                              : "replica");
+            replica_id++;
+        }
+    }
+
+    return info;
+}
+
 /* Create the string returned by the INFO command. This is decoupled
  * by the INFO command itself as we need to report the same information
  * on memory corruption problems. */
@@ -5628,6 +5664,33 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
     int j;
     int sections = 0;
     if (everything) all_sections = 1;
+
+    if (dictFind(section_dict, "sentinel") != NULL) {
+        info = sdscatprintf(info, FMTARGS(
+                                      "run_id:%s\r\n", server.runid,
+                                      "role:%s\r\n", server.primary_host == NULL ? "master" : "slave"));
+        info = genValKeyReplicasInfo(info);
+        if (server.primary_host) {
+            long long replica_repl_offset = 1;
+            if (server.primary) {
+                replica_repl_offset = server.primary->repl_data->reploff;
+            } else if (server.cached_primary) {
+                replica_repl_offset = server.cached_primary->repl_data->reploff;
+            }
+
+            info = sdscatprintf(info, FMTARGS(
+                                          "master_host:%s\r\n", server.primary_host,
+                                          "master_port:%d\r\n", server.primary_port,
+                                          "master_link_status:%s\r\n", (server.repl_state == REPL_STATE_CONNECTED) ? "up" : "down",
+                                          "slave_priority:%d\r\n", server.replica_priority,
+                                          "slave_repl_offset:%lld\r\n", replica_repl_offset,
+                                          "replica_announced:%d\r\n", server.replica_announced));
+        }
+        if (server.repl_state != REPL_STATE_CONNECTED) {
+            info = sdscatprintf(info, "master_link_down_since_seconds:%jd\r\n",
+                                server.repl_down_since ? (intmax_t)(server.unixtime - server.repl_down_since) : -1);
+        }
+    }
 
     /* Server */
     if (all_sections || (dictFind(section_dict, "server") != NULL)) {
@@ -5695,7 +5758,8 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "executable:%s\r\n", server.executable ? server.executable : "",
                 "config_file:%s\r\n", server.configfile ? server.configfile : "",
                 "io_threads_active:%i\r\n", server.active_io_threads_num > 1,
-                "availability_zone:%s\r\n", server.availability_zone));
+                "availability_zone:%s\r\n", server.availability_zone,
+                "info_simple_for_sentinel:%i\r\n", server.info_simple_for_sentinel));
 
         /* Conditional properties */
         if (isShutdownInitiated()) {
@@ -6083,37 +6147,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
             info = sdscatprintf(info, "min_slaves_good_slaves:%d\r\n", server.repl_good_replicas_count);
         }
 
-        if (listLength(server.replicas)) {
-            int replica_id = 0;
-            listNode *ln;
-            listIter li;
-
-            listRewind(server.replicas, &li);
-            while ((ln = listNext(&li))) {
-                client *replica = listNodeValue(ln);
-                char ip[NET_IP_STR_LEN], *replica_ip = replica->repl_data->replica_addr;
-                int port;
-                long lag = 0;
-
-                if (!replica_ip) {
-                    if (connAddrPeerName(replica->conn, ip, sizeof(ip), &port) == -1) continue;
-                    replica_ip = ip;
-                }
-                const char *state = replstateToString(replica->repl_data->repl_state);
-                if (state[0] == '\0') continue;
-                if (replica->repl_data->repl_state == REPLICA_STATE_ONLINE) lag = time(NULL) - replica->repl_data->repl_ack_time;
-
-                info = sdscatprintf(info,
-                                    "slave%d:ip=%s,port=%d,state=%s,"
-                                    "offset=%lld,lag=%ld,type=%s\r\n",
-                                    replica_id, replica_ip, replica->repl_data->replica_listening_port, state,
-                                    replica->repl_data->repl_ack_off, lag,
-                                    replica->flag.repl_rdb_channel                                ? "rdb-channel"
-                                    : replica->repl_data->repl_state == REPLICA_STATE_BG_RDB_LOAD ? "main-channel"
-                                                                                                  : "replica");
-                replica_id++;
-            }
-        }
+        info = genValKeyReplicasInfo(info);
         info = sdscatprintf(
             info,
             FMTARGS(
@@ -6646,8 +6680,8 @@ void dismissMemoryInChild(void) {
     /* madvise(MADV_DONTNEED) may not work if Transparent Huge Pages is enabled. */
     if (server.thp_enabled) return;
 
-        /* Currently we use zmadvise_dontneed only when we use jemalloc with Linux.
-         * so we avoid these pointless loops when they're not going to do anything. */
+    /* Currently we use zmadvise_dontneed only when we use jemalloc with Linux.
+     * so we avoid these pointless loops when they're not going to do anything. */
 #if defined(USE_JEMALLOC) && defined(__linux__)
     listIter li;
     listNode *ln;
@@ -7092,7 +7126,7 @@ __attribute__((weak)) int main(int argc, char **argv) {
     }
     if (server.sentinel_mode) sentinelCheckConfigFile();
 
-        /* Do system checks */
+    /* Do system checks */
 #ifdef __linux__
     linuxMemoryWarnings();
     sds err_msg = NULL;

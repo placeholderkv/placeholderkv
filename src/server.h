@@ -2144,6 +2144,9 @@ struct valkeyServer {
     /* Local environment */
     char *locale_collate;
     char *debug_context; /* A free-form string that has no impact on server except being included in a crash report. */
+
+    /* capabilities */
+    int info_simple_for_sentinel; /* server support simple info for sentinel. */
 };
 
 #define MAX_KEYS_BUFFER 256
