@@ -48,6 +48,7 @@ struct {
     unsigned long keys;            /* Number of keys processed. */
     unsigned long expires;         /* Number of keys with an expire. */
     unsigned long already_expired; /* Number of keys already expired. */
+    unsigned long lua_scripts;     /* Number of lua scripts. */
     int doing;                     /* The state while reading the RDB. */
     int error_set;                 /* True if error is populated. */
     char error[1024];
@@ -109,6 +110,9 @@ void rdbShowGenericInfo(void) {
     printf("[info] %lu keys read\n", rdbstate.keys);
     printf("[info] %lu expires\n", rdbstate.expires);
     printf("[info] %lu already expired\n", rdbstate.already_expired);
+    if (rdbstate.lua_scripts) {
+        printf("[info] %lu lua scripts read\n", rdbstate.lua_scripts);
+    }
 }
 
 /* Called on RDB errors. Provides details about the RDB and the offset
@@ -281,6 +285,13 @@ int redis_check_rdb(char *rdbfilename, FILE *fp) {
                 goto eoferr;
             }
 
+            if (!strcasecmp(auxkey->ptr, "lua")) {
+                /* In older version before 7.0, we may save lua scripts in a replication RDB,
+                 * although it is not an actually aux field, we will still print it in here since
+                 * it's easy to filter using external grep. Use a counter so that at the end we
+                 * can print its number, if any. */
+                rdbstate.lua_scripts++;
+            }
             rdbCheckInfo("AUX FIELD %s = '%s'", (char *)auxkey->ptr, (char *)auxval->ptr);
             decrRefCount(auxkey);
             decrRefCount(auxval);
