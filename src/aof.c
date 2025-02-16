@@ -923,7 +923,7 @@ void killAppendOnlyChild(void) {
     if (kill(server.child_pid, SIGUSR1) != -1) {
         while (waitpid(-1, &statloc, 0) != server.child_pid);
     }
-    aofRemoveTempFile(server.child_pid);
+    aofRemoveTempFile(server.child_pid, 0);
     resetChildState();
     server.aof_rewrite_time_start = -1;
 }
@@ -2471,14 +2471,37 @@ void bgrewriteaofCommand(client *c) {
     }
 }
 
-void aofRemoveTempFile(pid_t childpid) {
+/* Note that we may call this function in signal handle 'sigShutdownHandler',
+ * so we need guarantee all functions we call are async-signal-safe.
+ * If we call this function from signal handle, we won't call bg_unlink that
+ * is not async-signal-safe. */
+void aofRemoveTempFile(pid_t childpid, int from_signal) {
     char tmpfile[256];
+    char tmpfile2[256];
+    char pid[32];
 
-    snprintf(tmpfile, 256, "temp-rewriteaof-bg-%d.aof", (int)childpid);
-    bg_unlink(tmpfile);
+    /* Generate temp aof file name using aync-signal safe functions. */
+    ll2string(pid, sizeof(pid), childpid);
+    valkey_strlcpy(tmpfile, "temp-rewriteaof-bg-", sizeof(tmpfile));
+    valkey_strlcat(tmpfile, pid, sizeof(tmpfile));
+    valkey_strlcat(tmpfile, ".aof", sizeof(tmpfile));
+    valkey_strlcpy(tmpfile2, "temp-rewriteaof-", sizeof(tmpfile2));
+    valkey_strlcat(tmpfile2, pid, sizeof(tmpfile2));
+    valkey_strlcat(tmpfile2, ".aof", sizeof(tmpfile2));
 
-    snprintf(tmpfile, 256, "temp-rewriteaof-%d.aof", (int)childpid);
-    bg_unlink(tmpfile);
+    if (from_signal) {
+        /* bg_unlink is not async-signal-safe, but in this case we don't really
+         * need to close the fd, it'll be released when the process exists. */
+        int fd = open(tmpfile, O_RDONLY | O_NONBLOCK);
+        int fd2 = open(tmpfile2, O_RDONLY | O_NONBLOCK);
+        UNUSED(fd);
+        UNUSED(fd2);
+        unlink(tmpfile);
+        unlink(tmpfile2);
+    } else {
+        bg_unlink(tmpfile);
+        bg_unlink(tmpfile2);
+    }
 }
 
 /* Get size of an AOF file.
@@ -2676,7 +2699,7 @@ void backgroundRewriteDoneHandler(int exitcode, int bysignal) {
     }
 
 cleanup:
-    aofRemoveTempFile(server.child_pid);
+    aofRemoveTempFile(server.child_pid, 0);
     /* Clear AOF buffer and delete temp incr aof for next rewrite. */
     if (server.aof_state == AOF_WAIT_REWRITE) {
         sdsfree(server.aof_buf);

@@ -2980,7 +2980,7 @@ int bg_unlink(const char *filename);
 /* AOF persistence */
 void flushAppendOnlyFile(int force);
 void feedAppendOnlyFile(int dictid, robj **argv, int argc);
-void aofRemoveTempFile(pid_t childpid);
+void aofRemoveTempFile(pid_t childpid, int from_signal);
 int rewriteAppendOnlyFileBackground(void);
 int loadAppendOnlyFiles(aofManifest *am);
 void stopAppendOnly(void);

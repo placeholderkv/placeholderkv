@@ -67,7 +67,7 @@ start_server {tags {"shutdown external:skip"} overrides {save {900 1}}} {
         wait_for_condition 50 10 {
             ![file exists $temp_rdb]
         } else {
-            fail "Can't trigger rdb save on shutdown"
+            fail "Can't delete rdb temp file on shutdown"
         }
     }
 }

@@ -6473,7 +6473,15 @@ static void sigShutdownHandler(int sig) {
      * on disk and without waiting for lagging replicas. */
     if (server.shutdown_asap && sig == SIGINT) {
         serverLogRawFromHandler(LL_WARNING, "You insist... exiting now.");
-        rdbRemoveTempFile(getpid(), 1);
+        /* Make sure the process cleans up the temp files before exiting.
+         * We let the parent process handle this. For RDB, we have foreground save
+         * and background save, so we need to handle both pid and child_pid. For AOF,
+         * we only have background aof rewrite, so we only need to handle child_pid. */
+        if (!server.in_fork_child) {
+            rdbRemoveTempFile(server.pid, 1);
+            rdbRemoveTempFile(server.child_pid, 1);
+            aofRemoveTempFile(server.child_pid, 1);
+        }
         exit(1); /* Exit with an error since this was not a clean shutdown. */
     } else if (server.loading) {
         msg = "Received shutdown signal during loading, scheduling shutdown.";
