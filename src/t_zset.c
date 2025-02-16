@@ -2507,16 +2507,20 @@ static int zsetChooseDiffAlgorithm(zsetopsrc *src, long setnum) {
 }
 
 static void zdiff(zsetopsrc *src, long setnum, zset *dstzset, size_t *maxelelen, size_t *totelelen) {
-    /* Skip everything if the smallest input is empty. */
-    if (zuiLength(&src[0]) > 0) {
-        int diff_algo = zsetChooseDiffAlgorithm(src, setnum);
-        if (diff_algo == 1) {
-            zdiffAlgorithm1(src, setnum, dstzset, maxelelen, totelelen);
-        } else if (diff_algo == 2) {
-            zdiffAlgorithm2(src, setnum, dstzset, maxelelen, totelelen);
-        } else if (diff_algo != 0) {
-            serverPanic("Unknown algorithm");
-        }
+    /* ZDIFF computes the difference between the first and all successive input sorted sets.
+     * Meaning, if the first key is empty, we cannot reduce further from an already empty collection,
+     * and thus zdiff() becomes a no-op. */
+    if (zuiLength(&src[0]) == 0) {
+        return;
+    }
+
+    int diff_algo = zsetChooseDiffAlgorithm(src, setnum);
+    if (diff_algo == 1) {
+        zdiffAlgorithm1(src, setnum, dstzset, maxelelen, totelelen);
+    } else if (diff_algo == 2) {
+        zdiffAlgorithm2(src, setnum, dstzset, maxelelen, totelelen);
+    } else if (diff_algo != 0) {
+        serverPanic("Unknown algorithm");
     }
 }
 
