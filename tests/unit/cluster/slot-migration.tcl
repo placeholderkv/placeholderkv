@@ -80,12 +80,6 @@ proc wait_for_slot_state {srv_idx pattern} {
     }
 }
 
-# Check if the server responds with "PONG"
-proc check_server_response {server_id} {
-    # Send a PING command and check if the response is "PONG"
-    return [expr {[catch {R $server_id PING} result] == 0 && $result eq "PONG"}]
-}
-
 # restart a server and wait for it to come back online
 proc fail_server {server_id} {
     set node_timeout [lindex [R 0 CONFIG GET cluster-node-timeout] 1]

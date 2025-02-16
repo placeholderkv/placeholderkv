@@ -365,3 +365,9 @@ proc ::valkey_cluster::get_slot_from_keys {keys} {
     }
     return $slot
 }
+
+# Check if the server responds with "PONG"
+proc check_server_response {server_id} {
+    # Send a PING command and check if the response is "PONG"
+    return [expr {[catch {R $server_id PING} result] == 0 && $result eq "PONG"}]
+}
