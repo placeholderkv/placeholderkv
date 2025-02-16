@@ -1893,14 +1893,14 @@ int streamGenericParseIDOrReply(client *c,
     unsigned long long ms, seq;
     char *dot = strchr(buf, '-');
     if (dot) *dot = '\0';
-    if (string2ull(buf, &ms) == 0) goto invalid;
+    if (string2ull(buf, strlen(buf), &ms) == 0) goto invalid;
     if (dot) {
         size_t seqlen = strlen(dot + 1);
         if (seq_given != NULL && seqlen == 1 && *(dot + 1) == '*') {
             /* Handle the <ms>-* form. */
             seq = 0;
             *seq_given = 0;
-        } else if (string2ull(dot + 1, &seq) == 0) {
+        } else if (string2ull(dot + 1, seqlen, &seq) == 0) {
             goto invalid;
         }
     } else {

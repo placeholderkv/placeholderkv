@@ -3320,10 +3320,11 @@ sds keyspaceEventsFlagsToString(int flags);
                                          * to apply the configuration change even if the new config value is the same as    \
                                          * the old. */
 
-#define INTEGER_CONFIG 0        /* No flags means a simple integer configuration */
-#define MEMORY_CONFIG (1 << 0)  /* Indicates if this value can be loaded as a memory value */
-#define PERCENT_CONFIG (1 << 1) /* Indicates if this value can be loaded as a percent (and stored as a negative int) */
-#define OCTAL_CONFIG (1 << 2)   /* This value uses octal representation */
+#define INTEGER_CONFIG 0         /* No flags means a simple integer configuration */
+#define MEMORY_CONFIG (1 << 0)   /* Indicates if this value can be loaded as a memory value */
+#define PERCENT_CONFIG (1 << 1)  /* Indicates if this value can be loaded as a percent (and stored as a negative int) */
+#define OCTAL_CONFIG (1 << 2)    /* This value uses octal representation */
+#define UNSIGNED_CONFIG (1 << 3) /* This value uses unsigned representation */
 
 /* Enum Configs contain an array of configEnum objects that match a string with an integer. */
 typedef struct configEnum {
@@ -3376,6 +3377,14 @@ void addModuleNumericConfig(const char *module_name,
                             int conf_flags,
                             long long lower,
                             long long upper);
+void addModuleUnsignedNumericConfig(const char *module_name,
+                                    const char *name,
+                                    int flags,
+                                    void *privdata,
+                                    unsigned long long default_val,
+                                    int conf_flags,
+                                    unsigned long long lower,
+                                    unsigned long long upper);
 void addModuleConfigApply(list *module_configs, ModuleConfig *module_config);
 int moduleConfigApplyConfig(list *module_configs, const char **err, const char **err_arg_name);
 int getModuleBoolConfig(ModuleConfig *module_config);
@@ -3386,6 +3395,8 @@ int getModuleEnumConfig(ModuleConfig *module_config);
 int setModuleEnumConfig(ModuleConfig *config, int val, const char **err);
 long long getModuleNumericConfig(ModuleConfig *module_config);
 int setModuleNumericConfig(ModuleConfig *config, long long val, const char **err);
+unsigned long long getModuleUnsignedNumericConfig(ModuleConfig *module_config);
+int setModuleUnsignedNumericConfig(ModuleConfig *config, unsigned long long val, const char **err);
 
 /* db.c -- Keyspace access API */
 int removeExpire(serverDb *db, robj *key);

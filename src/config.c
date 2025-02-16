@@ -1364,6 +1364,17 @@ void rewriteConfigOctalOption(struct rewriteConfigState *state,
     rewriteConfigRewriteLine(state, option, line, force);
 }
 
+/* Rewrite an unsigned number option. */
+void rewriteConfigUnsignedOption(struct rewriteConfigState *state,
+                                 const char *option,
+                                 unsigned long long value,
+                                 unsigned long long defvalue) {
+    int force = value != defvalue;
+    sds line = sdscatprintf(sdsempty(), "%s %llu", option, value);
+
+    rewriteConfigRewriteLine(state, option, line, force);
+}
+
 /* Rewrite an enumeration option. It takes as usually state and option name,
  * and in addition the enumeration array and the default value for the
  * option. */
@@ -2033,7 +2044,10 @@ int setNumericType(standardConfig *config, long long val, const char **err) {
         else
             *(config->data.numeric.config.ll) = (long long)val;
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_ULONG_LONG) {
-        *(config->data.numeric.config.ull) = (unsigned long long)val;
+        if (config->flags & MODULE_CONFIG)
+            return setModuleUnsignedNumericConfig(config->privdata, (unsigned long long)val, err);
+        else
+            *(config->data.numeric.config.ull) = (unsigned long long)val;
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_SIZE_T) {
         *(config->data.numeric.config.st) = (size_t)val;
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_SSIZE_T) {
@@ -2063,7 +2077,10 @@ int setNumericType(standardConfig *config, long long val, const char **err) {
         else                                                                   \
             val = *(config->data.numeric.config.ll);                           \
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_ULONG_LONG) { \
-        val = *(config->data.numeric.config.ull);                              \
+        if (config->flags & MODULE_CONFIG)                                     \
+            val = getModuleUnsignedNumericConfig(config->privdata);            \
+        else                                                                   \
+            val = *(config->data.numeric.config.ull);                          \
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_SIZE_T) {     \
         val = *(config->data.numeric.config.st);                               \
     } else if (config->data.numeric.numeric_type == NUMERIC_TYPE_SSIZE_T) {    \
@@ -2140,8 +2157,18 @@ static int numericParseString(standardConfig *config, sds value, const char **er
     if (config->data.numeric.flags & OCTAL_CONFIG) {
         char *endptr;
         errno = 0;
-        *res = strtoll(value, &endptr, 8);
+        *res = strtoull(value, &endptr, 8);
         if (errno == 0 && *endptr == '\0') return 1; /* No overflow or invalid characters */
+    }
+
+    /* Attempt to parse as an unsigned number */
+    if (config->data.numeric.flags & UNSIGNED_CONFIG) {
+        unsigned long long ull;
+        int ok = string2ull(value, sdslen(value), &ull);
+        if (ok) {
+            *res = (long long)ull;
+            return 1; /* No overflow or invalid characters */
+        }
     }
 
     /* Attempt a simple number (no special flags set) */
@@ -2154,6 +2181,8 @@ static int numericParseString(standardConfig *config, sds value, const char **er
         *err = "argument must be a memory value";
     else if (config->data.numeric.flags & OCTAL_CONFIG)
         *err = "argument couldn't be parsed as an octal number";
+    else if (config->data.numeric.flags & UNSIGNED_CONFIG)
+        *err = "argument couldn't be parsed as an unsigned number";
     else
         *err = "argument couldn't be parsed into an integer";
     return 0;
@@ -2191,6 +2220,8 @@ static sds numericConfigGet(standardConfig *config) {
         ull2string(buf, sizeof(buf), value);
     } else if (config->data.numeric.flags & OCTAL_CONFIG) {
         snprintf(buf, sizeof(buf), "%llo", value);
+    } else if (config->data.numeric.flags & UNSIGNED_CONFIG) {
+        ull2string(buf, sizeof(buf), (unsigned long long)value);
     } else {
         ll2string(buf, sizeof(buf), value);
     }
@@ -2208,6 +2239,8 @@ static void numericConfigRewrite(standardConfig *config, const char *name, struc
         rewriteConfigBytesOption(state, name, value, config->data.numeric.default_value);
     } else if (config->data.numeric.flags & OCTAL_CONFIG) {
         rewriteConfigOctalOption(state, name, value, config->data.numeric.default_value);
+    } else if (config->data.numeric.flags & UNSIGNED_CONFIG) {
+        rewriteConfigUnsignedOption(state, name, value, config->data.numeric.default_value);
     } else {
         rewriteConfigNumericalOption(state, name, value, config->data.numeric.default_value);
     }
@@ -3494,6 +3527,23 @@ void addModuleNumericConfig(const char *module_name,
     standardConfig module_config = createLongLongConfig(config_name, NULL, flags | MODULE_CONFIG, lower, upper,
                                                         config_dummy_address, default_val, conf_flags, NULL, NULL);
     module_config.data.numeric.config.ll = NULL;
+    module_config.privdata = privdata;
+    registerConfigValue(config_name, &module_config, 0);
+}
+
+void addModuleUnsignedNumericConfig(const char *module_name,
+                                    const char *name,
+                                    int flags,
+                                    void *privdata,
+                                    unsigned long long default_val,
+                                    int conf_flags,
+                                    unsigned long long lower,
+                                    unsigned long long upper) {
+    sds config_name = sdscatfmt(sdsempty(), "%s.%s", module_name, name);
+    unsigned long long config_dummy_address;
+    standardConfig module_config = createULongLongConfig(config_name, NULL, flags | MODULE_CONFIG, lower, upper,
+                                                         config_dummy_address, default_val, conf_flags, NULL, NULL);
+    module_config.data.numeric.config.ull = NULL;
     module_config.privdata = privdata;
     registerConfigValue(config_name, &module_config, 0);
 }

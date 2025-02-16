@@ -81,6 +81,15 @@ start_server {tags {"modules"}} {
         assert_match {*argument must be between*} $e
     }
 
+    test {Unsigned numeric limits work properly} {
+        catch {[r config set moduleconfigs.unsigned_numeric 9223372036854790000]} e
+        assert_match {*argument must be between*} $e
+        catch {[r config set moduleconfigs.unsigned_numeric 184467440737095516150]} e
+        assert_match {*argument couldn't be parsed as an unsigned*} $e
+        catch {[r config set moduleconfigs.unsigned_numeric -5]} e
+        assert_match {*argument couldn't be parsed as an unsigned*} $e
+    }
+
     test {Enums only able to be set to passed in values} {
         # Module authors specify what values are valid for enums, check that only those values are ok on a set
         catch {[r config set moduleconfigs.enum asdf]} e
@@ -103,6 +112,7 @@ start_server {tags {"modules"}} {
         assert_equal [r config get moduleconfigs.enum] "moduleconfigs.enum one"
         assert_equal [r config get moduleconfigs.flags] "moduleconfigs.flags {one two}"
         assert_equal [r config get moduleconfigs.numeric] "moduleconfigs.numeric -1"
+        assert_equal [r config get moduleconfigs.unsigned_numeric] "moduleconfigs.unsigned_numeric 1"
         r module unload moduleconfigs
     }
 
@@ -117,6 +127,7 @@ start_server {tags {"modules"}} {
         assert_equal [r config get moduleconfigs.enum] "moduleconfigs.enum one"
         assert_equal [r config get moduleconfigs.flags] "moduleconfigs.flags {one two}"
         assert_equal [r config get moduleconfigs.numeric] "moduleconfigs.numeric -1"
+        assert_equal [r config get moduleconfigs.unsigned_numeric] "moduleconfigs.unsigned_numeric 1"
     }
 
     test {apply function works} {
@@ -177,6 +188,7 @@ start_server {tags {"modules"}} {
         r config set moduleconfigs.memory_numeric 750
         r config set moduleconfigs.enum two
         r config set moduleconfigs.flags "four two"
+        r config set moduleconfigs.unsigned_numeric 9223372036854775808
         r config rewrite
         restart_server 0 true false
         # Ensure configs we rewrote are present and that the conf file is readable
@@ -186,6 +198,7 @@ start_server {tags {"modules"}} {
         assert_equal [r config get moduleconfigs.enum] "moduleconfigs.enum two"
         assert_equal [r config get moduleconfigs.flags] "moduleconfigs.flags {two four}"
         assert_equal [r config get moduleconfigs.numeric] "moduleconfigs.numeric -1"
+        assert_equal [r config get moduleconfigs.unsigned_numeric] "moduleconfigs.unsigned_numeric 9223372036854775808"
         r module unload moduleconfigs
     }
 

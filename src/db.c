@@ -1037,7 +1037,7 @@ void hashtableScanCallback(void *privdata, void *entry) {
  * returns C_OK. Otherwise return C_ERR and send an error to the
  * client. */
 int parseScanCursorOrReply(client *c, robj *o, unsigned long long *cursor) {
-    if (!string2ull(o->ptr, cursor)) {
+    if (!string2ull(o->ptr, sdslen(o->ptr), cursor)) {
         addReplyError(c, "invalid cursor");
         return C_ERR;
     }

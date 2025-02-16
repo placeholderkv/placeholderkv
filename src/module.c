@@ -452,6 +452,7 @@ typedef struct ValkeyModuleKeyOptCtx {
 /* The function signatures for module config get callbacks. These are identical to the ones exposed in valkeymodule.h. */
 typedef ValkeyModuleString *(*ValkeyModuleConfigGetStringFunc)(const char *name, void *privdata);
 typedef long long (*ValkeyModuleConfigGetNumericFunc)(const char *name, void *privdata);
+typedef unsigned long long (*ValkeyModuleConfigGetUnsignedNumericFunc)(const char *name, void *privdata);
 typedef int (*ValkeyModuleConfigGetBoolFunc)(const char *name, void *privdata);
 typedef int (*ValkeyModuleConfigGetEnumFunc)(const char *name, void *privdata);
 /* The function signatures for module config set callbacks. These are identical to the ones exposed in valkeymodule.h. */
@@ -463,6 +464,10 @@ typedef int (*ValkeyModuleConfigSetNumericFunc)(const char *name,
                                                 long long val,
                                                 void *privdata,
                                                 ValkeyModuleString **err);
+typedef int (*ValkeyModuleConfigSetUnsignedNumericFunc)(const char *name,
+                                                        unsigned long long val,
+                                                        void *privdata,
+                                                        ValkeyModuleString **err);
 typedef int (*ValkeyModuleConfigSetBoolFunc)(const char *name, int val, void *privdata, ValkeyModuleString **err);
 typedef int (*ValkeyModuleConfigSetEnumFunc)(const char *name, int val, void *privdata, ValkeyModuleString **err);
 /* Apply signature, identical to valkeymodule.h */
@@ -475,12 +480,14 @@ struct ModuleConfig {
     union get_fn {  /* The get callback specified by the module */
         ValkeyModuleConfigGetStringFunc get_string;
         ValkeyModuleConfigGetNumericFunc get_numeric;
+        ValkeyModuleConfigGetUnsignedNumericFunc get_unsigned_numeric;
         ValkeyModuleConfigGetBoolFunc get_bool;
         ValkeyModuleConfigGetEnumFunc get_enum;
     } get_fn;
     union set_fn { /* The set callback specified by the module */
         ValkeyModuleConfigSetStringFunc set_string;
         ValkeyModuleConfigSetNumericFunc set_numeric;
+        ValkeyModuleConfigSetUnsignedNumericFunc set_unsigned_numeric;
         ValkeyModuleConfigSetBoolFunc set_bool;
         ValkeyModuleConfigSetEnumFunc set_enum;
     } set_fn;
@@ -2968,7 +2975,7 @@ int VM_StringToLongLong(const ValkeyModuleString *str, long long *ll) {
  * as a valid, strict `unsigned long long` (no spaces before/after), VALKEYMODULE_ERR
  * is returned. */
 int VM_StringToULongLong(const ValkeyModuleString *str, unsigned long long *ull) {
-    return string2ull(str->ptr, ull) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
+    return string2ull(str->ptr, sdslen(str->ptr), ull) ? VALKEYMODULE_OK : VALKEYMODULE_ERR;
 }
 
 /* Convert the string into a double, storing it at `*d`.
@@ -10542,7 +10549,7 @@ unsigned long long VM_ServerInfoGetFieldUnsigned(ValkeyModuleServerInfoData *dat
         return 0;
     }
     sds val = result;
-    if (!string2ull(val, &ll)) {
+    if (!string2ull(val, sdslen(val), &ll)) {
         if (out_err) *out_err = VALKEYMODULE_ERR;
         return 0;
     }
@@ -12574,11 +12581,11 @@ int isModuleConfigNameRegistered(ValkeyModule *module, const char *name) {
 int moduleVerifyConfigFlags(unsigned int flags, configType type) {
     if ((flags & ~(VALKEYMODULE_CONFIG_DEFAULT | VALKEYMODULE_CONFIG_IMMUTABLE | VALKEYMODULE_CONFIG_SENSITIVE |
                    VALKEYMODULE_CONFIG_HIDDEN | VALKEYMODULE_CONFIG_PROTECTED | VALKEYMODULE_CONFIG_DENY_LOADING |
-                   VALKEYMODULE_CONFIG_BITFLAGS | VALKEYMODULE_CONFIG_MEMORY))) {
+                   VALKEYMODULE_CONFIG_BITFLAGS | VALKEYMODULE_CONFIG_MEMORY | VALKEYMODULE_CONFIG_UNSIGNED))) {
         serverLogRaw(LL_WARNING, "Invalid flag(s) for configuration");
         return VALKEYMODULE_ERR;
     }
-    if (type != NUMERIC_CONFIG && flags & VALKEYMODULE_CONFIG_MEMORY) {
+    if (type != NUMERIC_CONFIG && (flags & (VALKEYMODULE_CONFIG_MEMORY | VALKEYMODULE_CONFIG_UNSIGNED))) {
         serverLogRaw(LL_WARNING, "Numeric flag provided for non-numeric configuration.");
         return VALKEYMODULE_ERR;
     }
@@ -12650,6 +12657,13 @@ int setModuleNumericConfig(ModuleConfig *config, long long val, const char **err
     return return_code == VALKEYMODULE_OK ? 1 : 0;
 }
 
+int setModuleUnsignedNumericConfig(ModuleConfig *config, unsigned long long val, const char **err) {
+    ValkeyModuleString *error = NULL;
+    int return_code = config->set_fn.set_unsigned_numeric(config->name, val, config->privdata, &error);
+    propagateErrorString(error, err);
+    return return_code == VALKEYMODULE_OK ? 1 : 0;
+}
+
 /* This is a series of get functions for each type that act as dispatchers for
  * config.c to call module set callbacks. */
 int getModuleBoolConfig(ModuleConfig *module_config) {
@@ -12667,6 +12681,10 @@ int getModuleEnumConfig(ModuleConfig *module_config) {
 
 long long getModuleNumericConfig(ModuleConfig *module_config) {
     return module_config->get_fn.get_numeric(module_config->name, module_config->privdata);
+}
+
+unsigned long long getModuleUnsignedNumericConfig(ModuleConfig *module_config) {
+    return module_config->get_fn.get_unsigned_numeric(module_config->name, module_config->privdata);
 }
 
 /* This function takes a module and a list of configs stored as sds NAME VALUE pairs.
@@ -12789,6 +12807,7 @@ unsigned int maskModuleConfigFlags(unsigned int flags) {
 unsigned int maskModuleNumericConfigFlags(unsigned int flags) {
     unsigned int new_flags = 0;
     if (flags & VALKEYMODULE_CONFIG_MEMORY) new_flags |= MEMORY_CONFIG;
+    if (flags & VALKEYMODULE_CONFIG_UNSIGNED) new_flags |= UNSIGNED_CONFIG;
     return new_flags;
 }
 
@@ -13010,6 +13029,34 @@ int VM_RegisterNumericConfig(ValkeyModuleCtx *ctx,
     unsigned int numeric_flags = maskModuleNumericConfigFlags(flags);
     flags = maskModuleConfigFlags(flags);
     addModuleNumericConfig(module->name, name, flags, new_config, default_val, numeric_flags, min, max);
+    return VALKEYMODULE_OK;
+}
+
+/*
+ * Create an unsigned integer config that server clients can interact with via the
+ * `CONFIG SET`, `CONFIG GET`, and `CONFIG REWRITE` commands. See
+ * ValkeyModule_RegisterStringConfig for detailed information about configs. */
+int VM_RegisterUnsignedNumericConfig(ValkeyModuleCtx *ctx,
+                                     const char *name,
+                                     unsigned long long default_val,
+                                     unsigned int flags,
+                                     unsigned long long min,
+                                     unsigned long long max,
+                                     ValkeyModuleConfigGetUnsignedNumericFunc getfn,
+                                     ValkeyModuleConfigSetUnsignedNumericFunc setfn,
+                                     ValkeyModuleConfigApplyFunc applyfn,
+                                     void *privdata) {
+    ValkeyModule *module = ctx->module;
+    if (moduleConfigValidityCheck(module, name, flags, NUMERIC_CONFIG)) {
+        return VALKEYMODULE_ERR;
+    }
+    ModuleConfig *new_config = createModuleConfig(name, applyfn, privdata, module);
+    new_config->get_fn.get_unsigned_numeric = getfn;
+    new_config->set_fn.set_unsigned_numeric = setfn;
+    listAddNodeTail(module->module_configs, new_config);
+    unsigned int numeric_flags = maskModuleNumericConfigFlags(flags);
+    flags = maskModuleConfigFlags(flags);
+    addModuleUnsignedNumericConfig(module->name, name, flags, new_config, default_val, numeric_flags, min, max);
     return VALKEYMODULE_OK;
 }
 
@@ -14095,6 +14142,7 @@ void moduleRegisterCoreAPI(void) {
     REGISTER_API(Yield);
     REGISTER_API(RegisterBoolConfig);
     REGISTER_API(RegisterNumericConfig);
+    REGISTER_API(RegisterUnsignedNumericConfig);
     REGISTER_API(RegisterStringConfig);
     REGISTER_API(RegisterEnumConfig);
     REGISTER_API(LoadConfigs);

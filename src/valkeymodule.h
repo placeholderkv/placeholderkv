@@ -146,6 +146,7 @@ typedef long long ustime_t;
 
 #define VALKEYMODULE_CONFIG_MEMORY (1ULL << 7)   /* Indicates if this value can be set as a memory value */
 #define VALKEYMODULE_CONFIG_BITFLAGS (1ULL << 8) /* Indicates if this value can be set as a multiple enum values */
+#define VALKEYMODULE_CONFIG_UNSIGNED (1ULL << 9)
 
 /* StreamID type. */
 typedef struct ValkeyModuleStreamID {
@@ -1096,6 +1097,7 @@ typedef void (*ValkeyModuleScanKeyCB)(ValkeyModuleKey *key,
                                       void *privdata);
 typedef ValkeyModuleString *(*ValkeyModuleConfigGetStringFunc)(const char *name, void *privdata);
 typedef long long (*ValkeyModuleConfigGetNumericFunc)(const char *name, void *privdata);
+typedef unsigned long long (*ValkeyModuleConfigGetUnsignedNumericFunc)(const char *name, void *privdata);
 typedef int (*ValkeyModuleConfigGetBoolFunc)(const char *name, void *privdata);
 typedef int (*ValkeyModuleConfigGetEnumFunc)(const char *name, void *privdata);
 typedef int (*ValkeyModuleConfigSetStringFunc)(const char *name,
@@ -1106,6 +1108,10 @@ typedef int (*ValkeyModuleConfigSetNumericFunc)(const char *name,
                                                 long long val,
                                                 void *privdata,
                                                 ValkeyModuleString **err);
+typedef int (*ValkeyModuleConfigSetUnsignedNumericFunc)(const char *name,
+                                                        unsigned long long val,
+                                                        void *privdata,
+                                                        ValkeyModuleString **err);
 typedef int (*ValkeyModuleConfigSetBoolFunc)(const char *name, int val, void *privdata, ValkeyModuleString **err);
 typedef int (*ValkeyModuleConfigSetEnumFunc)(const char *name, int val, void *privdata, ValkeyModuleString **err);
 typedef int (*ValkeyModuleConfigApplyFunc)(ValkeyModuleCtx *ctx, void *privdata, ValkeyModuleString **err);
@@ -1838,6 +1844,16 @@ VALKEYMODULE_API int (*ValkeyModule_RegisterNumericConfig)(ValkeyModuleCtx *ctx,
                                                            ValkeyModuleConfigSetNumericFunc setfn,
                                                            ValkeyModuleConfigApplyFunc applyfn,
                                                            void *privdata) VALKEYMODULE_ATTR;
+VALKEYMODULE_API int (*ValkeyModule_RegisterUnsignedNumericConfig)(ValkeyModuleCtx *ctx,
+                                                                   const char *name,
+                                                                   unsigned long long default_val,
+                                                                   unsigned int flags,
+                                                                   unsigned long long min,
+                                                                   unsigned long long max,
+                                                                   ValkeyModuleConfigGetUnsignedNumericFunc getfn,
+                                                                   ValkeyModuleConfigSetUnsignedNumericFunc setfn,
+                                                                   ValkeyModuleConfigApplyFunc applyfn,
+                                                                   void *privdata) VALKEYMODULE_ATTR;
 VALKEYMODULE_API int (*ValkeyModule_RegisterStringConfig)(ValkeyModuleCtx *ctx,
                                                           const char *name,
                                                           const char *default_val,
@@ -2238,6 +2254,7 @@ static int ValkeyModule_Init(ValkeyModuleCtx *ctx, const char *name, int ver, in
     VALKEYMODULE_GET_API(EventLoopAddOneShot);
     VALKEYMODULE_GET_API(RegisterBoolConfig);
     VALKEYMODULE_GET_API(RegisterNumericConfig);
+    VALKEYMODULE_GET_API(RegisterUnsignedNumericConfig);
     VALKEYMODULE_GET_API(RegisterStringConfig);
     VALKEYMODULE_GET_API(RegisterEnumConfig);
     VALKEYMODULE_GET_API(LoadConfigs);

@@ -1,9 +1,12 @@
 #include "valkeymodule.h"
 #include <strings.h>
+#include <limits.h>
 int mutable_bool_val;
 int immutable_bool_val;
 long long longval;
 long long memval;
+unsigned long long mutable_ull_val;
+unsigned long long immutable_ull_val;
 ValkeyModuleString *strval = NULL;
 int enumval;
 int flagsval;
@@ -28,10 +31,22 @@ long long getNumericConfigCommand(const char *name, void *privdata) {
     return (*(long long *) privdata);
 }
 
+unsigned long long getUnsignedNumericConfigCommand(const char *name, void *privdata) {
+    VALKEYMODULE_NOT_USED(name);
+    return (*(unsigned long long *) privdata);
+}
+
 int setNumericConfigCommand(const char *name, long long new, void *privdata, ValkeyModuleString **err) {
     VALKEYMODULE_NOT_USED(name);
     VALKEYMODULE_NOT_USED(err);
     *(long long *)privdata = new;
+    return VALKEYMODULE_OK;
+}
+
+int setUnsignedNumericConfigCommand(const char *name, unsigned long long new, void *privdata, ValkeyModuleString **err) {
+    VALKEYMODULE_NOT_USED(name);
+    VALKEYMODULE_NOT_USED(err);
+    *(unsigned long long *)privdata = new;
     return VALKEYMODULE_OK;
 }
 
@@ -103,6 +118,16 @@ int longlongApplyFunc(ValkeyModuleCtx *ctx, void *privdata, ValkeyModuleString *
     return VALKEYMODULE_OK;
 }
 
+int unsignedlonglongApplyFunc(ValkeyModuleCtx *ctx, void *privdata, ValkeyModuleString **err) {
+    VALKEYMODULE_NOT_USED(ctx);
+    VALKEYMODULE_NOT_USED(privdata);
+    if (mutable_ull_val == immutable_ull_val) {
+        *err = ValkeyModule_CreateString(NULL, "These configs cannot equal each other.", 38);
+        return VALKEYMODULE_ERR;
+    }
+    return VALKEYMODULE_OK;
+}
+
 int registerBlockCheck(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc) {
     VALKEYMODULE_NOT_USED(argv);
     VALKEYMODULE_NOT_USED(argc);
@@ -119,6 +144,9 @@ int registerBlockCheck(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int argc
     response_ok |= (result == VALKEYMODULE_OK);
 
     result = ValkeyModule_RegisterNumericConfig(ctx, "numeric", -1, VALKEYMODULE_CONFIG_DEFAULT, -5, 2000, getNumericConfigCommand, setNumericConfigCommand, longlongApplyFunc, &longval);
+    response_ok |= (result == VALKEYMODULE_OK);
+    
+    result = ValkeyModule_RegisterUnsignedNumericConfig(ctx, "unsigned_numeric", 1, VALKEYMODULE_CONFIG_DEFAULT | VALKEYMODULE_CONFIG_UNSIGNED, 0, LLONG_MAX * 1ULL + 1000, getUnsignedNumericConfigCommand, setUnsignedNumericConfigCommand, unsignedlonglongApplyFunc, &mutable_ull_val);
     response_ok |= (result == VALKEYMODULE_OK);
 
     result = ValkeyModule_LoadConfigs(ctx);
@@ -166,6 +194,9 @@ int ValkeyModule_OnLoad(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, int arg
         return VALKEYMODULE_ERR;
     }
     if (ValkeyModule_RegisterNumericConfig(ctx, "numeric", -1, VALKEYMODULE_CONFIG_DEFAULT, -5, 2000, getNumericConfigCommand, setNumericConfigCommand, longlongApplyFunc, &longval) == VALKEYMODULE_ERR) {
+        return VALKEYMODULE_ERR;
+    }
+    if (ValkeyModule_RegisterUnsignedNumericConfig(ctx, "unsigned_numeric", 1, VALKEYMODULE_CONFIG_DEFAULT | VALKEYMODULE_CONFIG_UNSIGNED, 0, LLONG_MAX * 1ULL + 1000, getUnsignedNumericConfigCommand, setUnsignedNumericConfigCommand, NULL, &mutable_ull_val) == VALKEYMODULE_ERR) {
         return VALKEYMODULE_ERR;
     }
     size_t len;
