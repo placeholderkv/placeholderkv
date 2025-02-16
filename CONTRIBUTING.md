@@ -19,6 +19,74 @@ The Valkey project is led by a Technical Steering Committee, whose responsibilit
 * Want to help with documentation? [Move on to valkey-doc](https://github.com/valkey-io/valkey-doc)
 * Report a vulnerability? See [SECURITY.md](SECURITY.md)
 
+## How to Install clang-format 18 on a Debian Box
+
+```sh
+sudo apt-get update -y
+sudo apt-get upgrade -y
+sudo apt-get install software-properties-common -y
+wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /usr/share/keyrings/llvm-toolchain.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/llvm-toolchain.gpg] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+sudo apt-get update -y
+sudo apt-get install clang-format-18 -y
+```
+
+## How to Run clang-format-check Action Locally
+
+1. Get [`act`](https://github.com/nektos/act).
+2. Commit the changes locally:
+    ```sh
+    git commit -a -s
+    ```
+3. Under the repository root directory, run:
+    ```sh
+    sudo act -j clang-format-check
+    ```
+
+### Here is a Failure Output
+
+```sh
+[Clang Format Check/clang-format-check]   ✅  Success - Main Set up Clang
+[Clang Format Check/clang-format-check] ⭐ Run Main Run clang-format
+[Clang Format Check/clang-format-check]   🐳  docker exec cmd=[bash --noprofile --norc -e -o pipefail /var/run/act/workflow/clang-format.sh] user= workdir=
+[Clang Format Check/clang-format-check]   ✅  Success - Main Run clang-format
+[Clang Format Check/clang-format-check]   ⚙  ::set-output:: diff=ZGlmZiAtLWdpdCBhL3NyYy91dGlsLmMgYi9zcmMvdXRpbC5jCmluZGV4IDhiZDlhMjg2Yy4uMmVhOWZlMzg0IDEwMDY0NAotLS0gYS9zcmMvdXRpbC5jCisrKyBiL3NyYy91dGlsLmMKQEAgLTExMCw3ICsxMTAsMTEgQEAgc3RhdGljIGludCBzdHJpbmdtYXRjaGxlbl9pbXBsKGNvbnN0IGNoYXIgKnBhdHRlcm4sCiAgICAgICAgICAgICAgICAgICAgIGlmIChwYXR0ZXJuWzBdID09IHN0cmluZ1swXSkgbWF0Y2ggPSAxOwogICAgICAgICAgICAgICAgIH0gZWxzZSBpZiAocGF0dGVyblswXSA9PSAnXScpIHsKICAgICAgICAgICAgICAgICAgICAgYnJlYWs7Ci0gICAgICAgICAgICAgICAgfSBlbHNlIGlmIChwYXR0ZXJuTGVuID09IDApIHsgcGF0dGVybi0tOyBwYXR0ZXJuTGVuKys7IGJyZWFrOyB9IGVsc2UgaWYgKHBhdHRlcm5MZW4gPj0gMyAmJiBwYXR0ZXJuWzFdID09ICctJykgeworICAgICAgICAgICAgICAgIH0gZWxzZSBpZiAocGF0dGVybkxlbiA9PSAwKSB7CisgICAgICAgICAgICAgICAgICAgIHBhdHRlcm4tLTsKKyAgICAgICAgICAgICAgICAgICAgcGF0dGVybkxlbisrOworICAgICAgICAgICAgICAgICAgICBicmVhazsKKyAgICAgICAgICAgICAgICB9IGVsc2UgaWYgKHBhdHRlcm5MZW4gPj0gMyAmJiBwYXR0ZXJuWzFdID09ICctJykgewogICAgICAgICAgICAgICAgICAgICBpbnQgc3RhcnQgPSBwYXR0ZXJuWzBdOwogICAgICAgICAgICAgICAgICAgICBpbnQgZW5kID0gcGF0dGVyblsyXTsKICAgICAgICAgICAgICAgICAgICAgaW50IGMgPSBzdHJpbmdbMF07Cg==
+[Clang Format Check/clang-format-check] ⭐ Run Main Check for formatting changes
+[Clang Format Check/clang-format-check]   🐳  docker exec cmd=[bash --noprofile --norc -e -o pipefail /var/run/act/workflow/3.sh] user= workdir=
+| Code is not formatted correctly. Here is the diff:
+| diff --git a/src/util.c b/src/util.c
+| index 8bd9a286c..2ea9fe384 100644
+| --- a/src/util.c
+| +++ b/src/util.c
+| @@ -110,7 +110,11 @@ static int stringmatchlen_impl(const char *pattern,
+|                      if (pattern[0] == string[0]) match = 1;
+|                  } else if (pattern[0] == ']') {
+|                      break;
+| -                } else if (patternLen == 0) { pattern--; patternLen++; break; } else if (patternLen >= 3 && pattern[1] == '-') {
+| +                } else if (patternLen == 0) {
+| +                    pattern--;
+| +                    patternLen++;
+| +                    break;
+| +                } else if (patternLen >= 3 && pattern[1] == '-') {
+|                      int start = pattern[0];
+|                      int end = pattern[2];
+|                      int c = string[0];
+[Clang Format Check/clang-format-check]   ❌  Failure - Main Check for formatting changes
+[Clang Format Check/clang-format-check] exitcode '1': failure
+[Clang Format Check/clang-format-check] 🏁  Job failed
+```
+
+### Here is a Successful Run
+
+```sh
+[Clang Format Check/clang-format-check]   ✅  Success - Main Set up Clang
+[Clang Format Check/clang-format-check] ⭐ Run Main Run clang-format
+[Clang Format Check/clang-format-check]   🐳  docker exec cmd=[bash --noprofile --norc -e -o pipefail /var/run/act/workflow/clang-format.sh] user= workdir=
+[Clang Format Check/clang-format-check]   ✅  Success - Main Run clang-format
+[Clang Format Check/clang-format-check] Cleaning up container for job clang-format-check
+[Clang Format Check/clang-format-check] 🏁  Job succeeded
+```
+
 ## Developer Certificate of Origin
 
 We respect the intellectual property rights of others and we want to make sure
