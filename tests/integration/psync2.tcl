@@ -290,14 +290,17 @@ start_server {} {
             show_cluster_status
         }
 
-        test "PSYNC2: total sum of full synchronizations is exactly 4" {
+        test "PSYNC2: total sum of full synchronizations at least 4" {
+            # During the setup, four full syncs were performed. It is also possible that one
+            # of the disconnected replicas may be forced to full sync during the 
+            # 'generate load while killing replication links' test.
             set sum 0
             for {set j 0} {$j < 5} {incr j} {
                 incr sum [status $R($j) sync_full]
             }
             if {$sum != 4} {
                 show_cluster_status
-                assert {$sum == 4}
+                assert {$sum >= 4}
             }
         }
 
