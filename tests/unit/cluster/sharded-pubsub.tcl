@@ -53,4 +53,23 @@ start_cluster 1 1 {tags {external:skip cluster}} {
         catch {[$replica EXEC]} err
         assert_match {EXECABORT*} $err
     }
+
+    test "SHARDNUMSUB for CROSSSLOT Error in cluster mode" {
+        set rd1 [valkey_deferring_client]
+        set rd2 [valkey_deferring_client]
+        set rd3 [valkey_deferring_client]
+
+        assert_equal {1} [ssubscribe $rd1 chan1]
+        assert_equal {1} [ssubscribe $rd2 chan2]
+        assert_error "CROSSSLOT Keys in request don't hash to the same slot" {r pubsub shardnumsub chan1 chan2}
+
+        assert_equal {1} [ssubscribe $rd3 {"{chan1}2"}]
+        assert_equal {chan1 1 {{chan1}2} 1} [r pubsub shardnumsub "chan1" "{chan1}2"]
+
+        # clean up clients
+        $rd1 close
+        $rd2 close
+        $rd3 close
+    }
+
 }
