@@ -1225,3 +1225,47 @@ proc bp {{s {}}} {
         puts $res
     }
 }
+
+proc check_single_command_specs {r info} {
+    foreach command_info $info {
+        if {[llength [lindex $command_info 9]] > 0} {
+            check_single_command_specs $r [lindex $command_info 9]
+            continue
+        }
+        set command_name [lindex $command_info 0]
+        set argc [lindex $command_info 1]
+        set cmd_parts [split $command_name "|"]
+        set cmd_length [llength $cmd_parts]
+        set arg_count [expr {$argc < 0 ? -$argc - $cmd_length + 10 : $argc - $cmd_length}]
+
+        if {$arg_count > 0} {
+            # generate param format with `command getkeys $command_name {$arg_count - 1} key1 key2 ...`
+            # example: zmpop arity is -4, so command will be  `command getkeys zmpop 2 key1 key2`
+            set args [list {*}$cmd_parts [expr {$arg_count - 1}]]
+            for {set i 1} {$i <= $arg_count - 1} {incr i} {
+                lappend args key$i
+            }
+
+            set catch_result [catch {$r command getkeys {*}$args} result]
+
+            if {$catch_result != 0} {
+                if {[string match -nocase {*Invalid arguments specified for command*} $result]} {
+                    # The command with special parameters needs to be tested separately, like xread.
+                } elseif {[string match -nocase {*The command has no key arguments*} $result]} {
+                    # The command check no key arguments can't be tested by `command getkeys`.
+                } else {
+                    fail "Check command $cmd_parts failed with ERROR: $result"
+                }
+            }
+        }
+        # No need to check because this cmd has no param
+    }
+}
+
+proc check_commands_specs r {
+    set commands [$r command]
+    foreach cmd_info $commands {
+        set command [lindex $cmd_info 0]
+        check_single_command_specs $r [list $cmd_info]
+    }
+}
