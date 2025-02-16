@@ -1111,8 +1111,17 @@ start_server {tags {"introspection"}} {
     # known keywords. Might be a good idea to avoid adding tests here.
 }
 
-start_server {tags {"introspection external:skip"} overrides {enable-protected-configs {no} enable-debug-command {no}}} {
+start_server {tags {"introspection external:skip"} overrides {requirepass mypass enable-protected-configs {no} enable-debug-command {no}}} {
+    test {auth check before command existence check and command arity check} {
+        assert_error "NOAUTH *" {r non-existing-command}
+        assert_error "NOAUTH *" {r set key value wrong_arg}
+    }
+
     test {cannot modify protected configuration - no} {
+        assert_error "NOAUTH *" {r config set dir somedir}
+        assert_error "NOAUTH *" {r DEBUG HELP}
+
+        r auth mypass
         assert_error "ERR *protected*" {r config set dir somedir}
         assert_error "ERR *DEBUG command not allowed*" {r DEBUG HELP}
     } {} {needs:debug}
@@ -1131,6 +1140,7 @@ start_server {config "minimal.conf" tags {"introspection external:skip"} overrid
             set r2 [get_nonloopback_client]
             assert_error "ERR *protected*" {$r2 config set dir somedir}
             assert_error "ERR *DEBUG command not allowed*" {$r2 DEBUG HELP}
+            assert_equal [$r2 close] 0
         }
     } {} {needs:debug}
 }

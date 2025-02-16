@@ -4063,6 +4063,16 @@ int processCommand(client *c) {
             }
         }
         c->cmd = c->lastcmd = c->realcmd = cmd;
+
+        if (authRequired(c)) {
+            /* AUTH and HELLO and no auth commands are valid even in
+             * non-authenticated state. */
+            if (!c->cmd || !(c->cmd->flags & CMD_NO_AUTH)) {
+                rejectCommand(c, shared.noautherr);
+                return C_OK;
+            }
+        }
+
         sds err;
         if (!commandCheckExistence(c, &err)) {
             rejectCommandSds(c, err);
@@ -4105,15 +4115,6 @@ int processCommand(client *c) {
     int is_deny_async_loading_command = (combined_flags & CMD_NO_ASYNC_LOADING);
 
     const int obey_client = mustObeyClient(c);
-
-    if (authRequired(c)) {
-        /* AUTH and HELLO and no auth commands are valid even in
-         * non-authenticated state. */
-        if (!(c->cmd->flags & CMD_NO_AUTH)) {
-            rejectCommand(c, shared.noautherr);
-            return C_OK;
-        }
-    }
 
     if (c->flag.multi && c->cmd->flags & CMD_NO_MULTI) {
         rejectCommandFormat(c, "Command not allowed inside a transaction");
