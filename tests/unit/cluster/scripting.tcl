@@ -97,3 +97,39 @@ start_cluster 1 0 {tags {external:skip cluster}} {
         assert_equal [lsort [r 0 cluster shards]] [lsort [r 0 eval "return redis.call('cluster', 'shards')" 0]]
     }
 }
+
+start_cluster 2 2 {tags {external:skip cluster}} {
+    test "Cluster should start ok" {
+        wait_for_cluster_state ok
+    }
+
+    set primary1 [srv 0 "client"]
+    set primary2 [srv -1 "client"]
+    set replica1 [srv -2 "client"]
+    set replica2 [srv -3 "client"]
+
+    set slot_for_foo [$primary2 cluster keyslot foo]
+
+    test "Read-only client that sends lua script which has write command on replica get MOVED error" {
+        assert_equal {OK} [$replica2 READONLY]
+
+        catch {
+            $replica2 eval "redis.call('set', 'foo', 'bar')" 0
+        } e
+
+        assert_match {*Script attempted to access a non local ke*} $e
+    }
+
+    test "Read-only client that sends lua script which has write command on replica get ASK error during migration" {
+        assert_equal {OK} [$primary1 cluster setslot $slot_for_foo importing [$primary2 cluster myid]]
+        assert_equal {OK} [$primary2 cluster setslot $slot_for_foo migrating [$primary1 cluster myid]]
+
+        assert_equal {OK} [$replica2 READONLY]
+
+        catch {
+            $replica2 eval "redis.call('set', 'foo', 'bar')" 0
+        } e
+
+        assert_match {*Script attempted to access a non local ke*} $e
+    }
+}
