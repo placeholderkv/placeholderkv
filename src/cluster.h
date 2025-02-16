@@ -109,7 +109,6 @@ clusterNode *getNodeBySlot(int slot);
 int clusterNodeClientPort(clusterNode *n, int use_tls);
 char *clusterNodeHostname(clusterNode *node);
 const char *clusterNodePreferredEndpoint(clusterNode *n, client *c);
-long long clusterNodeReplOffset(clusterNode *node);
 clusterNode *clusterLookupNode(const char *name, int length);
 int detectAndUpdateCachedNodeHealth(void);
 client *createCachedResponseClient(int resp);

@@ -1341,16 +1341,15 @@ void addNodeToNodeReply(client *c, clusterNode *node) {
  * not finished their initial sync, in failed state, or are
  * otherwise considered not available to serve read commands. */
 int isNodeAvailable(clusterNode *node) {
+    /* We don't consider PFAIL here because it's not a reliable indicator
+     * for node available and we don't want clients to use it. */
     if (clusterNodeIsFailing(node)) {
         return 0;
     }
-    long long repl_offset = clusterNodeReplOffset(node);
-    if (clusterNodeIsMyself(node)) {
-        /* Nodes do not update their own information
-         * in the cluster node list. */
-        repl_offset = getNodeReplicationOffset(node);
-    }
-    return (repl_offset != 0);
+
+    /* Hide empty replicas in here, from a data-path POV, an empty replica
+     * is not available. */
+    return getNodeReplicationOffset(node) != 0;
 }
 
 void addNodeReplyForClusterSlot(client *c, clusterNode *node, int start_slot, int end_slot) {

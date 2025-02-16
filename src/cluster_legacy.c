@@ -6242,6 +6242,10 @@ void clusterUpdateSlots(client *c, unsigned char *slots, int del) {
     }
 }
 
+/* Get the replication offset of a node.
+ *
+ * Nodes do not update their own information in the cluster state,
+ * so for self node, we cannot use `node->repl_offset` directly. */
 long long getNodeReplicationOffset(clusterNode *node) {
     if (node->flags & CLUSTER_NODE_MYSELF) {
         return nodeIsReplica(node) ? replicationGetReplicaOffset() : server.primary_repl_offset;
@@ -7277,10 +7281,6 @@ clusterNode *getNodeBySlot(int slot) {
 
 char *clusterNodeHostname(clusterNode *node) {
     return node->hostname;
-}
-
-long long clusterNodeReplOffset(clusterNode *node) {
-    return node->repl_offset;
 }
 
 const char *clusterNodePreferredEndpoint(clusterNode *n, client *c) {
