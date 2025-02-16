@@ -921,8 +921,18 @@ cleanup:
 
 void clusterSaveConfigOrDie(int do_fsync) {
     if (clusterSaveConfig(do_fsync) == C_ERR) {
-        serverLog(LL_WARNING, "Fatal: can't update cluster config file.");
-        exit(1);
+        if (!server.cluster_ignore_disk_write_error) {
+            serverLog(LL_WARNING, "Fatal: can't update cluster config file");
+            exit(1);
+        } else {
+            static mstime_t last_log_time_ms = 0;
+            const mstime_t log_interval_ms = 10000;
+            if (server.mstime > last_log_time_ms + log_interval_ms) {
+                last_log_time_ms = server.mstime;
+                serverLog(LL_WARNING, "Cluster config file is applying a change even though "
+                                      "it is unable to write to disk.");
+            }
+        }
     }
 }
 

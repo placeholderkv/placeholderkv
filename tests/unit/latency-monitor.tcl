@@ -201,7 +201,7 @@ start_cluster 1 1 {tags {"latency-monitor cluster external:skip needs:latency"} 
         # We don't assert anything since we can't be sure whether it will be counted.
         R 0 cluster saveconfig
         R 1 cluster saveconfig
-        R 1 cluster failover force
+        R 1 cluster failover takeover
         R 0 latency latest
         R 1 latency latest
     }

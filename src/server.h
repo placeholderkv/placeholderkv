@@ -2054,6 +2054,8 @@ struct valkeyServer {
     mstime_t cluster_node_timeout;                         /* Cluster node timeout. */
     mstime_t cluster_ping_interval;                        /* A debug configuration for setting how often cluster nodes send ping messages. */
     char *cluster_configfile;                              /* Cluster auto-generated config file name. */
+    int cluster_ignore_disk_write_error;                   /* Configures whether cluster node exit when unable to
+                                                            * persist the cluster config file. */
     struct clusterState *cluster;                          /* State of the cluster */
     int cluster_migration_barrier;                         /* Cluster replicas migration barrier. */
     int cluster_allow_replica_migration;                   /* Automatic replica migrations to orphaned primaries and from empty primaries */
