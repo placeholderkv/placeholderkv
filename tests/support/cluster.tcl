@@ -9,7 +9,6 @@
 # $c get foo
 # $c close
 
-package require Tcl 8.5
 package provide valkey_cluster 0.1
 
 namespace eval valkey_cluster {}

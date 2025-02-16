@@ -25,7 +25,6 @@
 #
 # vwait forever
 
-package require Tcl 8.5
 package provide valkey 0.1
 
 source [file join [file dirname [info script]] "response_transformers.tcl"]

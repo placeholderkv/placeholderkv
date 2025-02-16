@@ -14,8 +14,6 @@
 # changes in many files) we decided to transform the response to RESP2
 # when running with --force-resp3
 
-package require Tcl 8.5
-
 namespace eval response_transformers {}
 
 # Transform a map response into an array of tuples (tuple = array with 2 elements)

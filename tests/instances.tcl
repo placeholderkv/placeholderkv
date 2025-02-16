@@ -7,8 +7,6 @@
 # This software is released under the BSD License. See the COPYING file for
 # more information.
 
-package require Tcl 8.5
-
 set tcl_precision 17
 source ../support/valkey.tcl
 source ../support/util.tcl
@@ -294,7 +292,7 @@ proc parse_options {} {
             incr j
             set ::host ${val}
         } elseif {$opt eq {--tls} || $opt eq {--tls-module}} {
-            package require tls 1.6
+            package require tls
             ::tls::init \
                 -cafile "$::tlsdir/ca.crt" \
                 -certfile "$::tlsdir/client.crt" \
