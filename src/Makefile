@@ -145,7 +145,7 @@ ifneq (,$(findstring armv,$(uname_M)))
         FINAL_LIBS+=-latomic
 else
 # Linux POWER needs -latomic at linking time
-ifneq (,$(findstring ppc,$(uname_M)))
+ifneq (,$(findstring Power*Macintosh,$(uname_M)))
         FINAL_LIBS+=-latomic
 endif
 endif
