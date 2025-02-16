@@ -9,6 +9,7 @@
         "function": "scriptCommand",
         "command_flags": [
             "NOSCRIPT",
+            "DENYOOM",
             "STALE"
         ],
         "acl_categories": [

@@ -1680,6 +1680,11 @@ start_server {tags {"scripting external:skip"}} {
         }
         assert_equal {hello world} [r evalsha $sha 0]
     }
+
+    test {SCRIPT LOAD marked with denyoom flag} {
+        r config set maxmemory 1
+        assert_error {OOM*} {r script load ""}
+    }
 }
 
 } ;# is_eval
