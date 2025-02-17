@@ -1361,11 +1361,11 @@ void shutdownCommand(client *c) {
         if (server.busy_module_yield_flags && server.busy_module_yield_reply) {
             addReplyErrorFormat(c, "-BUSY %s", server.busy_module_yield_reply);
         } else if (server.busy_module_yield_flags) {
-            addReplyErrorObject(c, shared.slowmoduleerr);
+            addReplyErrorObject(c, server.extended_redis_compat ? shared.slowmoduleerr_compat : shared.slowmoduleerr);
         } else if (scriptIsEval()) {
-            addReplyErrorObject(c, shared.slowevalerr);
+            addReplyErrorObject(c, server.extended_redis_compat ? shared.slowevalerr_compat : shared.slowevalerr);
         } else {
-            addReplyErrorObject(c, shared.slowscripterr);
+            addReplyErrorObject(c, server.extended_redis_compat ? shared.slowscripterr_compat : shared.slowscripterr);
         }
         return;
     }

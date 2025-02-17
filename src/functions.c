@@ -438,7 +438,7 @@ void functionsRemoveLibFromEngine(scriptingEngine *engine) {
  */
 void functionStatsCommand(client *c) {
     if (scriptIsRunning() && scriptIsEval()) {
-        addReplyErrorObject(c, shared.slowevalerr);
+        addReplyErrorObject(c, server.extended_redis_compat ? shared.slowevalerr_compat : shared.slowevalerr);
         return;
     }
 

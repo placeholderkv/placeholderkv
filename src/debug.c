@@ -727,7 +727,7 @@ void debugCommand(client *c) {
         if (getPositiveLongFromObjectOrReply(c, c->argv[2], &keys, NULL) != C_OK) return;
 
         if (server.loading || server.async_loading) {
-            addReplyErrorObject(c, shared.loadingerr);
+            addReplyErrorObject(c, server.extended_redis_compat ? shared.loadingerr_compat : shared.loadingerr);
             return;
         }
 

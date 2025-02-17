@@ -1307,6 +1307,7 @@ struct sharedObjectsStruct {
     robj *ok, *err, *emptybulk, *czero, *cone, *pong, *space, *queued, *null[4], *nullarray[4], *emptymap[4],
         *emptyset[4], *emptyarray, *wrongtypeerr, *nokeyerr, *syntaxerr, *sameobjecterr, *outofrangeerr, *noscripterr,
         *loadingerr, *slowevalerr, *slowscripterr, *slowmoduleerr, *bgsaveerr, *primarydownerr, *roreplicaerr,
+        *loadingerr_compat, *slowevalerr_compat, *slowscripterr_compat, *slowmoduleerr_compat, *bgsaveerr_compat,
         *execaborterr, *noautherr, *noreplicaserr, *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk,
         *subscribebulk, *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *unlink, *rpop, *lpop, *lpush,
         *rpoplpush, *lmove, *blmove, *zpopmin, *zpopmax, *emptyscan, *multi, *exec, *left, *right, *hset, *srem,
