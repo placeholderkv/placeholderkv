@@ -81,9 +81,9 @@ uint32_t murmur32(const uint8_t* key, size_t len, uint32_t seed) {
   static const uint32_t n = 0xe6546b64;
   uint32_t hash = seed;
 
-  const int nblocks = len / 4;
+  const size_t nblocks = len / 4;
   const uint32_t* blocks = (const uint32_t*) key;
-  for (int i = 0; i < nblocks; i++) {
+  for (size_t i = 0; i < nblocks; i++) {
     uint32_t k = blocks[i];
     k *= c1;
     k = (k << r1) | (k >> (32 - r1));
@@ -116,7 +116,7 @@ uint32_t murmur32(const uint8_t* key, size_t len, uint32_t seed) {
     hash ^= (hash >> 16);
   
     return hash;
-  }
+}
 
 TString *luaS_newlstr (lua_State *L, const char *str, size_t l) {
   GCObject *o;
