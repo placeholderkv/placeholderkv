@@ -196,7 +196,7 @@ proc ::valkey_cluster::__method__masternode_notfor_slot {id slot} {
     error "Slot $slot is everywhere"
 }
 
-proc ::valkey_cluster::__dispatch__ {id method args} {
+proc ::valkey_cluster::__dispatch__ {id method args} {	
     if {[info command ::valkey_cluster::__method__$method] eq {}} {
         # Get the keys from the command.
         set keys [::valkey_cluster::get_keys_from_command $method $args]

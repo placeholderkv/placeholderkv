@@ -860,10 +860,6 @@ void selectCommand(client *c) {
 
     if (getIntFromObjectOrReply(c, c->argv[1], &id, NULL) != C_OK) return;
 
-    if (server.cluster_enabled && id != 0) {
-        addReplyError(c, "SELECT is not allowed in cluster mode");
-        return;
-    }
     if (selectDb(c, id) == C_ERR) {
         addReplyError(c, "DB index is out of range");
     } else {
@@ -1429,11 +1425,6 @@ void moveCommand(client *c) {
     int srcid, dbid;
     long long expire;
 
-    if (server.cluster_enabled) {
-        addReplyError(c, "MOVE is not allowed in cluster mode");
-        return;
-    }
-
     /* Obtain source and target DB pointers */
     src = c->db;
     srcid = c->db->id;
@@ -1516,11 +1507,6 @@ void copyCommand(client *c) {
             addReplyErrorObject(c, shared.syntaxerr);
             return;
         }
-    }
-
-    if ((server.cluster_enabled == 1) && (srcid != 0 || dbid != 0)) {
-        addReplyError(c, "Copying to another database is not allowed in cluster mode");
-        return;
     }
 
     /* If the user select the same DB as
@@ -1727,12 +1713,6 @@ void swapMainDbWithTempDb(serverDb *tempDb) {
 /* SWAPDB db1 db2 */
 void swapdbCommand(client *c) {
     int id1, id2;
-
-    /* Not allowed in cluster mode: we have just DB 0 there. */
-    if (server.cluster_enabled) {
-        addReplyError(c, "SWAPDB is not allowed in cluster mode");
-        return;
-    }
 
     /* Get the two DBs indexes. */
     if (getIntFromObjectOrReply(c, c->argv[1], &id1, "invalid first DB index") != C_OK) return;
