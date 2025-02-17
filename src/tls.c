@@ -914,8 +914,9 @@ static int connTLSWrite(connection *conn_, const void *data, size_t data_len) {
 
     if (conn->c.state != CONN_STATE_CONNECTED) return -1;
     ERR_clear_error();
+    serverAssert(data_len >= conn->last_failed_write_data_len);
     ret = SSL_write(conn->ssl, data, data_len);
-    conn->last_failed_write_data_len = ret < 0 ? data_len : 0;
+    conn->last_failed_write_data_len = ret <= 0 ? data_len : 0;
     return updateStateAfterSSLIO(conn, ret, 1);
 }
 
@@ -950,7 +951,7 @@ static int connTLSWritev(connection *conn_, const struct iovec *iov, int iovcnt)
      * and send it away by one call to connTLSWrite(). */
     char buf[iov_bytes_len];
     size_t offset = 0;
-    for (int i = 0; i < iovcnt; i++) {
+    for (int i = 0; i < iovcnt && offset < iov_bytes_len; i++) {
         memcpy(buf + offset, iov[i].iov_base, iov[i].iov_len);
         offset += iov[i].iov_len;
     }
