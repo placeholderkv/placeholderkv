@@ -3,9 +3,15 @@
         "summary": "Forces a Sentinel failover.",
         "group": "sentinel",
         "since": "2.8.4",
-        "arity": 3,
+        "arity": -3,
         "container": "SENTINEL",
         "function": "sentinelCommand",
+        "history": [
+            [
+                "8.1.0",
+                "`COORDINATED` option."
+            ]
+        ],
         "command_flags": [
             "ADMIN",
             "SENTINEL",
@@ -13,12 +19,19 @@
         ],
         "reply_schema": {
             "const": "OK",
-            "description": "Force a fail over as if the primary was not reachable, and without asking for agreement to other Sentinels."
+            "description": "Force a fail over of the primary. Without options, the fail over is executed immediately as if the primary was not reachable. Using `COORDINATED`, fail over seeking agreement from other Sentinels and using coordinated fail over."
         },
         "arguments": [
             {
                 "name": "primary-name",
                 "type": "string"
+            },
+            {
+                "token": "COORDINATED",
+                "name": "coordinated",
+                "type": "pure-token",
+                "optional": true,
+                "since": "8.1.0"
             }
         ]
     }

@@ -77,6 +77,7 @@ typedef struct sentinelAddr {
 #define SRI_FORCE_FAILOVER (1 << 11)      /* Force failover with primary up. */
 #define SRI_SCRIPT_KILL_SENT (1 << 12)    /* SCRIPT KILL already sent on -BUSY */
 #define SRI_PRIMARY_REBOOT (1 << 13)      /* Primary was detected as rebooting */
+#define SRI_COORD_FAILOVER (1 << 14)      /* Coordinated failover with primary up. */
 /* Note: when adding new flags, please check the flags section in addReplySentinelValkeyInstance. */
 
 /* Note: times are in milliseconds. */
@@ -137,6 +138,14 @@ static mstime_t sentinel_default_failover_timeout = 60 * 3 * 1000;
 #define SENTINEL_SIMFAILURE_NONE 0
 #define SENTINEL_SIMFAILURE_CRASH_AFTER_ELECTION (1 << 0)
 #define SENTINEL_SIMFAILURE_CRASH_AFTER_PROMOTION (1 << 1)
+
+/* The failover status of a monitored Valkey instance */
+#define SENTINEL_MONITORED_INSTANCE_FAILOVER_NS 0 /* Not supported*/
+#define SENTINEL_MONITORED_INSTANCE_NO_FAILOVER 1 /* Failover supported, no failover ongoing */
+#define SENTINEL_MONITORED_INSTANCE_FAILOVER 2    /* Failover supported, failover ongoing */
+
+/* sentinelAskPrimaryStateToOtherSentinels flags */
+#define SENTINEL_ASK_FORCED (1 << 0)
 
 /* The link to a sentinelValkeyInstance. When we have the same set of Sentinels
  * monitoring many primaries, we have different instances representing the
@@ -211,6 +220,9 @@ typedef struct sentinelValkeyInstance {
     int role_reported;
     mstime_t role_reported_time;
     mstime_t replica_conf_change_time; /* Last time replica primary addr changed. */
+
+    int monitored_instance_failover_state;            /* Whether the Valkey instance supports/reports a failover in "master_failover_state" */
+    mstime_t monitored_instance_failover_change_time; /* Last time monitored_instance_failover_state changed. */
 
     /* Primary specific. */
     dict *sentinels;     /* Other sentinels monitoring the same primary. */
@@ -403,6 +415,7 @@ sentinelValkeyInstance *sentinelSelectReplica(sentinelValkeyInstance *primary);
 void sentinelScheduleScriptExecution(char *path, ...);
 void sentinelStartFailover(sentinelValkeyInstance *primary);
 void sentinelDiscardReplyCallback(redisAsyncContext *c, void *reply, void *privdata);
+int sentinelKillClients(sentinelValkeyInstance *ri);
 int sentinelSendReplicaOf(sentinelValkeyInstance *ri, const sentinelAddr *addr);
 char *sentinelVoteLeader(sentinelValkeyInstance *primary, uint64_t req_epoch, char *req_runid, uint64_t *leader_epoch);
 int sentinelFlushConfig(void);
@@ -411,6 +424,7 @@ int sentinelSendPing(sentinelValkeyInstance *ri);
 int sentinelForceHelloUpdateForPrimary(sentinelValkeyInstance *primary);
 sentinelValkeyInstance *getSentinelValkeyInstanceByAddrAndRunID(dict *instances, char *ip, int port, char *runid);
 void sentinelSimFailureCrash(void);
+void sentinelAskPrimaryStateToOtherSentinels(sentinelValkeyInstance *primary, int flags);
 
 /* ========================= Dictionary types =============================== */
 
@@ -1345,6 +1359,9 @@ sentinelValkeyInstance *createSentinelValkeyInstance(char *name,
     ri->role_reported = ri->flags & (SRI_PRIMARY | SRI_REPLICA);
     ri->role_reported_time = mstime();
     ri->replica_conf_change_time = mstime();
+
+    ri->monitored_instance_failover_state = SENTINEL_MONITORED_INSTANCE_FAILOVER_NS;
+    ri->monitored_instance_failover_change_time = mstime();
 
     /* Add into the right table. */
     dictAdd(table, ri->name, ri);
@@ -2538,6 +2555,15 @@ void sentinelRefreshInstanceInfo(sentinelValkeyInstance *ri, const char *info) {
             /* replica_announced:<announcement> */
             if (sdslen(l) >= 18 && !memcmp(l, "replica_announced:", 18)) ri->replica_announced = atoi(l + 18);
         }
+
+        /* master_failover_state:<failover-state> */
+        if (sdslen(l) >= 22 && !memcmp(l, "master_failover_state:", 22)) {
+            int failover_state = (sdslen(l) >= 33 && !memcmp(l, "master_failover_state:no-failover", 33)) ? SENTINEL_MONITORED_INSTANCE_NO_FAILOVER : SENTINEL_MONITORED_INSTANCE_FAILOVER;
+            if (failover_state != ri->monitored_instance_failover_state) {
+                ri->monitored_instance_failover_state = failover_state;
+                ri->monitored_instance_failover_change_time = mstime();
+            }
+        }
     }
     ri->info_refresh = mstime();
     sdsfreesplitres(lines, numlines);
@@ -2585,6 +2611,10 @@ void sentinelRefreshInstanceInfo(sentinelValkeyInstance *ri, const char *info) {
             sentinelFlushConfig();
             sentinelEvent(LL_WARNING, "+promoted-slave", ri, "%@");
             if (sentinel.simfailure_flags & SENTINEL_SIMFAILURE_CRASH_AFTER_PROMOTION) sentinelSimFailureCrash();
+            if (ri->primary->flags & SRI_COORD_FAILOVER) {
+                sentinelKillClients(ri->primary);
+                sentinelKillClients(ri);
+            }
             sentinelEvent(LL_WARNING, "+failover-state-reconf-slaves", ri->primary, "%@");
             sentinelCallClientReconfScript(ri->primary, SENTINEL_LEADER, "start", ri->primary->addr, ri->addr);
             sentinelForceHelloUpdateForPrimary(ri->primary);
@@ -2599,6 +2629,18 @@ void sentinelRefreshInstanceInfo(sentinelValkeyInstance *ri, const char *info) {
                 int retval = sentinelSendReplicaOf(ri, ri->primary->addr);
                 if (retval == C_OK) sentinelEvent(LL_NOTICE, "+convert-to-slave", ri, "%@");
             }
+        }
+    }
+
+    /* Handle replicas stuck in failover for too long. */
+    if ((ri->flags & SRI_REPLICA) && role == SRI_REPLICA && ri->monitored_instance_failover_state == SENTINEL_MONITORED_INSTANCE_FAILOVER) {
+        mstime_t wait_time = ri->primary->failover_timeout;
+
+        /* Make sure the primary is sane before reconfiguring this instance */
+        if (sentinelPrimaryLooksSane(ri->primary) && sentinelValkeyInstanceNoDownFor(ri, wait_time) &&
+            mstime() - ri->monitored_instance_failover_change_time > wait_time) {
+            int retval = sentinelSendReplicaOf(ri, ri->primary->addr);
+            if (retval == C_OK) sentinelEvent(LL_NOTICE, "+fix-slave-config", ri, "%@");
         }
     }
 
@@ -3009,7 +3051,13 @@ void sentinelSendPeriodicCommands(sentinelValkeyInstance *ri) {
 
     /* PUBLISH hello messages to all the three kinds of instances. */
     if ((now - ri->last_pub_time) > sentinel_publish_period) {
-        sentinelSendHello(ri);
+        /* Don't publish if the command would block because client writes are blocked:
+           - during coordinated failover
+           - during Valkey failover (this may be a failover that is stuck) */
+        if (((ri->flags & SRI_COORD_FAILOVER) == 0 || ri->failover_state > SENTINEL_FAILOVER_STATE_WAIT_PROMOTION) &&
+            ri->monitored_instance_failover_state != SENTINEL_MONITORED_INSTANCE_FAILOVER) {
+            sentinelSendHello(ri);
+        }
     }
 }
 
@@ -3266,6 +3314,7 @@ void addReplySentinelValkeyInstance(client *c, sentinelValkeyInstance *ri) {
     if (ri->flags & SRI_RECONF_INPROG) flags = sdscat(flags, "reconf_inprog,");
     if (ri->flags & SRI_RECONF_DONE) flags = sdscat(flags, "reconf_done,");
     if (ri->flags & SRI_FORCE_FAILOVER) flags = sdscat(flags, "force_failover,");
+    if (ri->flags & SRI_COORD_FAILOVER) flags = sdscat(flags, "coordinated_failover,");
     if (ri->flags & SRI_SCRIPT_KILL_SENT) flags = sdscat(flags, "script_kill_sent,");
     if (ri->flags & SRI_PRIMARY_REBOOT) flags = sdscat(flags, "master_reboot,");
 
@@ -3702,7 +3751,7 @@ void sentinelCommand(client *c) {
             "    Or update current configurable parameters values (one or more).",
             "GET-PRIMARY-ADDR-BY-NAME <primary-name>",
             "    Return the ip and port number of the primary with that name.",
-            "FAILOVER <primary-name>",
+            "FAILOVER <primary-name> [COORDINATED]",
             "    Manually failover a primary node without asking for agreement from other",
             "    Sentinels",
             "FLUSHCONFIG",
@@ -3838,9 +3887,23 @@ void sentinelCommand(client *c) {
     } else if (!strcasecmp(c->argv[1]->ptr, "failover")) {
         /* SENTINEL FAILOVER <primary-name> */
         sentinelValkeyInstance *ri;
+        int coordinated = 0;
 
-        if (c->argc != 3) goto numargserr;
-        if ((ri = sentinelGetPrimaryByNameOrReplyError(c, c->argv[2])) == NULL) return;
+        if (c->argc < 3 || c->argc > 4) goto numargserr;
+        if ((ri = sentinelGetPrimaryByNameOrReplyError(c, c->argv[2])) == NULL)
+            return;
+        if (c->argc == 4) {
+            if (!strcasecmp(c->argv[3]->ptr, "coordinated")) {
+                coordinated = 1;
+                if (ri->monitored_instance_failover_state == SENTINEL_MONITORED_INSTANCE_FAILOVER_NS) {
+                    addReplyError(c, "-NOGOODPRIMARY Primary does not support FAILOVER command");
+                    return;
+                }
+            } else {
+                addReplyError(c, "Unknown failover option specified");
+                return;
+            }
+        }
         if (ri->flags & SRI_FAILOVER_IN_PROGRESS) {
             addReplyError(c, "-INPROG Failover already in progress");
             return;
@@ -3850,8 +3913,19 @@ void sentinelCommand(client *c) {
             return;
         }
         serverLog(LL_NOTICE, "Executing user requested FAILOVER of '%s'", ri->name);
+        ri->s_down_since_time = mstime();
+        ri->flags |= SRI_S_DOWN;
         sentinelStartFailover(ri);
-        ri->flags |= SRI_FORCE_FAILOVER;
+        if (coordinated) {
+            ri->flags |= SRI_COORD_FAILOVER;
+            /* Initiate a leader election, The SENTINEL_FAILOVER_STATE_WAIT_START
+               state will wait until we are elected. */
+            sentinelAskPrimaryStateToOtherSentinels(ri, SENTINEL_ASK_FORCED);
+        } else {
+            /* SRI_FORCE_FAILOVER will cause the SENTINEL_FAILOVER_STATE_WAIT_START
+               state to regard us as leader (without election). */
+            ri->flags |= SRI_FORCE_FAILOVER;
+        }
         addReply(c, shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr, "pending-scripts")) {
         /* SENTINEL PENDING-SCRIPTS */
@@ -4464,7 +4538,6 @@ void sentinelReceiveIsPrimaryDownReply(redisAsyncContext *c, void *reply, void *
  * SENTINEL IS-PRIMARY-DOWN-BY-ADDR requests to other sentinels
  * in order to get the replies that allow to reach the quorum
  * needed to mark the primary in ODOWN state and trigger a failover. */
-#define SENTINEL_ASK_FORCED (1 << 0)
 void sentinelAskPrimaryStateToOtherSentinels(sentinelValkeyInstance *primary, int flags) {
     dictIterator *di;
     dictEntry *de;
@@ -4634,6 +4707,109 @@ char *sentinelGetLeader(sentinelValkeyInstance *primary, uint64_t epoch) {
     return winner;
 }
 
+/* Send FAILOVER to the specified instance using the specified timeout.
+ * Additionally, issue a "CLIENT PAUSE WRITE" using the same timeout to
+ * keep clients in blocked state after the failover succeeded, since they
+ * don't expect to be connected to a replica suddenly (they will be
+ * disconnected in the next state of the failover)
+ *
+ * The command returns C_OK if the FAILOVER command was accepted for
+ * (later) delivery otherwise C_ERR. The command replies are just
+ * discarded. */
+int sentinelFailoverTo(sentinelValkeyInstance *ri, const sentinelAddr *addr, mstime_t timeout) {
+    char portstr[32];
+    const char *host;
+    int retval;
+
+    host = announceSentinelAddr(addr);
+    ll2string(portstr, sizeof(portstr), addr->port);
+
+    /* Note that we don't check the replies returned by commands, since we
+     * will observe instead the effects in the next INFO output. */
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s",
+                               sentinelInstanceMapCommand(ri, "MULTI"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s PAUSE %d WRITE",
+                               sentinelInstanceMapCommand(ri, "CLIENT"),
+                               timeout);
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s TO %s %s TIMEOUT %d",
+                               sentinelInstanceMapCommand(ri, "FAILOVER"),
+                               host, portstr, timeout);
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s",
+                               sentinelInstanceMapCommand(ri, "EXEC"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    return C_OK;
+}
+
+/* Kill all existing client connections (because the role of the server switched during
+ * failover) and unblock new clients. Additionally, send CONFIG REWRITE command
+ * in order to store the new configuration on disk when possible (that is,
+ * if the server was started with a configuration file).
+ *
+ * The command returns C_OK if the commands were accepted for
+ * (later) delivery otherwise C_ERR. The command replies are just
+ * discarded. */
+int sentinelKillClients(sentinelValkeyInstance *ri) {
+    int retval;
+
+    /* 1) Rewrite the configuration (the instance just switched roles)
+     * 2) Disconnect all clients (but this one sending the command) in order
+     *    to trigger the ask-master-on-reconnection protocol for connected
+     *    clients.
+     * 3) Unblock client writes (which include PUBLISH).
+     *
+     * Note that we don't check the replies returned by commands, since we
+     * will observe instead the effects in the next INFO output. */
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s",
+                               sentinelInstanceMapCommand(ri, "MULTI"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s REWRITE",
+                               sentinelInstanceMapCommand(ri, "CONFIG"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    for (int type = 0; type < 2; type++) {
+        retval = redisAsyncCommand(ri->link->cc,
+                                   sentinelDiscardReplyCallback, ri, "%s KILL TYPE %s",
+                                   sentinelInstanceMapCommand(ri, "CLIENT"),
+                                   type == 0 ? "normal" : "pubsub");
+        if (retval == C_ERR) return retval;
+        ri->link->pending_commands++;
+    }
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s UNPAUSE",
+                               sentinelInstanceMapCommand(ri, "CLIENT"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    retval = redisAsyncCommand(ri->link->cc,
+                               sentinelDiscardReplyCallback, ri, "%s",
+                               sentinelInstanceMapCommand(ri, "EXEC"));
+    if (retval == C_ERR) return retval;
+    ri->link->pending_commands++;
+
+    return C_OK;
+}
+
 /* Send REPLICAOF to the specified instance, always followed by a
  * CONFIG REWRITE command in order to store the new configuration on disk
  * when possible (that is, if the instance is recent enough to support
@@ -4661,9 +4837,11 @@ int sentinelSendReplicaOf(sentinelValkeyInstance *ri, const sentinelAddr *addr) 
 
     /* In order to send REPLICAOF in a safe way, we send a transaction performing
      * the following tasks:
-     * 1) Reconfigure the instance according to the specified host/port params.
-     * 2) Rewrite the configuration.
-     * 3) Disconnect all clients (but this one sending the command) in order
+     * 1) Abort a potentially ongoing Valkey FAILOVER (that may be stuck). REPLICAOF
+     *    can't be used during a failover.
+     * 2) Reconfigure the instance according to the specified host/port params.
+     * 3) Rewrite the configuration.
+     * 4) Disconnect all clients (but this one sending the command) in order
      *    to trigger the ask-primary-on-reconnection protocol for connected
      *    clients.
      *
@@ -4673,6 +4851,13 @@ int sentinelSendReplicaOf(sentinelValkeyInstance *ri, const sentinelAddr *addr) 
                                sentinelInstanceMapCommand(ri, "MULTI"));
     if (retval == C_ERR) return retval;
     ri->link->pending_commands++;
+
+    if (ri->monitored_instance_failover_state != SENTINEL_MONITORED_INSTANCE_FAILOVER_NS) {
+        retval = redisAsyncCommand(ri->link->cc, sentinelDiscardReplyCallback, ri, "%s ABORT",
+                                   sentinelInstanceMapCommand(ri, "FAILOVER"));
+        if (retval == C_ERR) return retval;
+        ri->link->pending_commands++;
+    }
 
     retval = redisAsyncCommand(ri->link->cc, sentinelDiscardReplyCallback, ri, "%s %s %s",
                                sentinelInstanceMapCommand(ri, "SLAVEOF"), host, portstr);
@@ -4906,6 +5091,38 @@ void sentinelFailoverSelectReplica(sentinelValkeyInstance *ri) {
     }
 }
 
+void sentinelFailoverSendFailover(sentinelValkeyInstance *ri) {
+    int retval;
+    mstime_t time_passed = mstime() - ri->failover_state_change_time;
+
+    /* If we don't have enough time left (1 second) for the FAILOVER command
+     * timeout, then abort the failover. */
+    if (ri->failover_timeout - time_passed < 1000) {
+        sentinelEvent(LL_WARNING, "-failover-abort-master-timeout", ri, "%@");
+        sentinelAbortFailover(ri);
+        return;
+    }
+    /* We can't send the command to the master if it is now
+     * disconnected. Retry again and again with this state (until the timeout
+     * is reached and we abort the failover.) */
+    if (ri->link->disconnected) {
+        return;
+    }
+
+    /* Send FAILOVER command to switch the role of the primary and the
+     * promoted replica. We actually register a generic callback for this
+     * command as we don't really care about the reply. We check if it worked
+     * indirectly observing if INFO returns a different role (master instead of
+     * slave). */
+    retval = sentinelFailoverTo(ri, ri->promoted_replica->addr, ri->failover_timeout - time_passed);
+    if (retval != C_OK) return;
+    sentinelEvent(LL_NOTICE, "+failover-state-wait-promotion",
+                  ri->promoted_replica, "%@");
+    ri->failover_state = SENTINEL_FAILOVER_STATE_WAIT_PROMOTION;
+    ri->failover_state_change_time = mstime();
+}
+
+
 void sentinelFailoverSendReplicaOfNoOne(sentinelValkeyInstance *ri) {
     int retval;
 
@@ -5077,7 +5294,12 @@ void sentinelFailoverStateMachine(sentinelValkeyInstance *ri) {
     switch (ri->failover_state) {
     case SENTINEL_FAILOVER_STATE_WAIT_START: sentinelFailoverWaitStart(ri); break;
     case SENTINEL_FAILOVER_STATE_SELECT_REPLICA: sentinelFailoverSelectReplica(ri); break;
-    case SENTINEL_FAILOVER_STATE_SEND_REPLICAOF_NOONE: sentinelFailoverSendReplicaOfNoOne(ri); break;
+    case SENTINEL_FAILOVER_STATE_SEND_REPLICAOF_NOONE:
+        if (!(ri->flags & SRI_COORD_FAILOVER))
+            sentinelFailoverSendReplicaOfNoOne(ri);
+        else
+            sentinelFailoverSendFailover(ri);
+        break;
     case SENTINEL_FAILOVER_STATE_WAIT_PROMOTION: sentinelFailoverWaitPromotion(ri); break;
     case SENTINEL_FAILOVER_STATE_RECONF_REPLICAS: sentinelFailoverReconfNextReplica(ri); break;
     }
@@ -5092,7 +5314,7 @@ void sentinelAbortFailover(sentinelValkeyInstance *ri) {
     serverAssert(ri->flags & SRI_FAILOVER_IN_PROGRESS);
     serverAssert(ri->failover_state <= SENTINEL_FAILOVER_STATE_WAIT_PROMOTION);
 
-    ri->flags &= ~(SRI_FAILOVER_IN_PROGRESS | SRI_FORCE_FAILOVER);
+    ri->flags &= ~(SRI_FAILOVER_IN_PROGRESS | SRI_FORCE_FAILOVER | SRI_COORD_FAILOVER);
     ri->failover_state = SENTINEL_FAILOVER_STATE_NONE;
     ri->failover_state_change_time = mstime();
     if (ri->promoted_replica) {
