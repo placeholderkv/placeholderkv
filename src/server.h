@@ -1702,6 +1702,7 @@ struct valkeyServer {
     long long stat_fork_time;                      /* Time needed to perform latest fork() */
     double stat_fork_rate;                         /* Fork rate in GB/sec. */
     long long stat_total_forks;                    /* Total count of fork. */
+    long long stat_last_fork_start_time;           /* Last us time to start a successful fork(). */
     long long stat_rejected_conn;                  /* Clients rejected because of maxclients */
     long long stat_sync_full;                      /* Number of full resyncs with replicas. */
     long long stat_sync_partial_ok;                /* Number of accepted PSYNC requests. */
