@@ -3887,7 +3887,7 @@ void cleanupTransferResources(void) {
         return;
     }
 
-    serverAssert(server.repl_transfer_fd != -1 && server.repl_transfer_tmpfile != NULL);
+    serverAssert(server.repl_transfer_tmpfile != NULL);
     close(server.repl_transfer_fd);
     bg_unlink(server.repl_transfer_tmpfile);
     zfree(server.repl_transfer_tmpfile);
