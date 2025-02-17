@@ -7037,9 +7037,29 @@ int clusterCommandSpecial(client *c) {
         clusterDelNode(n);
         clusterDoBeforeSleep(CLUSTER_TODO_UPDATE_STATE | CLUSTER_TODO_SAVE_CONFIG);
         addReply(c, shared.ok);
-    } else if (!strcasecmp(c->argv[1]->ptr, "replicate") && c->argc == 3) {
-        /* CLUSTER REPLICATE <NODE ID> */
+    } else if (!strcasecmp(c->argv[1]->ptr, "replicate") && (c->argc == 3 || c->argc == 4)) {
+        /* CLUSTER REPLICATE (<NODE ID> | NO ONE)*/
         /* Lookup the specified node in our table. */
+        if (c->argc == 4) {
+            if (strcasecmp(c->argv[2]->ptr, "NO") || strcasecmp(c->argv[3]->ptr, "ONE")) {
+                addReplySubcommandSyntaxError(c);
+                return 1;
+            }
+            if (nodeIsPrimary(myself)) {
+                addReply(c, shared.ok);
+                return 1;
+            }
+            sds client = catClientInfoShortString(sdsempty(), c, server.hide_user_data_from_log);
+            serverLog(LL_NOTICE, "Stop replication and turning myself into empty primary (request from '%s').", client);
+            sdsfree(client);
+            clusterSetNodeAsPrimary(myself);
+            clusterPromoteSelfToPrimary();
+            emptyData(-1, server.repl_replica_lazy_flush ? EMPTYDB_ASYNC : EMPTYDB_NO_FLAGS, NULL);
+            resetManualFailover();
+            clusterDoBeforeSleep(CLUSTER_TODO_UPDATE_STATE | CLUSTER_TODO_SAVE_CONFIG | CLUSTER_TODO_BROADCAST_ALL);
+            addReply(c, shared.ok);
+            return 1;
+        }
         clusterNode *n = clusterLookupNode(c->argv[2]->ptr, sdslen(c->argv[2]->ptr));
         if (!n) {
             addReplyErrorFormat(c, "Unknown node %s", (char *)c->argv[2]->ptr);
