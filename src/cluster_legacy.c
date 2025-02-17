@@ -5078,6 +5078,7 @@ void clusterHandleReplicaMigration(int max_replicas) {
         /* We are migrating to a different shard that has a completely different
          * replication history, so a full sync is required. */
         clusterSetPrimary(target, 1, 1);
+        clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG | CLUSTER_TODO_FSYNC_CONFIG);
     }
 }
 
