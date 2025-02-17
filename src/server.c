@@ -2804,6 +2804,17 @@ void initServer(void) {
     server.client_mem_usage_buckets = NULL;
     resetReplicationBuffer();
 
+    if (server.maxmemory) {
+        const char *err = NULL;
+        if (isMaxmemoryReservedLessThanMaxmemory(&err) == C_ERR) {
+            serverLog(LL_WARNING, "%s", err);
+            exit(1);
+        }
+        server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
+    } else {
+        server.key_eviction_memory = 0;
+    }
+
     /* Make sure the locale is set on startup based on the config file. */
     if (setlocale(LC_COLLATE, server.locale_collate) == NULL) {
         serverLog(LL_WARNING, "Failed to configure LOCALE for invalid locale name.");
@@ -5760,6 +5771,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         char used_memory_scripts_hmem[64];
         char used_memory_rss_hmem[64];
         char maxmemory_hmem[64];
+        char maxmemory_reserved_hmem[64];
         size_t zmalloc_used = zmalloc_used_memory();
         size_t total_system_mem = server.system_memory_size;
         const char *evict_policy = evictPolicyToString();
@@ -5781,6 +5793,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
         bytesToHuman(used_memory_scripts_hmem, sizeof(used_memory_scripts_hmem), mh->lua_caches + mh->functions_caches);
         bytesToHuman(used_memory_rss_hmem, sizeof(used_memory_rss_hmem), server.cron_malloc_stats.process_rss);
         bytesToHuman(maxmemory_hmem, sizeof(maxmemory_hmem), server.maxmemory);
+        bytesToHuman(maxmemory_reserved_hmem, sizeof(maxmemory_reserved_hmem), server.maxmemory_reserved);
 
         if (sections++) info = sdscat(info, "\r\n");
         info = sdscatprintf(
@@ -5819,6 +5832,8 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "maxmemory:%lld\r\n", server.maxmemory,
                 "maxmemory_human:%s\r\n", maxmemory_hmem,
                 "maxmemory_policy:%s\r\n", evict_policy,
+                "maxmemory_reserved:%lld\r\n", server.maxmemory_reserved,
+                "maxmemory_reserved_human:%s\r\n", maxmemory_reserved_hmem,
                 "allocator_frag_ratio:%.2f\r\n", mh->allocator_frag,
                 "allocator_frag_bytes:%zu\r\n", mh->allocator_frag_bytes,
                 "allocator_rss_ratio:%.2f\r\n", mh->allocator_rss,
@@ -6802,6 +6817,23 @@ int validateProcTitleTemplate(const char *template) {
     if (sdslen(res) == 0) ok = 0;
     sdsfree(res);
     return ok;
+}
+
+int isMaxmemoryReservedLessThanMaxmemory(const char **err) {
+    if (server.maxmemory <= server.maxmemory_reserved) {
+        *err = "The maxmemory reserved value should be smaller than maxmemory.";
+        return C_ERR;
+    }
+    return C_OK;
+}
+
+void calculateKeyEvictionMemory(void) {
+    server.key_eviction_memory = server.maxmemory - server.maxmemory_reserved;
+    size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
+    if (server.key_eviction_memory < used) {
+        serverLog(LL_WARNING, "WARNING: the difference between memory usage and maxmemory is less than reserved memory. "
+                              "This will result in key eviction depending on the maxmemory-policy. But server can still accept new write commands.");
+    }
 }
 
 int serverSetProcTitle(char *title) {

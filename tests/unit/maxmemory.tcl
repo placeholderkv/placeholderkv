@@ -263,8 +263,70 @@ start_server {tags {"maxmemory external:skip"}} {
             }
         }
     }
-}
 
+    test "enable maxmemory-reserved, test maxmemory-reserved with maxmemory update" {
+         # make sure to start with a blank instance
+         r flushall
+         # we set maxmemory as 0, and we expect maxmemory-reserved as 0 too.
+         r config set maxmemory 0
+         assert_equal 0 [lindex [r config get maxmemory] 1]
+         assert_equal 0 [lindex [r config get maxmemory-reserved] 1]
+         # we increase maxmemory and maxmemory-reserved both
+         r config set maxmemory 10000000
+         r config set maxmemory-reserved 4000000
+         assert_equal 10000000 [lindex [r config get maxmemory] 1]
+         assert_equal 4000000 [lindex [r config get maxmemory-reserved] 1]
+         # we decrease maxmemory and maxmemory-reserved no change
+         r config set maxmemory 6000000
+         r config set maxmemory-reserved 4000000
+         assert_equal 6000000 [lindex [r config get maxmemory] 1]
+         assert_equal 4000000 [lindex [r config get maxmemory-reserved] 1]
+	 catch {r config set maxmemory 3000000} err
+	 assert_match "*maxmemory reserved value should be smaller than maxmemory*" $err
+    }
+
+    foreach policy {
+        allkeys-random allkeys-lru allkeys-lfu volatile-lru volatile-lfu volatile-random volatile-ttl
+    } {
+        test "enable maxmemory-reserved, test eviction key number with policy ($policy) and different maxmemory value" {
+            r flushall
+            r config set maxmemory 0
+            # make sure to start with a blank instance
+            set num_eviction_key_init [s evicted_keys]
+            set used 1165448
+            set limit_maxmemory_value1 [expr {$used+40*1024}]
+            set limit_maxmemory_value2 [expr {$used+70*1024}]
+            set limit_maxmemory_value3 [expr {$used+100*1024}]
+            r config set maxmemory $limit_maxmemory_value1
+            r config set maxmemory-policy $policy
+            r config set maxmemory-reserved 30720
+            set numkeys 5000
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_maxmemory_1 [s evicted_keys]
+            set diff_num_key_eviction_one [expr {$num_eviction_key_maxmemory_1 - $num_eviction_key_init}]    
+            r flushall
+            r config set maxmemory $limit_maxmemory_value2
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_maxmemory_2 [s evicted_keys]
+            set diff_num_key_eviction_two [expr {$num_eviction_key_maxmemory_2 - $num_eviction_key_maxmemory_1}]
+            r flushall
+            r config set maxmemory $limit_maxmemory_value3
+            for {set j 0} {$j < $numkeys} {incr j} {
+                catch {r set $j $j EX 10000}
+            }
+            set num_eviction_key_maxmemory_3 [s evicted_keys]
+            set diff_num_key_eviction_three [expr {$num_eviction_key_maxmemory_3 - $num_eviction_key_maxmemory_2}]
+            assert_morethan $diff_num_key_eviction_two $diff_num_key_eviction_three
+            assert_morethan $diff_num_key_eviction_one $diff_num_key_eviction_two
+            r flushall
+            r config set maxmemory 0
+        }
+    }
+}
 # Calculate query buffer memory of slave
 proc slave_query_buffer {srv} {
     set clients [split [$srv client list] "\r\n"]

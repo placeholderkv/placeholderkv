@@ -2496,18 +2496,33 @@ static int updateReplBacklogSize(const char **err) {
     return 1;
 }
 
-static int updateMaxmemory(const char **err) {
-    UNUSED(err);
+static int updateMaxmemoryReserved(const char **err) {
     if (server.maxmemory) {
-        size_t used = zmalloc_used_memory() - freeMemoryGetNotCountedMemory();
-        if (server.maxmemory < used) {
-            serverLog(LL_WARNING,
-                      "WARNING: the new maxmemory value set via CONFIG SET (%llu) is smaller than the current memory "
-                      "usage (%zu). This will result in key eviction and/or the inability to accept new write commands "
-                      "depending on the maxmemory-policy.",
-                      server.maxmemory, used);
+        if (isMaxmemoryReservedLessThanMaxmemory(err) == C_ERR) {
+            return 0;
         }
+        calculateKeyEvictionMemory();
         startEvictionTimeProc();
+    } else {
+        if (server.maxmemory_reserved) {
+            *err = "Current maxmemory value is 0, the new reserved memory is invalid";
+            return 0;
+        }
+        server.key_eviction_memory = 0;
+    }
+    return 1;
+}
+
+static int updateMaxmemory(const char **err) {
+    if (server.maxmemory) {
+        if (isMaxmemoryReservedLessThanMaxmemory(err) == C_ERR) {
+            return 0;
+        }
+        calculateKeyEvictionMemory();
+        startEvictionTimeProc();
+    } else {
+        server.maxmemory_reserved = 0;
+        server.key_eviction_memory = 0;
     }
     return 1;
 }
@@ -3328,6 +3343,7 @@ standardConfig static_configs[] = {
 
     /* Unsigned Long Long configs */
     createULongLongConfig("maxmemory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory, 0, MEMORY_CONFIG, NULL, updateMaxmemory),
+    createULongLongConfig("maxmemory-reserved", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory_reserved, 0, MEMORY_CONFIG, NULL, updateMaxmemoryReserved),
     createULongLongConfig("cluster-link-sendbuf-limit", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.cluster_link_msg_queue_limit_bytes, 0, MEMORY_CONFIG, NULL, NULL),
 
     /* Size_t configs */

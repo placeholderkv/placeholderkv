@@ -377,7 +377,7 @@ size_t freeMemoryGetNotCountedMemory(void) {
  *              limit.
  *              (Populated both for C_ERR and C_OK)
  */
-int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *level) {
+int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *level, unsigned long long maxmemory) {
     size_t mem_reported, mem_used, mem_tofree;
 
     /* Check if we are over the memory usage limit. If we are not, no need
@@ -386,11 +386,12 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     if (total) *total = mem_reported;
 
     /* We may return ASAP if there is no need to compute the level. */
-    if (!server.maxmemory) {
+    if (!maxmemory) {
         if (level) *level = 0;
         return C_OK;
     }
-    if (mem_reported <= server.maxmemory && !level) return C_OK;
+
+    if (mem_reported <= maxmemory && !level) return C_OK;
 
     /* Remove the size of replicas output buffers and AOF buffer from the
      * count of used memory. */
@@ -399,15 +400,19 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     mem_used = (mem_used > overhead) ? mem_used - overhead : 0;
 
     /* Compute the ratio of memory usage. */
-    if (level) *level = (float)mem_used / (float)server.maxmemory;
+    if (level) {
+        *level = (float)mem_used / (float)server.maxmemory;
+    }
 
-    if (mem_reported <= server.maxmemory) return C_OK;
+    if (mem_reported <= maxmemory) return C_OK;
 
     /* Check if we are still over the memory limit. */
-    if (mem_used <= server.maxmemory) return C_OK;
+    /* if function parameter 'maxmemory' is equal to maxmemory and mem_used > maxmemory then OOM /
+    / if function parameter 'maxmemory' is equal to maxmemory_soft and mem_used > function parameter 'maxmemory' then there is no OOM but eviction happens */
+    if (mem_used <= maxmemory) return C_OK;
 
     /* Compute how much memory we need to free. */
-    mem_tofree = mem_used - server.maxmemory;
+    mem_tofree = mem_used - server.key_eviction_memory;
 
     if (logical) *logical = mem_used;
     if (tofree) *tofree = mem_tofree;
@@ -522,20 +527,24 @@ int performEvictions(void) {
     if (!isSafeToPerformEvictions()) return EVICT_OK;
 
     int keys_freed = 0;
-    size_t mem_reported, mem_tofree;
+    size_t mem_reported, mem_tofree, mem_used;
     long long mem_freed = 0; /* Maybe become negative */
     mstime_t latency, eviction_latency;
     long long delta;
     int replicas = listLength(server.replicas);
     int result = EVICT_FAIL;
 
-    if (getMaxmemoryState(&mem_reported, NULL, &mem_tofree, NULL) == C_OK) {
+    if (getMaxmemoryState(&mem_reported, &mem_used, &mem_tofree, NULL, server.key_eviction_memory) == C_OK) {
         result = EVICT_OK;
         goto update_metrics;
     }
 
     if (server.maxmemory_policy == MAXMEMORY_NO_EVICTION || (iAmPrimary() && server.import_mode)) {
-        result = EVICT_FAIL; /* We need to free memory, but policy forbids or we are in import mode. */
+        if (mem_used >= server.maxmemory) {
+            result = EVICT_FAIL; /* We need to free memory, but policy forbids or we are in import mode. */
+        } else {
+            result = EVICT_OK; /* used_memory greater than key_eviction_memory, but not reach OOM */
+        }
         goto update_metrics;
     }
 
@@ -697,7 +706,7 @@ int performEvictions(void) {
                  * across the dbAsyncDelete() call, while the thread can
                  * release the memory all the time. */
                 if (server.lazyfree_lazy_eviction) {
-                    if (getMaxmemoryState(NULL, NULL, NULL, NULL) == C_OK) {
+                    if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.key_eviction_memory) == C_OK) {
                         break;
                     }
                 }
@@ -712,13 +721,15 @@ int performEvictions(void) {
                 }
             }
         } else {
-            goto cant_free; /* nothing to free... */
+            break;
         }
     }
-    /* at this point, the memory is OK, or we have reached the time limit */
-    result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
 
-cant_free:
+    if (mem_freed >= (long long)(mem_used - server.key_eviction_memory)) {
+        /* at this point, the memory is OK, or we have reached the time limit */
+        result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
+    }
+
     if (result == EVICT_FAIL) {
         /* At this point, we have run out of evictable items.  It's possible
          * that some items are being freed in the lazyfree thread.  Perform a
@@ -726,7 +737,7 @@ cant_free:
         mstime_t lazyfree_latency;
         latencyStartMonitor(lazyfree_latency);
         while (bioPendingJobsOfType(BIO_LAZY_FREE) && elapsedUs(evictionTimer) < eviction_time_limit_us) {
-            if (getMaxmemoryState(NULL, NULL, NULL, NULL) == C_OK) {
+            if (getMaxmemoryState(NULL, NULL, NULL, NULL, server.key_eviction_memory) == C_OK) {
                 result = EVICT_OK;
                 break;
             }
