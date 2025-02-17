@@ -1217,7 +1217,7 @@ int ValkeyModule_OnLoad(void *ctx, ValkeyModuleString **argv, int argc) {
     UNUSED(argc);
 
     /* Connection modules must be part of the same build as the server. */
-    if (strcmp(REDIS_BUILD_ID_RAW, serverBuildIdRaw())) {
+    if (strcmp(SERVER_BUILD_ID_RAW, serverBuildIdRaw())) {
         serverLog(LL_NOTICE, "Connection type %s was not built together with the valkey-server used.", CONN_TYPE_TLS);
         return VALKEYMODULE_ERR;
     }

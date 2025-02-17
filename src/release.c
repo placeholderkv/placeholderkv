@@ -38,19 +38,19 @@
 #include "crc64.h"
 
 char *serverGitSHA1(void) {
-    return REDIS_GIT_SHA1;
+    return SERVER_GIT_SHA1;
 }
 
 char *serverGitDirty(void) {
-    return REDIS_GIT_DIRTY;
+    return SERVER_GIT_DIRTY;
 }
 
 const char *serverBuildIdRaw(void) {
-    return REDIS_BUILD_ID_RAW;
+    return SERVER_BUILD_ID_RAW;
 }
 
 uint64_t serverBuildId(void) {
-    char *buildid = REDIS_BUILD_ID_RAW;
+    char *buildid = SERVER_BUILD_ID_RAW;
 
     return crc64(0, (unsigned char *)buildid, strlen(buildid));
 }
