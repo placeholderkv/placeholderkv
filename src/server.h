@@ -504,7 +504,7 @@ typedef enum {
 #define UNUSED(V) ((void)V)
 
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^64 elements */
-#define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
+#define ZSKIPLIST_P 1/M_E /* Skiplist P = 1/e */
 #define ZSKIPLIST_MAX_SEARCH 10
 
 /* Append only defines */
