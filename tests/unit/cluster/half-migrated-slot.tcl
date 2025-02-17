@@ -81,10 +81,11 @@ test "Move key back" {
     assert_equal "xyz" [$cluster get aga]
 }
 
+reset_cluster
+
 test "Half-finish importing" {
     # Now we half finish 'importing' node
     assert_equal {OK} [$nodeto(link) cluster setslot 609 node $nodeto(id)]
-    fix_cluster $nodefrom(addr)
     assert_equal "xyz" [$cluster get aga]
 }
 
