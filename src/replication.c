@@ -47,6 +47,7 @@
 #include <ctype.h>
 
 void cleanupTransferResources(void);
+void replicationAbortSyncTransfer(void);
 void replicationDiscardCachedPrimary(void);
 void replicationResurrectCachedPrimary(connection *conn);
 void replicationResurrectProvisionalPrimary(void);
@@ -2863,13 +2864,8 @@ error:
         connClose(server.repl_transfer_s);
         server.repl_transfer_s = NULL;
     }
-    if (server.repl_rdb_transfer_s) {
-        connClose(server.repl_rdb_transfer_s);
-        server.repl_rdb_transfer_s = NULL;
-    }
-    cleanupTransferResources();
-    server.repl_state = REPL_STATE_CONNECT;
     replicationAbortDualChannelSyncTransfer();
+    server.repl_state = REPL_STATE_CONNECT;
 }
 
 /* Replication: Replica side.
@@ -3846,13 +3842,11 @@ no_response_error: /* Handle receiveSynchronousResponse() error when primary has
     /* Fall through to regular error handling */
 
 error:
-    connClose(conn);
-    server.repl_transfer_s = NULL;
     if (server.repl_rdb_transfer_s) {
         connClose(server.repl_rdb_transfer_s);
         server.repl_rdb_transfer_s = NULL;
     }
-    cleanupTransferResources();
+    replicationAbortSyncTransfer();
     server.repl_state = REPL_STATE_CONNECT;
     return;
 
@@ -3912,7 +3906,6 @@ void undoConnectWithPrimary(void) {
  * Never call this function directly, use cancelReplicationHandshake() instead.
  */
 void replicationAbortSyncTransfer(void) {
-    serverAssert(server.repl_state == REPL_STATE_TRANSFER);
     undoConnectWithPrimary();
     cleanupTransferResources();
 }
