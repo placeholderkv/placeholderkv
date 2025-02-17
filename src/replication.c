@@ -3842,6 +3842,8 @@ no_response_error: /* Handle receiveSynchronousResponse() error when primary has
     /* Fall through to regular error handling */
 
 error:
+    connClose(conn);
+    server.repl_transfer_s = NULL;
     if (server.repl_rdb_transfer_s) {
         connClose(server.repl_rdb_transfer_s);
         server.repl_rdb_transfer_s = NULL;
@@ -3898,6 +3900,8 @@ void cleanupTransferResources(void) {
  * Never call this function directly, use cancelReplicationHandshake() instead.
  */
 void undoConnectWithPrimary(void) {
+    if (server.repl_transfer_s == NULL) return;
+
     connClose(server.repl_transfer_s);
     server.repl_transfer_s = NULL;
 }
