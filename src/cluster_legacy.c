@@ -3716,9 +3716,9 @@ int clusterProcessPacket(clusterLink *link) {
         /* Manual failover requested from replicas. Initialize the state
          * accordingly. */
         resetManualFailover();
-        server.cluster->mf_end = now + CLUSTER_MF_TIMEOUT;
+        server.cluster->mf_end = now + server.cluster_mf_timeout;
         server.cluster->mf_replica = sender;
-        pauseActions(PAUSE_DURING_FAILOVER, now + (CLUSTER_MF_TIMEOUT * CLUSTER_MF_PAUSE_MULT),
+        pauseActions(PAUSE_DURING_FAILOVER, now + (server.cluster_mf_timeout * CLUSTER_MF_PAUSE_MULT),
                      PAUSE_ACTIONS_CLIENT_WRITE_SET);
         serverLog(LL_NOTICE, "Manual failover requested by replica %.40s (%s).", sender->name, sender->human_nodename);
         /* We need to send a ping message to the replica, as it would carry
@@ -5089,7 +5089,7 @@ void clusterHandleReplicaMigration(int max_replicas) {
  *    setting mf_end to the millisecond unix time at which we'll abort the
  *    attempt.
  * 2) Replica sends a MFSTART message to the primary requesting to pause clients
- *    for two times the manual failover timeout CLUSTER_MF_TIMEOUT.
+ *    for CLUSTER_MF_PAUSE_MULT times the server.cluster_mf_timeout.
  *    When primary is paused for manual failover, it also starts to flag
  *    packets with CLUSTERMSG_FLAG0_PAUSED.
  * 3) Replica waits for primary to send its replication offset flagged as PAUSED.
@@ -6475,7 +6475,7 @@ clusterNode *getMyClusterNode(void) {
     return server.cluster->myself;
 }
 
-int clusterManualFailoverTimeLimit(void) {
+mstime_t clusterManualFailoverTimeLimit(void) {
     return server.cluster->mf_end;
 }
 
@@ -7120,7 +7120,7 @@ int clusterCommandSpecial(client *c) {
             return 1;
         }
         resetManualFailover();
-        server.cluster->mf_end = mstime() + CLUSTER_MF_TIMEOUT;
+        server.cluster->mf_end = mstime() + server.cluster_mf_timeout;
         sds client = catClientInfoShortString(sdsempty(), c, server.hide_user_data_from_log);
 
         if (takeover) {
