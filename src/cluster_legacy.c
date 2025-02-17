@@ -3045,7 +3045,10 @@ static void clusterProcessModulePacket(clusterMsgModule *module_data, clusterNod
     uint32_t len = ntohl(module_data->len);
     uint8_t type = module_data->type;
     unsigned char *payload = module_data->bulk_data;
-    moduleCallClusterReceivers(sender->name, module_id, type, payload, len);
+
+    sds sender_name = sdsnewlen(sender->name, 40);
+    moduleCallClusterReceivers(sender_name, module_id, type, payload, len);
+    sdsfree(sender_name);
 }
 
 static void clusterProcessLightPacket(clusterNode *sender, clusterLink *link, uint16_t type) {
