@@ -28,7 +28,7 @@ then
     while [ $((PORT < ENDPORT)) != "0" ]; do
         PORT=$((PORT+1))
         echo "Starting $PORT"
-        $BIN_PATH/valkey-server --port $PORT --protected-mode $PROTECTED_MODE --cluster-enabled yes --cluster-config-file nodes-${PORT}.conf --cluster-node-timeout $TIMEOUT --appendonly yes --appendfilename appendonly-${PORT}.aof --appenddirname appendonlydir-${PORT} --dbfilename dump-${PORT}.rdb --logfile ${PORT}.log --daemonize yes --enable-protected-configs yes --enable-debug-command yes --enable-module-command yes ${ADDITIONAL_OPTIONS}
+        $BIN_PATH/valkey-server --port $PORT --protected-mode $PROTECTED_MODE --databases 1 --cluster-enabled yes --cluster-config-file nodes-${PORT}.conf --cluster-node-timeout $TIMEOUT --appendonly yes --appendfilename appendonly-${PORT}.aof --appenddirname appendonlydir-${PORT} --dbfilename dump-${PORT}.rdb --logfile ${PORT}.log --daemonize yes --enable-protected-configs yes --enable-debug-command yes --enable-module-command yes --auto-failover-on-shutdown yes ${ADDITIONAL_OPTIONS}
     done
     exit 0
 fi
@@ -70,7 +70,7 @@ then
     while [ $((PORT < ENDPORT)) != "0" ]; do
         PORT=$((PORT+1))
         echo "Starting $PORT"
-        $BIN_PATH/valkey-server --port $PORT --protected-mode $PROTECTED_MODE --cluster-enabled yes --cluster-config-file nodes-${PORT}.conf --cluster-node-timeout $TIMEOUT --appendonly yes --appendfilename appendonly-${PORT}.aof --appenddirname appendonlydir-${PORT} --dbfilename dump-${PORT}.rdb --logfile ${PORT}.log --daemonize yes --enable-protected-configs yes --enable-debug-command yes --enable-module-command yes ${ADDITIONAL_OPTIONS}
+        $BIN_PATH/valkey-server --port $PORT --protected-mode $PROTECTED_MODE --databases 1 --cluster-enabled yes --cluster-config-file nodes-${PORT}.conf --cluster-node-timeout $TIMEOUT --appendonly yes --appendfilename appendonly-${PORT}.aof --appenddirname appendonlydir-${PORT} --dbfilename dump-${PORT}.rdb --logfile ${PORT}.log --daemonize yes --enable-protected-configs yes --enable-debug-command yes --enable-module-command yes --auto-failover-on-shutdown yes ${ADDITIONAL_OPTIONS}
     done
     exit 0
 fi

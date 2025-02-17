@@ -3626,6 +3626,14 @@ void syncWithPrimary(connection *conn) {
         err = sendCommand(conn, "REPLCONF", "version", VALKEY_VERSION, NULL);
         if (err) goto write_error;
 
+        /* Inform the primary of our (replica) node name. */
+        if (server.cluster_enabled) {
+            char *argv[] = {"CLIENT", "SETNAME", server.cluster->myself->name};
+            size_t lens[] = {6, 7, CLUSTER_NAMELEN};
+            err = sendCommandArgv(conn, 3, argv, lens);
+            if (err) goto write_error;
+        }
+
         server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;
         return;
     }
@@ -3713,6 +3721,24 @@ void syncWithPrimary(connection *conn) {
                       "(Non critical) Primary does not understand "
                       "REPLCONF VERSION: %s",
                       err);
+        }
+        sdsfree(err);
+        err = NULL;
+        if (server.cluster_enabled) {
+            server.repl_state = REPL_STATE_RECEIVE_SETNAME_REPLY;
+            return;
+        } else {
+            server.repl_state = REPL_STATE_SEND_PSYNC;
+        }
+    }
+
+    /* Receive CLIENT SETNAME reply. */
+    if (server.repl_state == REPL_STATE_RECEIVE_SETNAME_REPLY) {
+        err = receiveSynchronousResponse(conn);
+        if (err == NULL) goto no_response_error;
+        /* Ignore the error if any, we don't care if it failed, it is best effort. */
+        if (err[0] == '-') {
+            serverLog(LL_NOTICE, "(Non critical) Primary does not understand CLIENT SETNAME: %s", err);
         }
         sdsfree(err);
         err = NULL;
