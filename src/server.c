@@ -5477,7 +5477,24 @@ const char *getSafeInfoString(const char *s, size_t len, char **tmp) {
     return memmapchars(new, len, unsafe_info_chars, unsafe_info_chars_substs, sizeof(unsafe_info_chars) - 1);
 }
 
-sds genValkeyInfoStringCommandStats(sds info, hashtable *commands) {
+long long getTotalCommandUsec(hashtable *commands) {
+    hashtableIterator iter;
+    void *next;
+    long long total_usec = 0;
+    hashtableInitIterator(&iter, commands, HASHTABLE_ITER_SAFE);
+    while (hashtableNext(&iter, &next)) {
+        struct serverCommand *cmd = next;
+        total_usec += cmd->microseconds;
+        if (cmd->subcommands_ht) {
+            total_usec += getTotalCommandUsec(cmd->subcommands_ht);
+        }
+    }
+    hashtableResetIterator(&iter);
+
+    return total_usec;
+}
+
+sds genValkeyInfoStringCommandStats(sds info, hashtable *commands, long long total_usec) {
     hashtableIterator iter;
     void *next;
     hashtableInitIterator(&iter, commands, HASHTABLE_ITER_SAFE);
@@ -5486,15 +5503,16 @@ sds genValkeyInfoStringCommandStats(sds info, hashtable *commands) {
         char *tmpsafe;
         if (c->calls || c->failed_calls || c->rejected_calls) {
             info = sdscatprintf(info,
-                                "cmdstat_%s:calls=%lld,usec=%lld,usec_per_call=%.2f"
+                                "cmdstat_%s:calls=%lld,usec=%lld,usec_per_call=%.2f,approx_usec_perc=%lld"
                                 ",rejected_calls=%lld,failed_calls=%lld\r\n",
                                 getSafeInfoString(c->fullname, sdslen(c->fullname), &tmpsafe), c->calls,
                                 c->microseconds, (c->calls == 0) ? 0 : ((float)c->microseconds / c->calls),
+                                (c->microseconds == 0) ? 0 : (c->microseconds * 100 / total_usec),
                                 c->rejected_calls, c->failed_calls);
             if (tmpsafe != NULL) zfree(tmpsafe);
         }
         if (c->subcommands_ht) {
-            info = genValkeyInfoStringCommandStats(info, c->subcommands_ht);
+            info = genValkeyInfoStringCommandStats(info, c->subcommands_ht, total_usec);
         }
     }
     hashtableResetIterator(&iter);
@@ -6168,7 +6186,8 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
     if (all_sections || (dictFind(section_dict, "commandstats") != NULL)) {
         if (sections++) info = sdscat(info, "\r\n");
         info = sdscatprintf(info, "# Commandstats\r\n");
-        info = genValkeyInfoStringCommandStats(info, server.commands);
+        long long total_command_usec = getTotalCommandUsec(server.commands);
+        info = genValkeyInfoStringCommandStats(info, server.commands, total_command_usec);
     }
 
     /* Error statistics */
