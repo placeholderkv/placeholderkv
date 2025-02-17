@@ -133,4 +133,5 @@ int isNodeAvailable(clusterNode *node);
 long long getNodeReplicationOffset(clusterNode *node);
 sds aggregateClientOutputBuffer(client *c);
 void resetClusterStats(void);
+int parseAndValidateConnectionPorts(client *c, long long *port, long long *cport);
 #endif /* __CLUSTER_H */
