@@ -38,7 +38,8 @@ start_cluster 3 0 [list config_lines $modules] {
         }
 
         verify_log_message -1 "*DING (type 1) RECEIVED*Hey*" 0
-        verify_log_message 0 "*DONG (type 2) RECEIVED*Message Received*" 0
+        verify_log_message -2 "*DING (type 1) RECEIVED*Hey*" 0
+        assert_equal 2 [count_log_message 0 "* <cluster> DONG (type 2) RECEIVED*"]
     }
 }
 
