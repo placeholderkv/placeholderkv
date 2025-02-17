@@ -989,6 +989,7 @@ getNodeByQuery(client *c, struct serverCommand *cmd, robj **argv, int argc, int 
     clusterNode *n = NULL;
     robj *firstkey = NULL;
     int multiple_keys = 0;
+    int multi_slot = 0;
     multiState *ms, _ms;
     multiCmd mc;
     int i, slot = 0, migrating_slot = 0, importing_slot = 0, missing_keys = 0, existing_keys = 0;
@@ -1080,12 +1081,26 @@ getNodeByQuery(client *c, struct serverCommand *cmd, robj **argv, int argc, int 
                 }
             } else {
                 /* If it is not the first key/channel, make sure it is exactly
-                 * the same key/channel as the first we saw. */
+                 * the same key/channel as the first we saw or an allowed crossslot situation. */
+                int prevent_crossslot =
+                    (cmd_flags & CMD_WRITE)        // eliminate issues with client->current_slot
+                    || pubsubshard_included        // pubsub does not benefit and too many edge cases
+                    || c->cmd->proc == execCommand // We do not permit crossslot transactions to prevent client code
+                                                   // which will break when cluster topology changes
+                    // finally, if any key is migrating we cannot permit the crossslot since we don't check if the
+                    // specific keys are affected
+                    //  this could potentially be relaxed in the future.
+                    || migrating_slot || importing_slot || getMigratingSlotDest(thisslot) != NULL ||
+                    getImportingSlotSource(thisslot) != NULL || n != getNodeBySlot(thisslot);
                 if (slot != thisslot) {
-                    /* Error: multiple keys from different slots. */
-                    getKeysFreeResult(&result);
-                    if (error_code) *error_code = CLUSTER_REDIR_CROSS_SLOT;
-                    return NULL;
+                    if (prevent_crossslot) {
+                        /* Error: multiple keys from different slots. */
+                        getKeysFreeResult(&result);
+                        if (error_code) *error_code = CLUSTER_REDIR_CROSS_SLOT;
+                        return NULL;
+                    } else {
+                        multi_slot = 1;
+                    }
                 }
                 if (importing_slot && !multiple_keys && !equalStringObjects(firstkey, thiskey)) {
                     /* Flag this request as one with multiple different
@@ -1140,7 +1155,11 @@ getNodeByQuery(client *c, struct serverCommand *cmd, robj **argv, int argc, int 
     }
 
     /* Return the hashslot by reference. */
-    if (hashslot) *hashslot = slot;
+    if (hashslot) {
+        // If we have multiple slots we disable slot caching on the client
+        //  In the future perhaps this optimization could be extended to work with multiple keys
+        *hashslot = multi_slot ? -1 : slot;
+    }
 
     /* MIGRATE always works in the context of the local node if the slot
      * is open (migrating or importing state). We need to be able to freely
