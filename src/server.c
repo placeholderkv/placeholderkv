@@ -1666,6 +1666,40 @@ long long serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDa
         migrateCloseTimedoutSockets();
     }
 
+    /* Check for CPU overload every 10 seconds. If CPU usage is above
+     * cpu_overload_protection_threshold then requests are responded
+     * with THROTTLED error (note that a cpu_overload_protection_threshold
+     * set to 0 means no throttling). */
+    run_with_period(10000) {
+        static const uint64_t one_billion = 1000000000;
+        static const uint64_t initial_throttling_percentage = 1;
+        static struct timespec start_clock, start_cputime, end_clock, end_cputime = {0, 0};
+
+        start_clock = end_clock;
+        start_cputime = end_cputime;
+        clock_gettime(CLOCK_MONOTONIC, &end_clock);
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end_cputime);
+        /* Skip the first iteration, as there is nothing to diff/delta from. */
+        if (start_clock.tv_nsec) {
+            uint64_t clock_diff = one_billion * (end_clock.tv_sec - start_clock.tv_sec) + (end_clock.tv_nsec - start_clock.tv_nsec);
+            uint64_t cputime_diff = one_billion * (end_cputime.tv_sec - start_cputime.tv_sec) + (end_cputime.tv_nsec - start_cputime.tv_nsec);
+            float normalized_cpu_usage_percentage = ((float)(cputime_diff) /(float)(clock_diff) * 100.0) / (float)(server.io_threads_num);
+            if (server.cpu_overload_protection_threshold > 0) {
+                    if (normalized_cpu_usage_percentage > server.cpu_overload_protection_threshold) {
+                        /* While overloaded, double the throttling percentage. */
+                        server.cpu_overload_protection_throttling_percentage = max(min(100, server.cpu_overload_protection_throttling_percentage * 2), 
+                                                                                    initial_throttling_percentage);
+                    } else {
+                        /* If not overloaded, divide by 2, eventually reaching 0. */
+                        server.cpu_overload_protection_throttling_percentage /= 2;
+                    }
+            } else {
+                /* CPU throttling is disabled. */
+                server.cpu_overload_protection_throttling_percentage = 0;
+            }
+        }
+    }
+
     /* Resize tracking keys table if needed. This is also done at every
      * command execution, but we want to be sure that if the last command
      * executed changes the value via CONFIG SET, the server will perform
@@ -2069,6 +2103,7 @@ void createSharedObjects(void) {
         createObject(OBJ_STRING, sdsnew("-EXECABORT Transaction discarded because of previous errors.\r\n"));
     shared.noreplicaserr = createObject(OBJ_STRING, sdsnew("-NOREPLICAS Not enough good replicas to write.\r\n"));
     shared.busykeyerr = createObject(OBJ_STRING, sdsnew("-BUSYKEY Target key name already exists.\r\n"));
+    shared.throttlederr = createObject(OBJ_STRING,sdsnew("-THROTTLED\r\n"));
 
     /* The shared NULL depends on the protocol version. */
     shared.null[0] = NULL;
@@ -2300,6 +2335,9 @@ void initServerConfig(void) {
 
     /* Linux OOM Score config */
     for (j = 0; j < CONFIG_OOM_COUNT; j++) server.oom_score_adj_values[j] = configOOMScoreAdjValuesDefaults[j];
+
+    /* CPU throttling config */
+    server.cpu_overload_protection_throttling_percentage = 0;
 
     /* Double constants initialization */
     R_Zero = 0.0;
@@ -4104,6 +4142,9 @@ int processCommand(client *c) {
     int is_may_replicate_command = (combined_flags & (CMD_WRITE | CMD_MAY_REPLICATE));
     int is_deny_async_loading_command = (combined_flags & CMD_NO_ASYNC_LOADING);
 
+    int is_client_excluded_from_cpu_throttling = getClientType(c) & (CLIENT_TYPE_PRIMARY | CLIENT_TYPE_REPLICA | CLIENT_TYPE_PUBSUB);
+    int is_cmd_excluded_from_cpu_throttling =  c->cmd->acl_categories & (ACL_CATEGORY_DANGEROUS | ACL_CATEGORY_ADMIN | ACL_CATEGORY_CONNECTION);
+
     const int obey_client = mustObeyClient(c);
 
     if (authRequired(c)) {
@@ -4344,6 +4385,16 @@ int processCommand(client *c) {
                              ((isPausedActions(PAUSE_ACTION_CLIENT_WRITE)) && is_may_replicate_command))) {
         blockPostponeClient(c);
         return C_OK;
+    }
+
+    /* If CPU throttling is enabled and command is eligble for throttling, throttle the percentage defined by
+     * cpu_overload_protection_throttling_percentage. */
+    if (!is_client_excluded_from_cpu_throttling &&
+        !is_cmd_excluded_from_cpu_throttling &&
+        server.cpu_overload_protection_threshold && 
+        (random() % 100) <  server.cpu_overload_protection_throttling_percentage) {
+            rejectCommand(c, shared.throttlederr);
+            return C_OK;
     }
 
     /* Exec the command */
