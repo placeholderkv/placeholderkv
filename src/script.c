@@ -548,7 +548,7 @@ void scriptCall(scriptRunCtx *run_ctx, sds *err) {
 
     /* There are commands that are not allowed inside scripts. */
     if (!server.script_disable_deny_script && (cmd->flags & CMD_NOSCRIPT)) {
-        *err = sdsnew("This Redis command is not allowed from script");
+        *err = sdscatprintf(sdsempty(), "This %s command is not allowed from script", server.extended_redis_compat ? "Redis" : "Valkey");
         goto error;
     }
 

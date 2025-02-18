@@ -385,6 +385,8 @@ start_server {tags {"other"}} {
             set info [r info server]
             assert_match "*redis_mode:*" $info
             assert_no_match "*server_mode:*" $info
+            set lolwut_output [r lolwut]
+            assert_match {*Redis ver.*} $lolwut_output
             r config set extended-redis-compatibility no
             set hello [r hello 3]
             assert_equal "valkey" [dict get $hello server]
@@ -392,6 +394,8 @@ start_server {tags {"other"}} {
             set info [r info server]
             assert_no_match "*redis_mode:*" $info
             assert_match "*server_mode:*" $info
+            set lolwut_output [r lolwut]
+            assert_match {*Valkey ver.*} $lolwut_output
         }
     }
 }
