@@ -1,4 +1,5 @@
 #include <time.h>
+#include <stdint.h>
 
 #include "test_help.h"
 
