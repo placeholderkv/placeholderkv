@@ -1032,31 +1032,29 @@ void hashtableEmpty(hashtable *ht, void(callback)(hashtable *)) {
         if (ht->bucket_exp[table_index] < 0) {
             continue;
         }
-        if (ht->used[table_index] > 0) {
-            for (size_t idx = 0; idx < numBuckets(ht->bucket_exp[table_index]); idx++) {
-                if (callback && (idx & 65535) == 0) callback(ht);
-                bucket *b = &ht->tables[table_index][idx];
-                do {
-                    /* Call the destructor with each entry. */
-                    if (ht->type->entryDestructor != NULL && b->presence != 0) {
-                        for (int pos = 0; pos < ENTRIES_PER_BUCKET; pos++) {
-                            if (isPositionFilled(b, pos)) {
-                                ht->type->entryDestructor(b->entries[pos]);
-                            }
+        for (size_t idx = 0; idx < numBuckets(ht->bucket_exp[table_index]); idx++) {
+            if (callback && (idx & 65535) == 0) callback(ht);
+            bucket *b = &ht->tables[table_index][idx];
+            do {
+                /* Call the destructor with each entry. */
+                if (ht->type->entryDestructor != NULL && b->presence != 0) {
+                    for (int pos = 0; pos < ENTRIES_PER_BUCKET; pos++) {
+                        if (isPositionFilled(b, pos)) {
+                            ht->type->entryDestructor(b->entries[pos]);
                         }
                     }
-                    bucket *next = getChildBucket(b);
+                }
+                bucket *next = getChildBucket(b);
 
-                    /* Free allocated bucket. */
-                    if (b != &ht->tables[table_index][idx]) {
-                        zfree(b);
-                        if (ht->type->trackMemUsage) {
-                            ht->type->trackMemUsage(ht, -sizeof(bucket));
-                        }
+                /* Free allocated bucket. */
+                if (b != &ht->tables[table_index][idx]) {
+                    zfree(b);
+                    if (ht->type->trackMemUsage) {
+                        ht->type->trackMemUsage(ht, -sizeof(bucket));
                     }
-                    b = next;
-                } while (b != NULL);
-            }
+                }
+                b = next;
+            } while (b != NULL);
         }
         zfree(ht->tables[table_index]);
         if (ht->type->trackMemUsage) {
