@@ -1161,10 +1161,13 @@ start_server {tags {"scripting"}} {
     test {Timedout read-only scripts can be killed by SCRIPT KILL} {
         set rd [valkey_deferring_client]
         r config set lua-time-limit 10
+        assert_match {running_script {}} [r SCRIPT STATS]
+        
         run_script_on_connection $rd {while true do end} 0
         after 200
         catch {r ping} e
         assert_match {BUSY*} $e
+        assert_match {running_script {name * command * duration_ms *}} [r SCRIPT STATS]
         kill_script
         after 200 ; # Give some time to Lua to call the hook again...
         assert_equal [r ping] "PONG"

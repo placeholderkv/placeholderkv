@@ -1,0 +1,55 @@
+{
+    "STATS": {
+        "summary": "Returns information about a script during execution.",
+        "complexity": "O(1).",
+        "group": "scripting",
+        "since": "8.0.0",
+        "arity": 2,
+        "container": "SCRIPT",
+        "function": "scriptCommand",
+        "command_flags": [
+            "NOSCRIPT",
+            "ALLOW_BUSY"
+        ],
+        "acl_categories": [
+            "SCRIPTING"
+        ],
+        "reply_schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "running_script": {
+                    "description": "Information about the running script.",
+                    "oneOf": [
+                        {
+                            "description": "If there's no in-flight script.",
+                            "type": "null"
+                        },
+                        {
+                            "description": "A map with the information about the running script.",
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "name": {
+                                    "description": "The name of the script.",
+                                    "type": "string"
+                                },
+                                "command": {
+                                    "description": "The command and arguments used for invoking the script.",
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "duration_ms": {
+                                    "description": "The script's runtime duration in milliseconds.",
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

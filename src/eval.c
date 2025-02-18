@@ -572,6 +572,8 @@ void scriptCommand(client *c) {
             "    Load a script into the scripts cache without executing it.",
             "SHOW <sha1>",
             "    Show a script from the scripts cache.",
+            "STATS",
+            "    Returns information about a script during execution.",
             NULL,
         };
         addReplyHelp(c, help);
@@ -637,6 +639,25 @@ void scriptCommand(client *c) {
             addReplyBulk(c, es->body);
         } else {
             addReplyErrorObject(c, shared.noscripterr);
+        }
+    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr, "stats")) {
+        addReplyMapLen(c, 1);
+
+        addReplyBulkCString(c, "running_script");
+        if (!scriptIsRunning()) {
+            addReplyNull(c);
+        } else {
+            addReplyMapLen(c, 3);
+            addReplyBulkCString(c, "name");
+            addReplyBulkCString(c, scriptCurrFunction());
+            addReplyBulkCString(c, "command");
+            client *script_client = scriptGetCaller();
+            addReplyArrayLen(c, script_client->argc);
+            for (int i = 0; i < script_client->argc; ++i) {
+                addReplyBulkCBuffer(c, script_client->argv[i]->ptr, sdslen(script_client->argv[i]->ptr));
+            }
+            addReplyBulkCString(c, "duration_ms");
+            addReplyLongLong(c, scriptRunDuration());
         }
     } else {
         addReplySubcommandSyntaxError(c);
