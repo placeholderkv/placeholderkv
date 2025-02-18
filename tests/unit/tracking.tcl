@@ -23,7 +23,9 @@ start_server {tags {"tracking network logreqres:skip"}} {
             # info which will not be consumed.
             r CLIENT TRACKING off
             $rd QUIT
+            $rd close
             $rd_redirection QUIT
+            $rd_redirection close
             set rd [valkey_deferring_client]
             set rd_redirection [valkey_deferring_client]
             $rd_redirection client id
@@ -243,6 +245,7 @@ start_server {tags {"tracking network logreqres:skip"}} {
         r GET key1
         $rd_redirection QUIT
         assert_equal OK [$rd_redirection read]
+        $rd_redirection close
         $rd_sg SET key1 2
 
         # Reinstantiating after QUIT
@@ -865,6 +868,16 @@ start_server {tags {"tracking network logreqres:skip"}} {
 # Just some extra coverage for --log-req-res, because we do not
 # run the full tracking unit in that mode
 start_server {tags {"tracking network"}} {
+    test {CLIENT TRACKINGINFO when start} {
+        set res [r client trackinginfo]
+        set flags [dict get $res flags]
+        assert_equal {off} $flags
+        set redirect [dict get $res redirect]
+        assert_equal {-1} $redirect
+        set prefixes [dict get $res prefixes]
+        assert_equal {} $prefixes
+    }
+
     test {Coverage: Basic CLIENT CACHING} {
         set rd_redirection [valkey_deferring_client]
         $rd_redirection client id

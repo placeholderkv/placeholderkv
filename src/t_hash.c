@@ -36,24 +36,26 @@
 
 struct hashTypeEntry {
     sds value;
-    unsigned char field_offset;
-    unsigned char field_data[];
+    char field_offset;
+    char field_data[];
 };
 
 /* takes ownership of value, does not take ownership of field */
 hashTypeEntry *hashTypeCreateEntry(sds field, sds value) {
-    size_t field_size = sdscopytobuffer(NULL, 0, field, NULL);
-
+    size_t field_len = sdslen(field);
+    char field_sds_type = sdsReqType(field_len);
+    size_t field_size = sdsReqSize(field_len, field_sds_type);
     size_t total_size = sizeof(hashTypeEntry) + field_size;
     hashTypeEntry *entry = zmalloc(total_size);
 
     entry->value = value;
-    sdscopytobuffer(entry->field_data, field_size, field, &entry->field_offset);
+    entry->field_offset = sdsHdrSize(field_sds_type);
+    sdswrite(entry->field_data, field_size, field_sds_type, field, field_len);
     return entry;
 }
 
 sds hashTypeEntryGetField(const hashTypeEntry *entry) {
-    const unsigned char *field = entry->field_data + entry->field_offset;
+    const char *field = entry->field_data + entry->field_offset;
     return (sds)field;
 }
 

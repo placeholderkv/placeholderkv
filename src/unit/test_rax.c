@@ -1023,3 +1023,55 @@ int test_raxFuzz(int argc, char **argv, int flags) {
     }
     return !!errors;
 }
+
+/* This test verifies that raxRemove correctly handles compression when two keys
+ * share a common prefix. Upon deletion of one key, rax attempts to recompress
+ * the structure back to its original form for other key. Historically, there was
+ * a crash when deleting one key because rax would attempt to recompress the
+ * structure without checking the 512MB size limit.
+ *
+ * This test is disabled by default because it uses a lot of memory. */
+int test_raxRecompressHugeKey(int argc, char **argv, int flags) {
+    UNUSED(argc);
+    UNUSED(argv);
+
+    if (!(flags & UNIT_TEST_LARGE_MEMORY)) return 0;
+
+    rax *rt = raxNew();
+
+    /* Insert small keys */
+    char small_key[32];
+    const char *small_prefix = ",({5oM}";
+    int i;
+    for (i = 1; i <= 20; i++) {
+        snprintf(small_key, sizeof(small_key), "%s%d", small_prefix, i);
+        size_t keylen = strlen(small_key);
+        raxInsert(rt, (unsigned char *)small_key, keylen,
+                  (void *)(long)i, NULL);
+    }
+
+    /* Insert large key exceeding compressed node size limit */
+    size_t max_keylen = ((1 << 29) - 1) + 100; // Compressed node limit + overflow
+    const char *large_prefix = ",({ABC}";
+    unsigned char *large_key = zmalloc(max_keylen + strlen(large_prefix));
+    if (!large_key) {
+        fprintf(stderr, "Failed to allocate memory for large key\n");
+        raxFree(rt);
+        return 1;
+    }
+
+    memcpy(large_key, large_prefix, strlen(large_prefix));
+    memset(large_key + strlen(large_prefix), '1', max_keylen);
+    raxInsert(rt, large_key, max_keylen + strlen(large_prefix), NULL, NULL);
+
+    /* Remove small keys to trigger recompression crash in raxRemove() */
+    for (i = 20; i >= 1; i--) {
+        snprintf(small_key, sizeof(small_key), "%s%d", small_prefix, i);
+        size_t keylen = strlen(small_key);
+        raxRemove(rt, (unsigned char *)small_key, keylen, NULL);
+    }
+
+    zfree(large_key);
+    raxFree(rt);
+    return 0;
+}

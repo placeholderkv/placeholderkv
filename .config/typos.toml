@@ -13,6 +13,7 @@ ignore-hidden = false
 exat = "exat"
 optin = "optin"
 smove = "smove"
+Parth = "Parth" # seems like the spellchecker does not like it is similar to "Path"
 
 [type.c]
 extend-ignore-re = [

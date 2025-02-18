@@ -172,6 +172,16 @@
 #define VALKEY_NO_SANITIZE(sanitizer)
 #endif
 
+#if defined(__SANITIZE_ADDRESS__)
+/* GCC */
+#define VALKEY_ADDRESS_SANITIZER 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+/* Clang */
+#define VALKEY_ADDRESS_SANITIZER 1
+#endif
+#endif
+
 /* Define rdb_fsync_range to sync_file_range() on Linux, otherwise we use
  * the plain fsync() call. */
 #if (defined(__linux__) && defined(SYNC_FILE_RANGE_WAIT_BEFORE))

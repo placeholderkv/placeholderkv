@@ -4783,6 +4783,10 @@ void clusterFailoverReplaceYourPrimary(void) {
 
     /* 5) If there was a manual failover in progress, clear the state. */
     resetManualFailover();
+
+    /* Since we have became a new primary node, we may rely on auth_time to
+     * determine whether a failover is in progress, so it is best to reset it. */
+    server.cluster->failover_auth_time = 0;
 }
 
 /* This function is called if we are a replica node and our primary serving
@@ -6026,8 +6030,8 @@ sds clusterGenNodeDescription(client *c, clusterNode *node, int tls_primary) {
     return ci;
 }
 
-/* Generate the slot topology for all nodes and store the string representation
- * in the slots_info struct on the node. This is used to improve the efficiency
+/* Generate the slot topology for all nodes and store the slot range information
+ * in the slot_info_pairs array on the node. This is used to improve the efficiency
  * of clusterGenNodesDescription() because it removes looping of the slot space
  * for generating the slot info for each node individually. */
 void clusterGenNodesSlotsInfo(int filter) {
@@ -6238,6 +6242,10 @@ void clusterUpdateSlots(client *c, unsigned char *slots, int del) {
     }
 }
 
+/* Get the replication offset of a node.
+ *
+ * Nodes do not update their own information in the cluster state,
+ * so for self node, we cannot use `node->repl_offset` directly. */
 long long getNodeReplicationOffset(clusterNode *node) {
     if (node->flags & CLUSTER_NODE_MYSELF) {
         return nodeIsReplica(node) ? replicationGetReplicaOffset() : server.primary_repl_offset;
@@ -7273,10 +7281,6 @@ clusterNode *getNodeBySlot(int slot) {
 
 char *clusterNodeHostname(clusterNode *node) {
     return node->hostname;
-}
-
-long long clusterNodeReplOffset(clusterNode *node) {
-    return node->repl_offset;
 }
 
 const char *clusterNodePreferredEndpoint(clusterNode *n, client *c) {

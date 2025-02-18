@@ -46,6 +46,10 @@ start_server {tags {needs:repl external:skip}} {
             assert_error "REDIRECT $primary_host:$primary_port" {r get foo}
         }
 
+        test {CLIENT INFO} {
+            r client info
+        } {id=* addr=*:* laddr=*:* fd=* name=* age=* idle=* flags=N capa=r db=* sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=* argv-mem=* multi-mem=0 rbs=* rbp=* obl=0 oll=0 omem=0 tot-mem=* events=r cmd=client|info user=* redir=-1 resp=* lib-name=* lib-ver=* tot-net-in=* tot-net-out=* tot-cmds=*}
+
         test {non-data access commands are not redirected} {
             r ping
         } {PONG}
