@@ -179,7 +179,7 @@ int scriptPrepareForRun(scriptRunCtx *run_ctx,
                                         "Writable scripts are blocked. Use 'no-writes' flag for read only scripts. "
                                         "AOF error: %s",
                                         server.extended_redis_compat ? "Redis" : SERVER_TITLE,
-                                        strerror(server.aof_last_write_errno));
+                                        getAofWriteErrStr(server.aof_last_write_errno));
                 return C_ERR;
             }
 

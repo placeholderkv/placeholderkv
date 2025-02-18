@@ -4674,13 +4674,17 @@ int writeCommandsDeniedByDiskError(void) {
     return DISK_ERROR_TYPE_NONE;
 }
 
+char *getAofWriteErrStr(int error_code) {
+    return (error_code == EFBIG) ? "Reached aof-max-size" : strerror(error_code);
+}
+
 sds writeCommandsGetDiskErrorMessage(int error_code) {
     sds ret = NULL;
     if (error_code == DISK_ERROR_TYPE_RDB) {
         ret = sdsdup(shared.bgsaveerr->ptr);
     } else {
         ret = sdscatfmt(sdsempty(), "-MISCONF Errors writing to the AOF file: %s\r\n",
-                        strerror(server.aof_last_write_errno));
+                        getAofWriteErrStr(server.aof_last_write_errno));
     }
     return ret;
 }
@@ -5892,10 +5896,17 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
                 "module_fork_last_cow_size:%zu\r\n", server.stat_module_cow_bytes));
 
         if (server.aof_enabled) {
+            char aof_current_size_hdsk[64];
+            char aof_max_size_hdsk[64];
+            bytesToHuman(aof_current_size_hdsk, sizeof(aof_current_size_hdsk), (unsigned long long)server.aof_current_size);
+            bytesToHuman(aof_max_size_hdsk, sizeof(aof_max_size_hdsk), server.aof_max_size);
             info = sdscatprintf(
                 info,
                 FMTARGS(
                     "aof_current_size:%lld\r\n", (long long)server.aof_current_size,
+                    "aof_current_size_human:%s\r\n", aof_current_size_hdsk,
+                    "aof_max_size:%lld\r\n", server.aof_max_size,
+                    "aof_max_size_human:%s\r\n", aof_max_size_hdsk,
                     "aof_base_size:%lld\r\n", (long long)server.aof_rewrite_base_size,
                     "aof_pending_rewrite:%d\r\n", server.aof_rewrite_scheduled,
                     "aof_buffer_length:%zu\r\n", sdslen(server.aof_buf),
@@ -7203,6 +7214,14 @@ __attribute__((weak)) int main(int argc, char **argv) {
                   "WARNING: You specified a maxmemory value that is less than 1MB (current value is %llu bytes). Are "
                   "you sure this is what you really want?",
                   server.maxmemory);
+    }
+
+    /* Warning the user about suspicious aof-max-size setting. */
+    if (server.aof_max_size > 0 && server.aof_max_size < 1024 * 1024) {
+        serverLog(LL_WARNING,
+                  "WARNING: You specified a aof-max-size value that is less than 1MB (current value is %llu bytes). Are "
+                  "you sure this is what you really want?",
+                  server.aof_max_size);
     }
 
     serverSetCpuAffinity(server.server_cpulist);
