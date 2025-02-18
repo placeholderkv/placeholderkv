@@ -111,6 +111,7 @@ proc spawn_instance {type base_port count {conf {}} {base_conf_file ""}} {
         if {$::io_threads} {
             puts $cfg "io-threads 2"
             puts $cfg "events-per-io-thread 0"
+            puts $cfg "min-io-threads-avoid-copy-reply 2"
         }
 
         if {$::log_req_res} {

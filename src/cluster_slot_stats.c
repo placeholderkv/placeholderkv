@@ -132,22 +132,23 @@ static void addReplySortedSlotStats(client *c, slotStatForSort slot_stats[], lon
     }
 }
 
-static int canAddNetworkBytesOut(client *c) {
-    return server.cluster_slot_stats_enabled && server.cluster_enabled && c->slot != -1;
+/* Accumulates egress bytes for the slot. */
+void clusterSlotStatsAddNetworkBytesOutForSlot(int slot, unsigned long long net_bytes_out) {
+    if (!clusterSlotStatsEnabled(slot)) return;
+
+    serverAssert(slot >= 0 && slot < CLUSTER_SLOTS);
+    server.cluster->slot_stats[slot].network_bytes_out += net_bytes_out;
 }
 
 /* Accumulates egress bytes upon sending RESP responses back to user clients. */
 void clusterSlotStatsAddNetworkBytesOutForUserClient(client *c) {
-    if (!canAddNetworkBytesOut(c)) return;
-
-    serverAssert(c->slot >= 0 && c->slot < CLUSTER_SLOTS);
-    server.cluster->slot_stats[c->slot].network_bytes_out += c->net_output_bytes_curr_cmd;
+    clusterSlotStatsAddNetworkBytesOutForSlot(c->slot, c->net_output_bytes_curr_cmd);
 }
 
 /* Accumulates egress bytes upon sending replication stream. This only applies for primary nodes. */
 static void clusterSlotStatsUpdateNetworkBytesOutForReplication(long long len) {
     client *c = server.current_client;
-    if (c == NULL || !canAddNetworkBytesOut(c)) return;
+    if (c == NULL || !clusterSlotStatsEnabled(c->slot)) return;
 
     serverAssert(c->slot >= 0 && c->slot < CLUSTER_SLOTS);
     serverAssert(nodeIsPrimary(server.cluster->myself));
@@ -174,24 +175,14 @@ void clusterSlotStatsDecrNetworkBytesOutForReplication(long long len) {
  *    This type is not aggregated, to stay consistent with server.stat_net_output_bytes aggregation.
  * This function covers the internal propagation component. */
 void clusterSlotStatsAddNetworkBytesOutForShardedPubSubInternalPropagation(client *c, int slot) {
-    /* For a blocked client, c->slot could be pre-filled.
-     * Thus c->slot is backed-up for restoration after aggregation is completed. */
-    int _slot = c->slot;
-    c->slot = slot;
-    if (!canAddNetworkBytesOut(c)) {
-        /* c->slot should not change as a side effect of this function,
-         * regardless of the function's early return condition. */
-        c->slot = _slot;
-        return;
-    }
+    if (!clusterSlotStatsEnabled(slot)) return;
 
-    serverAssert(c->slot >= 0 && c->slot < CLUSTER_SLOTS);
-    server.cluster->slot_stats[c->slot].network_bytes_out += c->net_output_bytes_curr_cmd;
+    serverAssert(slot >= 0 && slot < CLUSTER_SLOTS);
+    server.cluster->slot_stats[slot].network_bytes_out += c->net_output_bytes_curr_cmd;
 
     /* For sharded pubsub, the client's network bytes metrics must be reset here,
      * as resetClient() is not called until subscription ends. */
     c->net_output_bytes_curr_cmd = 0;
-    c->slot = _slot;
 }
 
 /* Adds reply for the ORDERBY variant.
@@ -219,9 +210,7 @@ void clusterSlotStatResetAll(void) {
  * would equate to repeating the same calculation twice.
  */
 static int canAddCpuDuration(client *c) {
-    return server.cluster_slot_stats_enabled &&  /* Config should be enabled. */
-           server.cluster_enabled &&             /* Cluster mode should be enabled. */
-           c->slot != -1 &&                      /* Command should be slot specific. */
+    return clusterSlotStatsEnabled(c->slot) &&
            (!server.execution_nesting ||         /* Either; */
             (server.execution_nesting &&         /* 1) Command should not be nested, or */
              c->realcmd->flags & CMD_BLOCKING)); /* 2) If command is nested, it must be due to unblocking. */
@@ -248,8 +237,7 @@ static int canAddNetworkBytesIn(client *c) {
      * Third, blocked client is not aggregated, to avoid duplicate aggregation upon unblocking.
      * Fourth, the server is not under a MULTI/EXEC transaction, to avoid duplicate aggregation of
      * EXEC's 14 bytes RESP upon nested call()'s afterCommand(). */
-    return server.cluster_enabled && server.cluster_slot_stats_enabled && c->slot != -1 && !(c->flag.blocked) &&
-           !server.in_exec;
+    return clusterSlotStatsEnabled(c->slot) && !(c->flag.blocked) && !server.in_exec;
 }
 
 /* Adds network ingress bytes of the current command in execution,
@@ -342,4 +330,8 @@ void clusterSlotStatsCommand(client *c) {
     } else {
         addReplySubcommandSyntaxError(c);
     }
+}
+
+int clusterSlotStatsEnabled(int slot) {
+    return server.cluster_slot_stats_enabled && server.cluster_enabled && slot != -1;
 }

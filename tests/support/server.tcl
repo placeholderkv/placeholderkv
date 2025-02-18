@@ -534,6 +534,7 @@ proc start_server {options {code undefined}} {
     if {$::io_threads} {
         dict set config "io-threads" 2
         dict set config "events-per-io-thread" 0
+        dict set config "min-io-threads-avoid-copy-reply" 2
     }
 
     foreach line $data {

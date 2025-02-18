@@ -404,9 +404,13 @@ int trySendWriteToIOThreads(client *c) {
          * threads from reading data that might be invalid in their local CPU cache. */
         c->io_last_reply_block = listLast(c->reply);
         if (c->io_last_reply_block) {
-            c->io_last_bufpos = ((clientReplyBlock *)listNodeValue(c->io_last_reply_block))->used;
+            clientReplyBlock *block = (clientReplyBlock *)listNodeValue(c->io_last_reply_block);
+            c->io_last_bufpos = block->used;
+            /* If reply offload enabled force new header */
+            block->last_header = NULL;
         } else {
             c->io_last_bufpos = (size_t)c->bufpos;
+            c->last_header = NULL;
         }
     }
 
