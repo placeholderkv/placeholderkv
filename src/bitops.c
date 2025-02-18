@@ -48,21 +48,49 @@ static const unsigned char bitsinbyte[256] = {
 #ifdef HAVE_AVX2
 /* The SIMD version of popcount enhances performance through parallel lookup tables. */
 ATTRIBUTE_TARGET_AVX2
-static long long serverPopcountAVX2(void *s, long count) {
+long long popcountAVX2(void *s, long count) {
     long i = 0;
     unsigned char *p = (unsigned char *)s;
     long long bits = 0;
 
     const __m256i lookup = _mm256_setr_epi8(
-        /* 0 */ 0, /* 1 */ 1, /* 2 */ 1, /* 3 */ 2,
-        /* 4 */ 1, /* 5 */ 2, /* 6 */ 2, /* 7 */ 3,
-        /* 8 */ 1, /* 9 */ 2, /* a */ 2, /* b */ 3,
-        /* c */ 2, /* d */ 3, /* e */ 3, /* f */ 4,
-        /* 0 */ 0, /* 1 */ 1, /* 2 */ 1, /* 3 */ 2,
-        /* 4 */ 1, /* 5 */ 2, /* 6 */ 2, /* 7 */ 3,
-        /* 8 */ 1, /* 9 */ 2, /* a */ 2, /* b */ 3,
-        /* c */ 2, /* d */ 3, /* e */ 3, /* f */ 4);
+        /* First Lane [0:127] */
+        /* 0 */ 0,
+        /* 1 */ 1,
+        /* 2 */ 1,
+        /* 3 */ 2,
+        /* 4 */ 1,
+        /* 5 */ 2,
+        /* 6 */ 2,
+        /* 7 */ 3,
+        /* 8 */ 1,
+        /* 9 */ 2,
+        /* a */ 2,
+        /* b */ 3,
+        /* c */ 2,
+        /* d */ 3,
+        /* e */ 3,
+        /* f */ 4,
 
+        /* Second Lane [128:255] identical to first lane due to lane isolation in _mm256_shuffle_epi8.
+         * For more information, see following URL
+         * https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_shuffle_epi8 */
+        /* 0 */ 0,
+        /* 1 */ 1,
+        /* 2 */ 1,
+        /* 3 */ 2,
+        /* 4 */ 1,
+        /* 5 */ 2,
+        /* 6 */ 2,
+        /* 7 */ 3,
+        /* 8 */ 1,
+        /* 9 */ 2,
+        /* a */ 2,
+        /* b */ 3,
+        /* c */ 2,
+        /* d */ 3,
+        /* e */ 3,
+        /* f */ 4);
     const __m256i low_mask = _mm256_set1_epi8(0x0f);
     __m256i acc = _mm256_setzero_si256();
 
@@ -124,18 +152,8 @@ static long long serverPopcountAVX2(void *s, long count) {
 }
 #endif
 
-/* Count number of bits set in the binary array pointed by 's' and long
- * 'count' bytes. The implementation of this function is required to
- * work with an input string length up to 512 MB or more (server.proto_max_bulk_len) */
-long long serverPopcount(void *s, long count) {
-#ifdef HAVE_AVX2
-    /* If length of s >= 256 bits and the CPU supports AVX2,
-     * we prefer to use the SIMD version */
-    if (count >= 32) {
-        return serverPopcountAVX2(s, count);
-    }
-#endif
-
+/* The scalar version of popcount based on lookup tables. */
+long long popcountScalar(void *s, long count) {
     long long bits = 0;
     unsigned char *p = s;
     uint32_t *p4;
@@ -185,6 +203,20 @@ long long serverPopcount(void *s, long count) {
     p = (unsigned char *)p4;
     while (count--) bits += bitsinbyte[*p++];
     return bits;
+}
+
+/* Count number of bits set in the binary array pointed by 's' and long
+ * 'count' bytes. The implementation of this function is required to
+ * work with an input string length up to 512 MB or more (server.proto_max_bulk_len) */
+long long serverPopcount(void *s, long count) {
+#ifdef HAVE_AVX2
+    /* If length of s >= 256 bits and the CPU supports AVX2,
+     * we prefer to use the SIMD version */
+    if (count >= 32) {
+        return popcountAVX2(s, count);
+    }
+#endif
+    return popcountScalar(s, count);
 }
 
 /* Return the position of the first bit set to one (if 'bit' is 1) or
