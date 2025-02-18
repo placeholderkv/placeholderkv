@@ -53,44 +53,22 @@ long long popcountAVX2(void *s, long count) {
     unsigned char *p = (unsigned char *)s;
     long long bits = 0;
 
+    /* clang-format off */
     const __m256i lookup = _mm256_setr_epi8(
         /* First Lane [0:127] */
-        /* 0 */ 0,
-        /* 1 */ 1,
-        /* 2 */ 1,
-        /* 3 */ 2,
-        /* 4 */ 1,
-        /* 5 */ 2,
-        /* 6 */ 2,
-        /* 7 */ 3,
-        /* 8 */ 1,
-        /* 9 */ 2,
-        /* a */ 2,
-        /* b */ 3,
-        /* c */ 2,
-        /* d */ 3,
-        /* e */ 3,
-        /* f */ 4,
+        /* 0 */ 0, /* 1 */ 1, /* 2 */ 1, /* 3 */ 2,
+        /* 4 */ 1, /* 5 */ 2, /* 6 */ 2, /* 7 */ 3,
+        /* 8 */ 1, /* 9 */ 2, /* a */ 2, /* b */ 3,
+        /* c */ 2, /* d */ 3, /* e */ 3, /* f */ 4,
 
         /* Second Lane [128:255] identical to first lane due to lane isolation in _mm256_shuffle_epi8.
          * For more information, see following URL
          * https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm256_shuffle_epi8 */
-        /* 0 */ 0,
-        /* 1 */ 1,
-        /* 2 */ 1,
-        /* 3 */ 2,
-        /* 4 */ 1,
-        /* 5 */ 2,
-        /* 6 */ 2,
-        /* 7 */ 3,
-        /* 8 */ 1,
-        /* 9 */ 2,
-        /* a */ 2,
-        /* b */ 3,
-        /* c */ 2,
-        /* d */ 3,
-        /* e */ 3,
-        /* f */ 4);
+        /* 0 */ 0, /* 1 */ 1, /* 2 */ 1, /* 3 */ 2,
+        /* 4 */ 1, /* 5 */ 2, /* 6 */ 2, /* 7 */ 3,
+        /* 8 */ 1, /* 9 */ 2, /* a */ 2, /* b */ 3,
+        /* c */ 2, /* d */ 3, /* e */ 3, /* f */ 4);
+    /* clang-format on */
     const __m256i low_mask = _mm256_set1_epi8(0x0f);
     __m256i acc = _mm256_setzero_si256();
 
