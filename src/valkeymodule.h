@@ -325,10 +325,15 @@ typedef uint64_t ValkeyModuleTimerID;
  * If enabled, the module is responsible to break endless loop. */
 #define VALKEYMODULE_OPTIONS_ALLOW_NESTED_KEYSPACE_NOTIFICATIONS (1 << 3)
 
+/* Skipping command validation can improve performance by reducing the overhead associated
+ * with command checking, especially in high-throughput scenarios where commands
+ * are already pre-validated or trusted. */
+#define VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION (1 << 4)
+
 /* Next option flag, must be updated when adding new module flags above!
  * This flag should not be used directly by the module.
  * Use ValkeyModule_GetModuleOptionsAll instead. */
-#define _VALKEYMODULE_OPTIONS_FLAGS_NEXT (1 << 4)
+#define _VALKEYMODULE_OPTIONS_FLAGS_NEXT (1 << 5)
 
 /* Definitions for ValkeyModule_SetCommandInfo. */
 
@@ -1424,6 +1429,8 @@ VALKEYMODULE_API ValkeyModuleType *(*ValkeyModule_ModuleTypeGetType)(ValkeyModul
 VALKEYMODULE_API void *(*ValkeyModule_ModuleTypeGetValue)(ValkeyModuleKey *key)VALKEYMODULE_ATTR;
 VALKEYMODULE_API int (*ValkeyModule_IsIOError)(ValkeyModuleIO *io) VALKEYMODULE_ATTR;
 VALKEYMODULE_API void (*ValkeyModule_SetModuleOptions)(ValkeyModuleCtx *ctx, int options) VALKEYMODULE_ATTR;
+VALKEYMODULE_API void (*ValkeyModule_AddModuleOptions)(ValkeyModuleCtx *ctx, int options) VALKEYMODULE_ATTR;
+VALKEYMODULE_API void (*ValkeyModule_RemoveModuleOptions)(ValkeyModuleCtx *ctx, int options) VALKEYMODULE_ATTR;
 VALKEYMODULE_API int (*ValkeyModule_SignalModifiedKey)(ValkeyModuleCtx *ctx,
                                                        ValkeyModuleString *keyname) VALKEYMODULE_ATTR;
 VALKEYMODULE_API void (*ValkeyModule_SaveUnsigned)(ValkeyModuleIO *io, uint64_t value) VALKEYMODULE_ATTR;
@@ -2034,6 +2041,8 @@ static int ValkeyModule_Init(ValkeyModuleCtx *ctx, const char *name, int ver, in
     VALKEYMODULE_GET_API(ModuleTypeGetValue);
     VALKEYMODULE_GET_API(IsIOError);
     VALKEYMODULE_GET_API(SetModuleOptions);
+    VALKEYMODULE_GET_API(RemoveModuleOptions);
+    VALKEYMODULE_GET_API(AddModuleOptions);
     VALKEYMODULE_GET_API(SignalModifiedKey);
     VALKEYMODULE_GET_API(SaveUnsigned);
     VALKEYMODULE_GET_API(LoadUnsigned);

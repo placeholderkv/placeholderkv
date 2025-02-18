@@ -250,7 +250,9 @@ int propagateTestSimpleCommand(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, 
 
     /* Replicate two commands to test MULTI/EXEC wrapping. */
     ValkeyModule_Replicate(ctx,"INCR","c","counter-1");
+    ValkeyModule_AddModuleOptions(ctx, VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION);
     ValkeyModule_Replicate(ctx,"INCR","c","counter-2");
+    ValkeyModule_RemoveModuleOptions(ctx, VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION);
     ValkeyModule_ReplyWithSimpleString(ctx,"OK");
     return VALKEYMODULE_OK;
 }
@@ -266,7 +268,9 @@ int propagateTestMixedCommand(ValkeyModuleCtx *ctx, ValkeyModuleString **argv, i
     ValkeyModule_FreeCallReply(reply);
 
     ValkeyModule_Replicate(ctx,"INCR","c","counter-1");
+    ValkeyModule_AddModuleOptions(ctx, VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION);
     ValkeyModule_Replicate(ctx,"INCR","c","counter-2");
+    ValkeyModule_RemoveModuleOptions(ctx, VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION);
 
     reply = ValkeyModule_Call(ctx, "INCR", "c!", "after-call");
     ValkeyModule_FreeCallReply(reply);
