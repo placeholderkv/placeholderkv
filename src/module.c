@@ -2566,9 +2566,25 @@ void VM_Yield(ValkeyModuleCtx *ctx, int flags, const char *busy_reply) {
  * By default, the server will not fire key-space notifications that happened inside
  * a key-space notification callback. This flag allows to change this behavior
  * and fire nested key-space notifications. Notice: if enabled, the module
- * should protected itself from infinite recursion. */
+ * should protected itself from infinite recursion.
+ *
+ * VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION:
+ * When set, this option allows the module to skip command validation.
+ * This is useful in scenarios where the module needs to bypass
+ * command validation (lookupCommandByCString) for specific operations
+ * to reduce overhead or handle trusted custom command logic. */
 void VM_SetModuleOptions(ValkeyModuleCtx *ctx, int options) {
     ctx->module->options = options;
+}
+
+/* Add specified options to the module's current options. */
+void VM_AddModuleOptions(ValkeyModuleCtx *ctx, int options) {
+    ctx->module->options |= options;
+}
+
+/* Remove specified options from the module's current options. */
+void VM_RemoveModuleOptions(ValkeyModuleCtx *ctx, int options) {
+    ctx->module->options &= ~options;
 }
 
 /* Signals that the key is modified from user's perspective (i.e. invalidate WATCH
@@ -3630,8 +3646,10 @@ int VM_Replicate(ValkeyModuleCtx *ctx, const char *cmdname, const char *fmt, ...
     int argc = 0, flags = 0, j;
     va_list ap;
 
-    cmd = lookupCommandByCString((char *)cmdname);
-    if (!cmd) return VALKEYMODULE_ERR;
+    if (!ctx->module || !(ctx->module->options & VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION)) {
+        cmd = lookupCommandByCString((char *)cmdname);
+        if (!cmd) return VALKEYMODULE_ERR;
+    }
 
     /* Create the client and dispatch the command. */
     va_start(ap, fmt);
@@ -7535,15 +7553,17 @@ void VM_EmitAOF(ValkeyModuleIO *io, const char *cmdname, const char *fmt, ...) {
     int argc = 0, flags = 0, j;
     va_list ap;
 
-    cmd = lookupCommandByCString((char *)cmdname);
-    if (!cmd) {
-        serverLog(LL_WARNING,
-                  "Fatal: AOF method for module data type '%s' tried to "
-                  "emit unknown command '%s'",
-                  io->type->name, cmdname);
-        io->error = 1;
-        errno = EINVAL;
-        return;
+    if (!io->ctx || !io->ctx->module || !(io->ctx->module->options & VALKEYMODULE_OPTIONS_SKIP_COMMAND_VALIDATION)) {
+        cmd = lookupCommandByCString((char *)cmdname);
+        if (!cmd) {
+            serverLog(LL_WARNING,
+                      "Fatal: AOF method for module data type '%s' tried to "
+                      "emit unknown command '%s'",
+                      io->type->name, cmdname);
+            io->error = 1;
+            errno = EINVAL;
+            return;
+        }
     }
 
     /* Emit the arguments into the AOF in RESP format. */
@@ -13892,6 +13912,8 @@ void moduleRegisterCoreAPI(void) {
     REGISTER_API(ModuleTypeGetValue);
     REGISTER_API(IsIOError);
     REGISTER_API(SetModuleOptions);
+    REGISTER_API(AddModuleOptions);
+    REGISTER_API(RemoveModuleOptions);
     REGISTER_API(SignalModifiedKey);
     REGISTER_API(SaveUnsigned);
     REGISTER_API(LoadUnsigned);
