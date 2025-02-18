@@ -3483,7 +3483,7 @@ int syncWithPrimaryHandleSendHandshakeState(connection *conn, sds *err) {
      *                    using a connection that has integrity checks (such as TLS).
      *                    In non-diskless sync, or non-integrity-checked connection, there is more
      *                    concern for data corruprion so we keep this extra layer of detection.
-     * 
+     *
      * The primary will ignore capabilities it does not understand. */
     int send_skip_rdb_checksum_capa = replicationSupportSkipRDBChecksum(conn, useDisklessLoad(), 1); // we can ignore primary's conditions when sending capa (is_primary_stream_verified=1)
     char *argv[9] = {"REPLCONF", "capa", "eof", "capa", "psync2", NULL, NULL, NULL, NULL};
