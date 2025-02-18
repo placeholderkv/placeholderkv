@@ -70,6 +70,13 @@ int test_kvstoreIteratorRemoveAllKeysNoDeleteEmptyHashtable(int argc, char **arg
     UNUSED(argv);
     UNUSED(flags);
 
+    uint8_t seed[16];
+    int cycle = 17;
+    for (unsigned int i = 0; i < sizeof(seed); i++) {
+        seed[i] = (i + cycle) % 0xFF;
+    }
+    hashtableSetHashFunctionSeed(seed);
+
     int i;
     void *key;
     kvstoreIterator *kvs_it;

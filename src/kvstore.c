@@ -319,8 +319,7 @@ void kvstoreRelease(kvstore *kvs) {
         if (metadata->rehashing_node) metadata->rehashing_node = NULL;
         hashtableRelease(ht);
     }
-    /* TODO: The assert below causes a flaky unit test. Find out why. */
-    /* assert(kvs->overhead_hashtable_lut == 0); */
+    assert(kvs->overhead_hashtable_lut == 0);
     zfree(kvs->hashtables);
 
     listRelease(kvs->rehashing);
